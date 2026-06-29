@@ -52,17 +52,17 @@ pass before moving on. Check boxes as you go and update the status tracker at th
 **Goal:** Deterministically sign and verify a GoodDollar-rooted Agent ID off-chain. No API, no UI yet — a pure, tested library.
 
 **Tasks**
-- [ ] A1. Scaffold package: `packages/agent-id/` (`package.json`, `tsconfig.json`, `src/index.ts`), add to pnpm workspace + turbo build.
-- [ ] A2. `src/types.ts` — `AgentIdFields`, `AgentIdCredential` (fields + signature), `VerifyResult`.
-- [ ] A3. `src/eip712.ts` — EIP-712 `domain` + `AgentID` typed-data (spec §2): `agent, operator, humanRoot, scopes, stake, budgetCap, nonce, issuedAt, expiresAt`.
-- [ ] A4. `src/sign.ts` — `buildAgentId(fields)` (fills issuedAt/nonce defaults) and `hashAgentId(fields)` (typed-data hash for signing).
-- [ ] A5. `src/verify.ts` — `verifyAgentId(credential, { now?, humanRootLookup })`:
+- [x] A1. Scaffold package: `packages/agent-id/` (`package.json`, `tsconfig.json`, `src/index.ts`), add to pnpm workspace + turbo build.
+- [x] A2. `src/types.ts` — `AgentIdFields`, `AgentIdCredential` (fields + signature), `VerifyResult`.
+- [x] A3. `src/eip712.ts` — EIP-712 `domain` + `AgentID` typed-data (spec §2): `agent, operator, humanRoot, scopes, stake, budgetCap, nonce, issuedAt, expiresAt`.
+- [x] A4. `src/sign.ts` — `buildAgentId(fields)` (fills issuedAt/nonce defaults) and `hashAgentId(fields)` (typed-data hash for signing).
+- [x] A5. `src/verify.ts` — `verifyAgentId(credential, { now?, humanRootLookup })`:
   - recover signer from signature, must equal `operator`
   - call `humanRootLookup(operator)` → must be non-zero **and** equal `humanRoot`
   - check `now < expiresAt`
   - return `{ valid, operator, humanRoot, scopes, stake, expiresAt, reason }`
-- [ ] A6. Wire the live lookup: default `humanRootLookup` adapts `getVerifyStatus` from `@g-copilot/chain` (`root`, treat `null`→zero).
-- [ ] A7. Tests (`vitest`): valid · expired · wrong-signer · operator-not-whitelisted · root-mismatch · tampered-fields. Use a local test signer + a stubbed `humanRootLookup`.
+- [x] A6. Wire the live lookup: default `humanRootLookup` adapts `getVerifyStatus` from `@g-copilot/chain` (`root`, treat `null`→zero).
+- [x] A7. Tests (`vitest`): valid · expired · wrong-signer · operator-not-whitelisted · root-mismatch · tampered-fields. Use a local test signer + a stubbed `humanRootLookup`.
 
 **Deliverables:** importable `signAgentId` / `verifyAgentId`; green unit tests.
 
@@ -180,7 +180,7 @@ A ─▶ B ─▶ C ─▶ D   ⇒  demoable product (off-chain, MiniPay + Explo
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| A Credential core | ⬜ Not started | `packages/agent-id` (pure lib + tests) |
+| A Credential core | ✅ Gate passed | `packages/agent-id`: EIP-712 sign/verify + live human-root lookup; 7/7 vitest green (2026-06-29) |
 | B API + MCP | ⬜ Not started | `/agent/issue`, `/agent/verify/:addr`, MCP tools, Prisma model |
 | C MiniPay issue | ⬜ Not started | verify gate + sign + persist |
 | D Explorer/Verify | ⬜ Not started | public verify page |
