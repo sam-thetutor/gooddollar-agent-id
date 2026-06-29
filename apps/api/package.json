@@ -1,0 +1,28 @@
+{
+  "name": "@g-copilot/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@g-copilot/chain": "workspace:*",
+    "@g-copilot/db": "workspace:*",
+    "@g-copilot/mcp-server": "workspace:*",
+    "@g-copilot/shared": "workspace:*",
+    "@hono/node-server": "^1.14.4",
+    "@modelcontextprotocol/sdk": "^1.13.0",
+    "dotenv": "^16.5.0",
+    "hono": "^4.8.3",
+    "openai": "^4.67.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.32",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

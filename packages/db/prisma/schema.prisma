@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Phase 2: repositories will use these models.
+// Schema defined upfront per docs/09-data-model.md
+
+model TelegramSession {
+  telegramId      String          @id @map("telegram_id")
+  walletAddress   String?         @map("wallet_address")
+  verified        Boolean         @default(false)
+  fvCallbackToken String?         @map("fv_callback_token")
+  walletLinkedAt  DateTime?       @map("wallet_linked_at")
+  verifiedAt      DateTime?       @map("verified_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  actions         PendingAction[]
+
+  @@map("telegram_sessions")
+}
+
+enum ActionType {
+  claim
+  transfer
+  create_stream
+}
+
+enum ActionStatus {
+  pending
+  completed
+  expired
+  failed
+}
+
+model PendingAction {
+  id          String         @id
+  telegramId  String         @map("telegram_id")
+  actionType  ActionType     @map("action_type")
+  status      ActionStatus   @default(pending)
+  payload     Json
+  txHash      String?        @map("tx_hash")
+  expiresAt   DateTime       @map("expires_at")
+  completedAt DateTime?      @map("completed_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  session     TelegramSession @relation(fields: [telegramId], references: [telegramId])
+
+  @@index([telegramId])
+  @@index([status])
+  @@map("pending_actions")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  telegramId String?  @map("telegram_id")
+  eventType  String   @map("event_type")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}

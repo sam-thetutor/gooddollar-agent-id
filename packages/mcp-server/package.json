@@ -1,0 +1,33 @@
+{
+  "name": "@g-copilot/mcp-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "gooddollar-mcp": "./dist/index.js"
+  },
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@g-copilot/chain": "workspace:*",
+    "@g-copilot/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.32",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
