@@ -18,7 +18,7 @@ pass before moving on. Check boxes as you go and update the status tracker at th
 | `packages/chain` — `getVerifyStatus` already returns `root` + `expiresAt` | The human-root read for issuing/verifying credentials |
 | `packages/mcp-server` — `createMcpServer()` + tool switch | Add `issueAgentId` / `verifyAgent` / `getAgentStatus` tools |
 | `apps/api` — Hono API + in-process MCP + self-hosted LLM copilot | Add `/agent/*` routes; copilot becomes the on-ramp assistant |
-| `apps/mini-app` — MiniPay shell, auto-connect, Wagmi, copilot UI | Add Issue + "My Agents" + public Verify pages |
+| `apps/web` (was `apps/mini-app`) — Vite + React + Wagmi | Real website; **MetaMask via Reown AppKit** (multi-wallet); Issue + "My Agents" + public Verify pages |
 | `packages/db` — Prisma repositories pattern | Add `AgentCredential` model + repository |
 | `packages/shared` — Zod schemas | Add Agent ID schemas |
 | VPS deploy (nginx + PM2), `gcopilot.geinz.lol`, `gcopilot-api.geinz.lol` | Same hosting, new product |
@@ -90,9 +90,14 @@ pass before moving on. Check boxes as you go and update the status tracker at th
 
 ---
 
-## Phase C — MiniPay issue flow
+> **Frontend pivot (2026-06-29):** dropped MiniPay-first. The frontend is now a
+> **standalone website** (`apps/web`) where users connect with **MetaMask** (and
+> other wallets) via **Reown AppKit** — works with the current `wagmi@3` + `react@19`
+> (RainbowKit/ConnectKit don't support wagmi v3 yet). Telegram/MiniPay code removed.
 
-**Goal:** A verified human mints an Agent ID end-to-end in MiniPay, non-custodially.
+## Phase C — Issue flow (website + MetaMask)
+
+**Goal:** A verified human mints an Agent ID end-to-end on the website, non-custodially.
 
 **Tasks**
 - [ ] C1. `apps/mini-app/src/lib/api.ts` — add `issueAgent`, `verifyAgent`, `listAgents` clients + types.
@@ -182,8 +187,9 @@ A ─▶ B ─▶ C ─▶ D   ⇒  demoable product (off-chain, MiniPay + Explo
 |-------|--------|-------|
 | A Credential core | ✅ Gate passed | `packages/agent-id`: EIP-712 sign/verify + live human-root lookup; 8/8 vitest green (2026-06-29) |
 | B API + MCP | ✅ Gate passed | `/agent/issue`, `/agent/verify/:addr`, `/agent/list`; MCP `gooddollar_verify_agent` (+injectable lookup); Prisma `AgentCredential` pushed to live Supabase; end-to-end smoke vs live Celo (2026-06-29) |
-| C MiniPay issue | ⬜ Not started | verify gate + sign + persist |
-| D Explorer/Verify | ⬜ Not started | public verify page |
+| — Frontend pivot | ✅ Done | MiniPay → website; `apps/web` + MetaMask via Reown AppKit (2026-06-29) |
+| C Issue (website) | 🔄 Code-complete | Connect (MetaMask) → verify gate → EIP-712 sign → `POST /agent/issue`; builds + dev smoke pass. Pending: live valid-issue test with a real GoodDollar-verified wallet; in-app FV SDK (`generateFVLink`) — currently links to GoodDollar wallet |
+| D Explorer/Verify | ✅ Done | Public `/verify` page (no wallet) + `?agent=` deep link; live dev smoke via API proxy (2026-06-29) |
 | E Stake + budget | ⬜ Not started | `packages/contracts` |
 | F ERC-8004 + npm | ⬜ Not started | publish + example |
 
