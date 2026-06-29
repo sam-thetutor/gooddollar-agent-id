@@ -1,6 +1,11 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "@g-copilot/mcp-server";
+import { getAgentCredential } from "@g-copilot/db";
+import {
+  credentialFromWire,
+  type AgentIdCredential,
+} from "@g-copilot/agent-id";
 import type { ChatMessage } from "@g-copilot/shared";
 import OpenAI from "openai";
 import type {
@@ -55,10 +60,33 @@ function getProvider(): Provider {
 
 let clientPromise: Promise<Client> | null = null;
 
+/** DB-backed lookup so the in-process MCP `gooddollar_verify_agent` tool can
+ *  resolve a stored credential by agent address. */
+async function agentLookup(agent: string): Promise<AgentIdCredential | null> {
+  const rec = await getAgentCredential(agent);
+  if (!rec || rec.revokedAt) return null;
+  return credentialFromWire({
+    fields: {
+      agent: rec.agent,
+      operator: rec.operator,
+      humanRoot: rec.humanRoot,
+      scopes: rec.scopes,
+      stake: rec.stake,
+      budgetCap: rec.budgetCap,
+      nonce: rec.nonce,
+      issuedAt: rec.issuedAt,
+      expiresAt: rec.expiresAt,
+    },
+    signature: rec.signature,
+    chainId: rec.chainId,
+    verifyingContract: rec.verifyingContract,
+  });
+}
+
 async function getMcpClient(): Promise<Client> {
   if (!clientPromise) {
     clientPromise = (async () => {
-      const server = createMcpServer();
+      const server = createMcpServer({ agentLookup });
       const [clientTransport, serverTransport] =
         InMemoryTransport.createLinkedPair();
       const client = new Client(

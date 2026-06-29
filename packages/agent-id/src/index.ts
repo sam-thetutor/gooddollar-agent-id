@@ -21,6 +21,19 @@ export type { HumanRootLookup, VerifyOptions } from "./verify.js";
 
 export { liveHumanRootLookup } from "./chain-lookup.js";
 
+export {
+  credentialFromWire,
+  credentialToWire,
+  fieldsFromWire,
+  fieldsToWire,
+  verifyResultToWire,
+} from "./serialize.js";
+export type {
+  AgentIdCredentialWire,
+  AgentIdFieldsWire,
+  VerifyResultWire,
+} from "./serialize.js";
+
 export type {
   AgentIdCredential,
   AgentIdFields,

@@ -11,10 +11,31 @@ import {
   getVerifyStatus,
   pingChain,
 } from "@g-copilot/chain";
+import {
+  credentialFromWire,
+  liveHumanRootLookup,
+  verifyAgentId,
+  verifyResultToWire,
+  type AgentIdCredential,
+  type AgentIdCredentialWire,
+} from "@g-copilot/agent-id";
 import { GCopilotError } from "@g-copilot/shared";
 
 const SERVER_NAME = "gooddollar-mcp";
 const SERVER_VERSION = "0.1.0";
+
+/**
+ * Resolves a stored Agent ID credential by agent address. Injected by hosts
+ * that have storage (e.g. the API); omitted for the stateless standalone CLI,
+ * where `gooddollar_verify_agent` requires a full `credential` argument instead.
+ */
+export type AgentLookup = (
+  agent: string,
+) => Promise<AgentIdCredential | null> | AgentIdCredential | null;
+
+export interface McpServerOptions {
+  agentLookup?: AgentLookup;
+}
 
 const walletInput = {
   type: "object" as const,
@@ -60,7 +81,7 @@ function requireWallet(args: Record<string, unknown> | undefined): string {
   return wallet;
 }
 
-export function createMcpServer(): Server {
+export function createMcpServer(options: McpServerOptions = {}): Server {
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
     { capabilities: { tools: {} } },
@@ -97,6 +118,26 @@ export function createMcpServer(): Server {
           "Get GoodDollar UBI cycle stats on Celo (current UBI day).",
         inputSchema: { type: "object", properties: {} },
       },
+      {
+        name: "gooddollar_verify_agent",
+        description:
+          "Verify a GoodDollar Agent ID — confirm an AI agent is vouched for by a real, currently-verified GoodDollar human. Pass either an 'agent' address (to look up a stored credential) or a full 'credential' object. Returns validity, the human root, scopes, and expiry.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            agent: {
+              type: "string",
+              description:
+                "0x agent address to look up a stored Agent ID credential for.",
+            },
+            credential: {
+              type: "object",
+              description:
+                "A full signed Agent ID credential (wire form) to verify directly.",
+            },
+          },
+        },
+      },
     ],
   }));
 
@@ -120,6 +161,37 @@ export function createMcpServer(): Server {
           return jsonResult(await getClaimEligibility(requireWallet(args)));
         case "gooddollar_get_daily_stats":
           return jsonResult(await getDailyStats());
+        case "gooddollar_verify_agent": {
+          const agent = typeof args?.agent === "string" ? args.agent : undefined;
+          const credentialArg = args?.credential;
+
+          let credential: AgentIdCredential | null = null;
+          if (credentialArg && typeof credentialArg === "object") {
+            credential = credentialFromWire(
+              credentialArg as AgentIdCredentialWire,
+            );
+          } else if (agent && options.agentLookup) {
+            credential = await options.agentLookup(agent);
+            if (!credential) {
+              return jsonResult({
+                found: false,
+                valid: false,
+                reason: "not_found",
+                agent,
+              });
+            }
+          } else {
+            throw new GCopilotError(
+              "Provide a 'credential' object, or an 'agent' address (address lookup is not available in this context).",
+              "BAD_INPUT",
+            );
+          }
+
+          const result = await verifyAgentId(credential, {
+            humanRootLookup: liveHumanRootLookup,
+          });
+          return jsonResult({ found: true, ...verifyResultToWire(result) });
+        }
         default:
           return errorResult(
             new GCopilotError(`Unknown tool: ${name}`, "UNKNOWN_TOOL"),

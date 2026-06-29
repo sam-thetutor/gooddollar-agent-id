@@ -20,20 +20,32 @@ import {
   createPendingAction,
   deleteSession,
   expireStaleActions,
+  getAgentCredential,
   getPendingAction,
   getSession,
   linkWallet,
+  listAgentCredentialsByOperator,
+  upsertAgentCredential,
   verifyLinkToken,
   writeAudit,
 } from "@g-copilot/db";
+import {
+  credentialFromWire,
+  liveHumanRootLookup,
+  verifyAgentId,
+  verifyResultToWire,
+  type AgentIdCredentialWire,
+} from "@g-copilot/agent-id";
 import {
   addressSchema,
   chatRequestSchema,
   completeActionSchema,
   createActionSchema,
   healthResponseSchema,
+  issueAgentRequestSchema,
   linkWalletSchema,
 } from "@g-copilot/shared";
+import { getAddress } from "viem";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { isLlmConfigured, runChat } from "./lib/agent.js";
@@ -61,11 +73,14 @@ app.get("/health", async (c) => {
 
 app.get("/", (c) =>
   c.json({
-    name: "G$ Copilot API",
+    name: "GoodDollar Agent ID API",
     docs: "../../docs/README.md",
     endpoints: [
       "GET /health",
       "GET /wallet/:address",
+      "POST /agent/issue",
+      "GET /agent/verify/:address",
+      "GET /agent/list?operator=",
       "POST /chat",
       "GET /sessions/:telegramId",
       "POST /sessions/link",
@@ -97,6 +112,157 @@ app.get("/wallet/:address", async (c) => {
   } catch (error) {
     return c.json({ error: "CHAIN_ERROR", message: (error as Error).message }, 502);
   }
+});
+
+// ---------------------------------------------------------------------------
+// GoodDollar Agent ID — issue & verify Proof-of-Human credentials for agents
+// ---------------------------------------------------------------------------
+
+/** Rebuild the wire credential from a stored DB row. */
+function recordToWire(rec: {
+  agent: string;
+  operator: string;
+  humanRoot: string;
+  scopes: string;
+  stake: string;
+  budgetCap: string;
+  nonce: string;
+  issuedAt: string;
+  expiresAt: string;
+  signature: string;
+  chainId: number;
+  verifyingContract: string;
+}): AgentIdCredentialWire {
+  return {
+    fields: {
+      agent: rec.agent,
+      operator: rec.operator,
+      humanRoot: rec.humanRoot,
+      scopes: rec.scopes,
+      stake: rec.stake,
+      budgetCap: rec.budgetCap,
+      nonce: rec.nonce,
+      issuedAt: rec.issuedAt,
+      expiresAt: rec.expiresAt,
+    },
+    signature: rec.signature,
+    chainId: rec.chainId,
+    verifyingContract: rec.verifyingContract,
+  };
+}
+
+// Submit a signed credential: we re-verify (signature + live human root) before
+// persisting, so only genuinely human-backed credentials are ever stored.
+app.post("/agent/issue", async (c) => {
+  const parsed = issueAgentRequestSchema.safeParse(
+    await c.req.json().catch(() => null),
+  );
+  if (!parsed.success) {
+    return c.json({ error: "BAD_INPUT", issues: parsed.error.issues }, 400);
+  }
+
+  let credential;
+  try {
+    credential = credentialFromWire(parsed.data as AgentIdCredentialWire);
+  } catch (error) {
+    return c.json({ error: "BAD_CREDENTIAL", message: (error as Error).message }, 400);
+  }
+
+  const verification = await verifyAgentId(credential, {
+    humanRootLookup: liveHumanRootLookup,
+  });
+  if (!verification.valid) {
+    return c.json(
+      { error: "INVALID_CREDENTIAL", reason: verification.reason },
+      400,
+    );
+  }
+
+  const w = parsed.data;
+  const stored = await upsertAgentCredential({
+    agent: getAddress(w.fields.agent),
+    operator: getAddress(w.fields.operator),
+    humanRoot: getAddress(w.fields.humanRoot),
+    scopes: w.fields.scopes,
+    stake: w.fields.stake,
+    budgetCap: w.fields.budgetCap,
+    nonce: w.fields.nonce,
+    issuedAt: w.fields.issuedAt,
+    expiresAt: w.fields.expiresAt,
+    signature: w.signature,
+    chainId: w.chainId,
+    verifyingContract: getAddress(w.verifyingContract),
+  });
+
+  await writeAudit("agent_id_issued", undefined, {
+    agent: stored.agent,
+    operator: stored.operator,
+  });
+
+  return c.json(
+    {
+      ok: true,
+      agent: stored.agent,
+      verification: verifyResultToWire(verification),
+    },
+    201,
+  );
+});
+
+// Public verify: anyone can check whether an agent is human-backed right now.
+app.get("/agent/verify/:address", async (c) => {
+  const raw = c.req.param("address");
+  if (!addressSchema.safeParse(raw).success) {
+    return c.json({ error: "BAD_ADDRESS" }, 400);
+  }
+  const agent = getAddress(raw);
+
+  const rec = await getAgentCredential(agent);
+  if (!rec) {
+    return c.json({ found: false, valid: false, reason: "not_found", agent });
+  }
+  if (rec.revokedAt) {
+    return c.json({
+      found: true,
+      valid: false,
+      reason: "revoked",
+      agent,
+      operator: rec.operator,
+    });
+  }
+
+  try {
+    const credential = credentialFromWire(recordToWire(rec));
+    const result = await verifyAgentId(credential, {
+      humanRootLookup: liveHumanRootLookup,
+    });
+    return c.json({ found: true, agent, ...verifyResultToWire(result) });
+  } catch (error) {
+    return c.json(
+      { error: "VERIFY_ERROR", message: (error as Error).message },
+      502,
+    );
+  }
+});
+
+// List the agents an operator has issued (for the "My Agents" dashboard).
+app.get("/agent/list", async (c) => {
+  const raw = c.req.query("operator");
+  if (!raw || !addressSchema.safeParse(raw).success) {
+    return c.json({ error: "BAD_OPERATOR" }, 400);
+  }
+  const operator = getAddress(raw);
+  const rows = await listAgentCredentialsByOperator(operator);
+  const agents = rows.map((r) => ({
+    agent: r.agent,
+    scopes: r.scopes,
+    stake: r.stake,
+    budgetCap: r.budgetCap,
+    expiresAt: r.expiresAt,
+    revoked: Boolean(r.revokedAt),
+    createdAt: r.createdAt,
+  }));
+  return c.json({ operator, count: agents.length, agents });
 });
 
 // ---------------------------------------------------------------------------

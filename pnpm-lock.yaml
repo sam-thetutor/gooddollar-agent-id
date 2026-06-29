@@ -24,6 +24,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@g-copilot/agent-id':
+        specifier: workspace:*
+        version: link:../../packages/agent-id
       '@g-copilot/chain':
         specifier: workspace:*
         version: link:../../packages/chain
@@ -50,7 +53,10 @@ importers:
         version: 4.12.27
       openai:
         specifier: ^4.67.0
-        version: 4.104.0(zod@3.25.76)
+        version: 4.104.0(ws@8.20.1)(zod@3.25.76)
+      viem:
+        specifier: ^2.31.3
+        version: 2.53.1(typescript@5.9.3)(zod@3.25.76)
     devDependencies:
       '@types/node':
         specifier: ^22.15.32
@@ -167,6 +173,9 @@ importers:
 
   packages/mcp-server:
     dependencies:
+      '@g-copilot/agent-id':
+        specifier: workspace:*
+        version: link:../agent-id
       '@g-copilot/chain':
         specifier: workspace:*
         version: link:../chain
@@ -1860,7 +1869,7 @@ packages:
   /@scure/bip32@1.7.0:
     resolution: {integrity: sha512-E4FFX/N3f4B80AKWp5dP6ow+flD1LQZo/w8UnLGYZO674jS6YnYeepycOOksv+vLPSpgN35wgKgy+ybfTb2SMw==}
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
     dev: false
@@ -3422,7 +3431,7 @@ packages:
       zod: 3.25.76
     dev: false
 
-  /abitype@1.2.4(typescript@5.9.3):
+  /abitype@1.2.4(typescript@5.9.3)(zod@3.22.4):
     resolution: {integrity: sha512-dpKH+N27vRjarMVTFFkeY445VTKftzGWpL0FiT7xmVmzQRKazZexzC5uHG0f6XKsVLAuUlndnbGau6lRejClxg==}
     peerDependencies:
       typescript: '>=5.0.4'
@@ -3434,6 +3443,22 @@ packages:
         optional: true
     dependencies:
       typescript: 5.9.3
+      zod: 3.22.4
+    dev: false
+
+  /abitype@1.2.4(typescript@5.9.3)(zod@3.25.76):
+    resolution: {integrity: sha512-dpKH+N27vRjarMVTFFkeY445VTKftzGWpL0FiT7xmVmzQRKazZexzC5uHG0f6XKsVLAuUlndnbGau6lRejClxg==}
+    peerDependencies:
+      typescript: '>=5.0.4'
+      zod: ^3.22.0 || ^4.0.0
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+      zod:
+        optional: true
+    dependencies:
+      typescript: 5.9.3
+      zod: 3.25.76
     dev: false
 
   /abort-controller@3.0.0:
@@ -4708,7 +4733,7 @@ packages:
       wrappy: 1.0.2
     dev: false
 
-  /openai@4.104.0(zod@3.25.76):
+  /openai@4.104.0(ws@8.20.1)(zod@3.25.76):
     resolution: {integrity: sha512-p99EFNsA/yX6UhVO93f5kJsDRLAg+CTA2RBqdHK4RtK8u5IJw32Hyb2dTGKbnnFmnuoBv5r7Z2CURI9sGZpSuA==}
     hasBin: true
     peerDependencies:
@@ -4727,6 +4752,7 @@ packages:
       form-data-encoder: 1.7.2
       formdata-node: 4.4.1
       node-fetch: 2.7.0
+      ws: 8.20.1
       zod: 3.25.76
     transitivePeerDependencies:
       - encoding
@@ -4746,7 +4772,7 @@ packages:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
+      abitype: 1.2.4(typescript@5.9.3)(zod@3.22.4)
       eventemitter3: 5.0.1
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -4767,7 +4793,7 @@ packages:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.22.4)
+      abitype: 1.2.4(typescript@5.9.3)(zod@3.22.4)
       eventemitter3: 5.0.1
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -4788,13 +4814,12 @@ packages:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
+      abitype: 1.2.4(typescript@5.9.3)(zod@3.25.76)
       eventemitter3: 5.0.1
       typescript: 5.9.3
     transitivePeerDependencies:
       - zod
     dev: false
-    optional: true
 
   /ox@0.6.9(typescript@5.9.3):
     resolution: {integrity: sha512-wi5ShvzE4eOcTwQVsIPdFr+8ycyX+5le/96iAJutaZAvCes1J0+RvpEPg5QDPDiaR0XQQAvZVl7AwqQcINuUug==}
@@ -4810,7 +4835,7 @@ packages:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.4(typescript@5.9.3)
+      abitype: 1.2.4(typescript@5.9.3)(zod@3.22.4)
       eventemitter3: 5.0.1
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -4832,7 +4857,7 @@ packages:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.4(typescript@5.9.3)
+      abitype: 1.2.4(typescript@5.9.3)(zod@3.22.4)
       eventemitter3: 5.0.1
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -5596,7 +5621,7 @@ packages:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
+      abitype: 1.2.3(typescript@5.9.3)(zod@3.22.4)
       isows: 1.0.7(ws@8.20.1)
       ox: 0.14.29(typescript@5.9.3)
       typescript: 5.9.3
@@ -5652,7 +5677,6 @@ packages:
       - utf-8-validate
       - zod
     dev: false
-    optional: true
 
   /vite-node@2.1.9(@types/node@22.20.0):
     resolution: {integrity: sha512-AM9aQ/IPrW/6ENLQg3AGY4K1N2TGZdR5e4gu/MmmR2xR3Ll1+dib+nook92g4TV3PXVyeyxdWwtaCAiUL0hMxA==}

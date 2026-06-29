@@ -3,6 +3,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { getAddress, type Address } from "viem";
 import { buildAgentId, signAgentId } from "./sign.js";
 import { verifyAgentId, type HumanRootLookup } from "./verify.js";
+import { credentialFromWire, credentialToWire } from "./serialize.js";
 import type { AgentIdCredential } from "./types.js";
 
 // Deterministic test actors.
@@ -105,6 +106,17 @@ describe("Agent ID — issue & verify", () => {
     expect(result.valid).toBe(false);
     // Changing the message changes the recovered signer.
     expect(result.reason).toBe("signature_mismatch");
+  });
+
+  it("survives a wire round-trip and still verifies", async () => {
+    const cred = await issueCredential();
+    const roundTripped = credentialFromWire(credentialToWire(cred));
+    expect(roundTripped.fields.stake).toBe(cred.fields.stake);
+    expect(roundTripped.fields.expiresAt).toBe(cred.fields.expiresAt);
+    const result = await verifyAgentId(roundTripped, {
+      humanRootLookup: verifiedLookup,
+    });
+    expect(result.valid).toBe(true);
   });
 
   it("honors an explicit `now` for time checks", async () => {
