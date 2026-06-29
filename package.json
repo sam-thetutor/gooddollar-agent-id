@@ -1,0 +1,34 @@
+{
+  "name": "gooddollar-agent-id",
+  "private": true,
+  "version": "0.0.0",
+  "description": "GoodDollar Agent ID — passport-free Proof-of-Human layer for AI agents on Celo",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "dev:api": "pnpm --filter @g-copilot/api dev",
+    "dev:mini": "pnpm --filter @g-copilot/mini-app dev",
+    "dev:mcp": "pnpm --filter @g-copilot/mcp-server dev",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "db:push": "pnpm --filter @g-copilot/db db:push",
+    "db:studio": "pnpm --filter @g-copilot/db db:studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "viem": "^2.31.3",
+      "@walletconnect/core": "2.23.10",
+      "@walletconnect/sign-client": "2.23.10",
+      "@walletconnect/universal-provider": "2.23.10",
+      "@walletconnect/utils": "2.23.10"
+    }
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
