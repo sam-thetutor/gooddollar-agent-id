@@ -38,7 +38,7 @@ domain = {
 AgentID = {
   agent:      address,   // the agent's address
   operator:   address,   // the human's wallet (must be GoodDollar-whitelisted)
-  humanRoot:  bytes32,   // getWhitelistedRoot(operator) at issuance
+  humanRoot:  address,   // getWhitelistedRoot(operator) at issuance (root wallet)
   scopes:     string,    // e.g. "pay,trade,post" — what the agent may do
   stake:      uint256,   // G$ bonded (0 if off-chain only)
   budgetCap:  uint256,   // max G$ the agent may spend (delegated)
