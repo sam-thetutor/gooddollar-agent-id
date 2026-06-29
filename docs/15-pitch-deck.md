@@ -93,7 +93,7 @@ and make that proof readable by **ERC-8004**.
 ## Slide 8 — How it works (one diagram)
 
 ```
-Operator (MiniPay) ──face-verify (GoodDollar)──▶ humanRoot
+Operator (web app + MetaMask) ──face-verify (GoodDollar)──▶ humanRoot
         │ signs EIP-712 "Agent ID" (non-custodial)
         ▼
    Agent ID credential ──embed──▶ ERC-8004 agent metadata
@@ -140,7 +140,7 @@ Novel utility — not basic claim/send:
 | Reaches | Document-holders | **The document-less (900K)** |
 | Standard | ERC-8004 | **Same standard** |
 | Token role | — | **G$ stake + budget** |
-| On-ramp | Self app | **MiniPay** |
+| On-ramp | Self app | **Web app + MetaMask** |
 
 **Say:** "We're additive: ERC-8004 handles agent identity, we supply the human root Self can't."
 
@@ -161,7 +161,7 @@ Novel utility — not basic claim/send:
 
 Reusing live infrastructure (pivoted from G$ Copilot):
 
-- GoodDollar identity reads · MCP server · MiniPay app + self-hosted AI copilot
+- GoodDollar identity reads · MCP server · web app (MetaMask) + self-hosted AI copilot
 - Live: `gcopilot.geinz.lol` (app) · `gcopilot-api.geinz.lol` (API)
 
 **Say:** "We're not starting from zero — the on-ramp, identity reads, and deploy are already running."
