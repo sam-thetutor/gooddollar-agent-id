@@ -39,16 +39,22 @@ Operator (MiniPay) ──verify (GoodDollar face)──▶ humanRoot
 
 ## Status
 
-**Pivoted to GoodDollar Agent ID.** Foundation reused from the earlier "G$ Copilot" scope
-(GoodDollar identity reads, MCP server, MiniPay app + self-hosted LLM copilot, live VPS
-deploy). Next: **Phase A — credential core** (`packages/agent-id`). See
-[docs/13-implementation-plan.md](./docs/13-implementation-plan.md).
+**GoodDollar Agent ID** — credential core + API/MCP + website are in place:
+
+- **Phase A** ✅ `packages/agent-id` — EIP-712 sign/verify with live human-root check
+- **Phase B** ✅ API (`/agent/issue`, `/agent/verify/:address`, `/agent/list`) + MCP `gooddollar_verify_agent`, backed by Postgres
+- **Phase C** 🔄 Website issue flow (MetaMask via Reown AppKit) — code-complete
+- **Phase D** ✅ Public verify page
+
+Next: live valid-issue test with a GoodDollar-verified wallet, then **Phase E**
+(G$ stake + budget). See [docs/13-implementation-plan.md](./docs/13-implementation-plan.md).
 
 ## Prerequisites
 
 - Node.js 20+
 - pnpm 9+
-- Telegram bot token ([@BotFather](https://t.me/BotFather)) for the bot app
+- A WalletConnect/Reown project id in `VITE_WALLETCONNECT_PROJECT_ID` (for the wallet modal)
+- A `DATABASE_URL` (Postgres/Supabase) for storing credentials
 
 ## Quick start
 
@@ -56,20 +62,20 @@ deploy). Next: **Phase A — credential core** (`packages/agent-id`). See
 # Install dependencies
 pnpm install
 
-# Copy env and add TELEGRAM_BOT_TOKEN
+# Env (already present in .env for this repo)
 cp .env.example .env
 
 # Build all packages
 pnpm build
 
+# Push the DB schema (creates agent_credentials)
+pnpm db:push
+
 # Terminal 1 — API (http://localhost:3001/health)
 pnpm dev:api
 
-# Terminal 2 — Telegram bot
-pnpm dev:bot
-
-# Terminal 3 — Mini App (http://localhost:5173)
-pnpm dev:mini
+# Terminal 2 — Website (http://localhost:5173)
+pnpm dev:web
 
 # Optional — MCP server (stdio)
 pnpm dev:mcp
@@ -80,8 +86,8 @@ pnpm dev:mcp
 ```
 apps/
   api/            HTTP API (Hono) — /agent/* + copilot /chat
-  mini-app/       Vite + React MiniPay app (issue, My Agents, verify)
-  telegram-bot/   Telegraf bot (secondary channel)
+  web/            Vite + React website — MetaMask via Reown AppKit
+                  (issue, My Agents, public verify)
 packages/
   shared/         Constants, Zod, errors
   chain/          Viem Celo client + GoodDollar identity reads
@@ -92,74 +98,24 @@ packages/
 docs/             Overview, Agent ID spec & implementation plan
 ```
 
-## Phase 0 verification
+## Verify it works
 
 ```bash
+# API health (live Celo RPC + DB)
 curl http://localhost:3001/health
-# → { "ok": true, "service": "g-copilot-api", ... }
 
-pnpm dev:bot
-# Send /start to your bot in Telegram
+# Verify an agent (unknown → found:false)
+curl http://localhost:3001/agent/verify/0x2222222222222222222222222222222222222222
 
-pnpm dev:mini
-# Open http://localhost:5173
+# Website — open and connect MetaMask
+open http://localhost:5173
+#   Connect → (verify with GoodDollar if needed) → Issue an Agent ID
+#   Public verify page: http://localhost:5173/verify?agent=0x…
 ```
 
-## Phase 1 verification (live chain reads)
-
-```bash
-pnpm build
-
-# Bot: send these to your bot (any Celo address works, no wallet connect yet)
-#   /balance 0xYourCeloAddress
-#   /verify  0xYourCeloAddress
-#   /status  0xYourCeloAddress
-
-# MCP server: JSON-RPC stdio roundtrip over all read tools
-cp scripts/mcp-smoke.mjs packages/mcp-server/ && \
-  (cd packages/mcp-server && node mcp-smoke.mjs; rm -f mcp-smoke.mjs)
-```
-
-Live Celo contracts: G$ `0x62B8…9c7A` · Identity `0xC361…2F42` · UBIScheme `0x43d7…a4A1`.
-
-## Phase 2 verification (API + DB)
-
-```bash
-# Push schema (reads root .env automatically)
-pnpm db:push
-pnpm db:studio        # browse tables in a GUI
-
-# Start the API, then exercise the endpoints
-pnpm dev:api
-curl -X POST http://localhost:3001/sessions/link \
-  -H 'content-type: application/json' \
-  -d '{"telegramId":"123","wallet":"0x66e7D7839333f502df355f5bD87AEa24F7bD6Dc6"}'
-curl http://localhost:3001/sessions/123
-
-# Bot: link a wallet, then omit the address
-pnpm dev:bot
-#   /connect 0x66e7D7839333f502df355f5bD87AEa24F7bD6Dc6
-#   /status            (uses the linked wallet)
-#   /disconnect
-```
-
-App tables live in the `gcopilot` schema. See `.env.example` for the `DATABASE_URL` format (local Docker or Supabase pooler).
-
-## Phase 3 verification (wallet connect)
-
-```bash
-# Browser fallback (no Telegram needed): connect a wallet and link to a session
-pnpm dev:api
-pnpm dev:mini
-# open http://localhost:5173/connect?tg=123  → connect wallet → auto-links to session 123
-curl http://localhost:3001/sessions/123     # → walletAddress populated
-
-# In Telegram (manual link works without HTTPS):
-pnpm dev:bot
-#   /connect 0xYourCeloAddress   → links, then /status with no arg
-```
-
-Full in-Telegram Mini App flow (mobile/web) requires the Mini App + API on public **HTTPS** — set `MINI_APP_URL` and `VITE_API_BASE_URL` to your deployed URLs. `initData` HMAC is enforced automatically in production (or set `REQUIRE_INIT_DATA=true`).
+Live Celo contracts: G$ `0x62B8…9c7A` · Identity `0xC361…2F42`.
+Issuing a valid Agent ID requires the connected wallet to be a GoodDollar-verified
+human (the API re-checks the live whitelist before storing).
 
 ## Documentation
 

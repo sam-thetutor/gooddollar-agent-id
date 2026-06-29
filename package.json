@@ -7,7 +7,7 @@
     "build": "turbo build",
     "dev": "turbo dev",
     "dev:api": "pnpm --filter @g-copilot/api dev",
-    "dev:mini": "pnpm --filter @g-copilot/mini-app dev",
+    "dev:web": "pnpm --filter @g-copilot/web dev",
     "dev:mcp": "pnpm --filter @g-copilot/mcp-server dev",
     "lint": "turbo lint",
     "test": "turbo test",

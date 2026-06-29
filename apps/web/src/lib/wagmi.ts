@@ -1,0 +1,41 @@
+import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
+import { celo } from "@reown/appkit/networks";
+import { createAppKit } from "@reown/appkit/react";
+import { http } from "wagmi";
+
+const projectId =
+  (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined) ?? "";
+const rpcUrl = import.meta.env.VITE_CELO_RPC_URL as string | undefined;
+
+const networks = [celo] as const;
+
+// Reown AppKit (multi-wallet modal) on top of wagmi. MetaMask is the headline
+// connector; WalletConnect QR + Coinbase etc. come for free.
+export const wagmiAdapter = new WagmiAdapter({
+  projectId,
+  networks: [...networks],
+  transports: {
+    [celo.id]: http(rpcUrl),
+  },
+});
+
+export const config = wagmiAdapter.wagmiConfig;
+
+createAppKit({
+  adapters: [wagmiAdapter],
+  networks: [celo],
+  projectId,
+  metadata: {
+    name: "GoodDollar Agent ID",
+    description: "The passport-free Proof-of-Human layer for AI agents.",
+    url: "https://gcopilot.geinz.lol",
+    icons: ["https://gcopilot.geinz.lol/icon.png"],
+  },
+  features: {
+    analytics: false,
+    email: false,
+    socials: [],
+  },
+});
+
+export const CELO_ID = celo.id;
