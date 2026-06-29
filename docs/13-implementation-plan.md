@@ -75,14 +75,14 @@ pass before moving on. Check boxes as you go and update the status tracker at th
 **Goal:** Expose issue/verify over REST and MCP, backed by persistence.
 
 **Tasks**
-- [ ] B1. `packages/shared` — add Zod: `agentIdFieldsSchema`, `issueAgentRequestSchema` (signed credential), `verifyAgentResponseSchema`.
-- [ ] B2. `packages/db` — Prisma model `AgentCredential` (`agent` PK/unique, `operator`, `humanRoot`, `scopes`, `stake`, `budgetCap`, `nonce`, `issuedAt`, `expiresAt`, `signature`, `revokedAt?`, timestamps) in the `gcopilot` schema; `db:push`.
-- [ ] B3. `packages/db` — repository: `upsertAgentCredential`, `getAgentCredential(agent)`, `revokeAgentCredential(agent)`.
-- [ ] B4. `apps/api` — `POST /agent/issue`: validate body, re-verify signature + human root server-side, persist, return stored credential.
-- [ ] B5. `apps/api` — `GET /agent/verify/:address`: load credential, run `verifyAgentId` with **live** human-root lookup, return `VerifyResult` (+ `found:false` when none).
-- [ ] B6. `apps/api` — `GET /agent/list?operator=` : list an operator's agents (for "My Agents").
-- [ ] B7. `packages/mcp-server` — add tools `gooddollar_issue_agent_id`, `gooddollar_verify_agent`, `gooddollar_get_agent_status` to `createMcpServer()` switch + `ListTools`.
-- [ ] B8. Copilot wiring (`apps/api/src/lib/agent.ts`): let the copilot answer "is agent X human-backed?" via the new verify tool.
+- [x] B1. `packages/shared` — add Zod: `agentIdFieldsSchema`, `issueAgentRequestSchema` (signed credential), `verifyAgentResponseSchema`.
+- [x] B2. `packages/db` — Prisma model `AgentCredential` (`agent` PK/unique, `operator`, `humanRoot`, `scopes`, `stake`, `budgetCap`, `nonce`, `issuedAt`, `expiresAt`, `signature`, `revokedAt?`, timestamps) in the `gcopilot` schema; `db:push`.
+- [x] B3. `packages/db` — repository: `upsertAgentCredential`, `getAgentCredential(agent)`, `revokeAgentCredential(agent)`.
+- [x] B4. `apps/api` — `POST /agent/issue`: validate body, re-verify signature + human root server-side, persist, return stored credential.
+- [x] B5. `apps/api` — `GET /agent/verify/:address`: load credential, run `verifyAgentId` with **live** human-root lookup, return `VerifyResult` (+ `found:false` when none).
+- [x] B6. `apps/api` — `GET /agent/list?operator=` : list an operator's agents (for "My Agents").
+- [x] B7. `packages/mcp-server` — add `gooddollar_verify_agent` (verifies a passed credential, or looks up by `agent` address via an injectable `agentLookup`) to `createMcpServer()`. (Issuing stays a wallet/API action — not an MCP tool, since it needs the operator's signature; status is the address branch of verify.)
+- [x] B8. Copilot wiring (`apps/api/src/lib/agent.ts`): `createMcpServer({ agentLookup })` backed by the DB, so the copilot can answer "is agent X human-backed?" via the verify tool.
 
 **Deliverables:** working REST + MCP issue/verify backed by Postgres.
 
@@ -180,8 +180,8 @@ A ─▶ B ─▶ C ─▶ D   ⇒  demoable product (off-chain, MiniPay + Explo
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| A Credential core | ✅ Gate passed | `packages/agent-id`: EIP-712 sign/verify + live human-root lookup; 7/7 vitest green (2026-06-29) |
-| B API + MCP | ⬜ Not started | `/agent/issue`, `/agent/verify/:addr`, MCP tools, Prisma model |
+| A Credential core | ✅ Gate passed | `packages/agent-id`: EIP-712 sign/verify + live human-root lookup; 8/8 vitest green (2026-06-29) |
+| B API + MCP | ✅ Gate passed | `/agent/issue`, `/agent/verify/:addr`, `/agent/list`; MCP `gooddollar_verify_agent` (+injectable lookup); Prisma `AgentCredential` pushed to live Supabase; end-to-end smoke vs live Celo (2026-06-29) |
 | C MiniPay issue | ⬜ Not started | verify gate + sign + persist |
 | D Explorer/Verify | ⬜ Not started | public verify page |
 | E Stake + budget | ⬜ Not started | `packages/contracts` |

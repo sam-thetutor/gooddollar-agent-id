@@ -63,3 +63,27 @@ model AuditLog {
 
   @@map("audit_logs")
 }
+
+// GoodDollar Agent ID — a signed Proof-of-Human credential for an AI agent.
+// Numeric fields are stored as decimal strings to round-trip uint256/uint64
+// exactly (see packages/agent-id wire form).
+model AgentCredential {
+  agent             String    @id
+  operator          String
+  humanRoot         String    @map("human_root")
+  scopes            String
+  stake             String    @default("0")
+  budgetCap         String    @default("0") @map("budget_cap")
+  nonce             String    @default("0")
+  issuedAt          String    @map("issued_at")
+  expiresAt         String    @map("expires_at")
+  signature         String
+  chainId           Int       @map("chain_id")
+  verifyingContract String    @map("verifying_contract")
+  revokedAt         DateTime? @map("revoked_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([operator])
+  @@map("agent_credentials")
+}

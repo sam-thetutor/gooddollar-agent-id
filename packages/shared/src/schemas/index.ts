@@ -73,3 +73,47 @@ export const chatRequestSchema = z.object({
   wallet: addressSchema.optional(),
 });
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
+
+// ---------------------------------------------------------------------------
+// GoodDollar Agent ID — credential issue/verify (wire form: bigints as strings)
+// ---------------------------------------------------------------------------
+
+/** A non-negative integer encoded as a decimal string (for uint256/uint64). */
+export const numericStringSchema = z
+  .string()
+  .regex(/^\d+$/, "Must be a non-negative integer string");
+
+/** 0x-prefixed hex signature (any even length). */
+export const hexSignatureSchema = z
+  .string()
+  .regex(/^0x[a-fA-F0-9]+$/, "Invalid hex signature");
+
+/** Comma-separated capability scopes, e.g. "pay,trade,post". */
+export const scopesSchema = z.string().min(1).max(200);
+
+/** The EIP-712 `AgentID` fields in JSON-safe wire form. */
+export const agentIdFieldsSchema = z.object({
+  agent: addressSchema,
+  operator: addressSchema,
+  humanRoot: addressSchema,
+  scopes: scopesSchema,
+  stake: numericStringSchema,
+  budgetCap: numericStringSchema,
+  nonce: numericStringSchema,
+  issuedAt: numericStringSchema,
+  expiresAt: numericStringSchema,
+});
+export type AgentIdFieldsInput = z.infer<typeof agentIdFieldsSchema>;
+
+/** A signed Agent ID credential as sent to / stored by the API. */
+export const agentIdCredentialSchema = z.object({
+  fields: agentIdFieldsSchema,
+  signature: hexSignatureSchema,
+  chainId: z.number().int().positive(),
+  verifyingContract: addressSchema,
+});
+export type AgentIdCredentialInput = z.infer<typeof agentIdCredentialSchema>;
+
+/** POST /agent/issue — submit a signed credential to be verified + stored. */
+export const issueAgentRequestSchema = agentIdCredentialSchema;
+export type IssueAgentRequest = z.infer<typeof issueAgentRequestSchema>;
