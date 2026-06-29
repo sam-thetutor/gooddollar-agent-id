@@ -28,7 +28,7 @@ There is no **passport-free, GoodDollar-rooted** way for a real human to prove t
 |-----------|-------------|
 | **Agent ID SDK + MCP tools** | `issueAgentId` / `verifyAgent` — issue and verify GoodDollar-rooted agent credentials in minutes |
 | **ERC-8004 integration** | GoodDollar registered as an alternative **Proof-of-Human provider** (no passport), interoperable with Celo's agent stack |
-| **MiniPay copilot** | The human on-ramp: face-verify → mint an Agent ID → manage stake/budget, signed in MiniPay |
+| **Web app (MetaMask)** | The human on-ramp: connect → face-verify → mint an Agent ID → manage stake/budget, signed in your own wallet |
 | **Agent ID Explorer** | Public page to verify any agent: human-backed? root, stake, scopes, expiry |
 | **G$ as agent money** | G$ **stake/bond** for accountability + **delegated, capped spending budget** per agent |
 
@@ -44,7 +44,7 @@ There is no **passport-free, GoodDollar-rooted** way for a real human to prove t
 | Reachable users | Document-holders | The **document-less**, underbanked, Global South (GoodDollar's ≈900K) |
 | Standard | ERC-8004 Proof-of-Human extension | **Same standard**, GoodDollar as an alternative provider |
 | Token role | — | **G$** as accountability stake + delegated agent budget |
-| On-ramp | Self app | **MiniPay** (where GoodDollar's users already are) |
+| On-ramp | Self app | **Web app + MetaMask** (any wallet, via Reown AppKit) |
 
 We are **additive, not competitive**: ERC-8004 handles agent identity/discovery/reputation; **GoodDollar supplies the passport-free human root** — the one thing Self can't do for the undocumented.
 
@@ -75,11 +75,11 @@ We are **additive, not competitive**: ERC-8004 handles agent identity/discovery/
 
 ### In scope (v1)
 - GoodDollar Proof-of-Human reads (`getWhitelistedRoot`, expiry) via the Identity Kit
-- Face-verification on-ramp (`generateFVLink`) in MiniPay
+- Face-verification on-ramp (GoodDollar) from the web app
 - EIP-712 **Agent ID credential** (issue + verify), GoodDollar-rooted
 - **ERC-8004 Tier 1**: GoodDollar proof embedded in the agent record + verifier
 - G$ **stake** + **delegated spending budget** per agent
-- MiniPay copilot (on-ramp + "My Agents" management)
+- Web app (MetaMask via Reown AppKit): on-ramp + Issue + "My Agents" management
 - Public **Agent ID Explorer / verify** page
 - Open **SDK + MCP tools** for issuing/verifying
 
@@ -109,14 +109,14 @@ We are **additive, not competitive**: ERC-8004 handles agent identity/discovery/
 This project repurposes infrastructure already shipped:
 - **GoodDollar identity reads** (`@goodsdks/citizen-sdk`-style) in `packages/chain`
 - **MCP server** (`packages/mcp-server`) + in-process agent bridge in `apps/api`
-- **MiniPay Mini App** (`apps/mini-app`) + self-hosted LLM copilot
+- **Web app** (`apps/web`, MetaMask via Reown AppKit) + self-hosted LLM copilot
 - **Live deployment**: `https://gcopilot.geinz.lol` (app) · `https://gcopilot-api.geinz.lol` (API) on VPS behind nginx + PM2
 
 ---
 
 ## Success criteria
 
-- A GoodDollar-verified human can mint an **Agent ID** for their agent in MiniPay in under 2 minutes — **without a passport**.
+- A GoodDollar-verified human can mint an **Agent ID** for their agent from the web app (MetaMask) in under 2 minutes — **without a passport**.
 - Any developer can call `verifyAgent(address)` (MCP/REST) and get `{ valid, humanRoot, stake, scopes, expiresAt }` in under 10 minutes of integration.
 - An agent's credential **auto-invalidates** if the human's GoodDollar verification lapses.
 - All agent spending is **capped and revocable**, signed by the operator.

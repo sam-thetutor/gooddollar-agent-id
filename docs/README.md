@@ -28,8 +28,8 @@ Built for [GoodBuilders Season 4](https://ubi.gd/goodbuilders).
 | [Monorepo structure](./03-monorepo-structure.md) | Folder layout and package boundaries |
 | [MCP server](./04-mcp-server.md) | Tool definitions and MCP protocol |
 | [Telegram bot](./05-telegram-bot.md) | Secondary channel (deprioritized) |
-| [Mini App](./06-telegram-mini-app.md) | MiniPay app shell + signing UI |
-| [Wallet connection](./07-wallet-connection.md) | MiniPay injected provider + fallbacks |
+| [Mini App](./06-telegram-mini-app.md) | (legacy) earlier MiniPay shell — superseded by `apps/web` |
+| [Wallet connection](./07-wallet-connection.md) | (legacy) wallet connection notes |
 | [Onchain integration](./08-onchain-integration.md) | GoodDollar SDK, Celo |
 | [Data model](./09-data-model.md) | Persistence |
 | [Security](./10-security.md) | Threat model, signing rules |
@@ -40,7 +40,7 @@ Built for [GoodBuilders Season 4](https://ubi.gd/goodbuilders).
 ## Quick reference
 
 ```
-Operator (MiniPay) ──verify (GoodDollar face)──▶ humanRoot
+Operator (web + MetaMask) ──verify (GoodDollar face)──▶ humanRoot
         │ sign EIP-712 AgentID (non-custodial)
         ▼
    Agent ID credential ──embed──▶ ERC-8004 agent metadata
@@ -62,7 +62,7 @@ verification lapses. Agents only spend within a capped, revocable G$ budget.
 | SDK / MCP | TypeScript, `@modelcontextprotocol/sdk` |
 | Contracts (Tier 2) | Solidity — stake / budget / attestation |
 | API | Node.js, Hono, Prisma + Postgres |
-| App | Vite, React, Wagmi v2, MiniPay injected provider |
+| App | Vite, React, Wagmi v3, Reown AppKit (MetaMask + multi-wallet) |
 | Copilot LLM | Self-hosted Ollama (OpenAI-compatible), swappable |
 | Chain | Celo mainnet (42220), ERC-8004 registry `0x8004…a432` |
 | Hosting | VPS — nginx + PM2 (`gcopilot.geinz.lol`, `gcopilot-api.geinz.lol`) |
