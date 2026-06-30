@@ -28,7 +28,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <main className="app">
           <header>
-            <p className="eyebrow">G$ Copilot</p>
+            <p className="eyebrow">GoodDollar Agent ID</p>
             <h1>Something went wrong</h1>
           </header>
           <section className="card">

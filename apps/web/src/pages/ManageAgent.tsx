@@ -1,0 +1,293 @@
+import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { formatUnits, getAddress, isAddress, maxUint256, parseUnits } from "viem";
+import {
+  useAccount,
+  usePublicClient,
+  useReadContract,
+  useWriteContract,
+} from "wagmi";
+import { Nav, ConnectButton } from "../components/Nav.js";
+import { Footer } from "../components/Footer.js";
+import {
+  agentVaultAbi,
+  erc20Abi,
+  G_DOLLAR_ADDRESS,
+  G_DOLLAR_DECIMALS,
+  isVaultConfigured,
+  VAULT_ADDRESS,
+} from "../lib/vault.js";
+
+type AgentSnapshot = readonly [
+  `0x${string}`, // operator
+  bigint, // stake
+  bigint, // unstake unlock timestamp (0 = none)
+];
+
+function fmt(v: bigint): string {
+  return formatUnits(v, G_DOLLAR_DECIMALS);
+}
+
+export function ManageAgent() {
+  const [params] = useSearchParams();
+  const agentParam = params.get("agent") ?? "";
+  const { address, isConnected } = useAccount();
+  const publicClient = usePublicClient();
+  const { writeContractAsync } = useWriteContract();
+
+  const [amount, setAmount] = useState("250");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const agentValid = isAddress(agentParam);
+  const agent = agentValid ? (getAddress(agentParam) as `0x${string}`) : null;
+
+  const snapshot = useReadContract({
+    address: VAULT_ADDRESS ?? undefined,
+    abi: agentVaultAbi,
+    functionName: "getAgent",
+    args: agent ? [agent] : undefined,
+    query: { enabled: Boolean(VAULT_ADDRESS && agent) },
+  });
+
+  const allowance = useReadContract({
+    address: G_DOLLAR_ADDRESS,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address && VAULT_ADDRESS ? [address, VAULT_ADDRESS] : undefined,
+    query: { enabled: Boolean(address && VAULT_ADDRESS) },
+  });
+
+  // "Approved" once the standing allowance comfortably exceeds the typed amount.
+  const approved = useMemo(() => {
+    const a = allowance.data as bigint | undefined;
+    if (a === undefined) return false;
+    try {
+      return a >= parseUnits(amount || "0", G_DOLLAR_DECIMALS) && a > 0n;
+    } catch {
+      return a > 0n;
+    }
+  }, [allowance.data, amount]);
+
+  const data = snapshot.data as AgentSnapshot | undefined;
+  const isOperator = useMemo(() => {
+    if (!data || !address) return false;
+    const op = data[0];
+    if (/^0x0+$/.test(op)) return true; // unclaimed → first staker becomes operator
+    return getAddress(op) === getAddress(address);
+  }, [data, address]);
+
+  const unlockAt = data ? Number(data[2]) : 0;
+  const now = Math.floor(Date.now() / 1000);
+  const unstakeRequested = unlockAt > 0;
+  const cooldownOver = unstakeRequested && now >= unlockAt;
+
+  async function run(label: string, fn: () => Promise<`0x${string}`>) {
+    setError(null);
+    setNotice(null);
+    setBusy(label);
+    try {
+      const hash = await fn();
+      await publicClient?.waitForTransactionReceipt({ hash });
+      setNotice(`${label} confirmed.`);
+      await Promise.all([snapshot.refetch(), allowance.refetch()]);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function wei(): bigint {
+    return parseUnits(amount || "0", G_DOLLAR_DECIMALS);
+  }
+
+  // Approve an unlimited allowance once so future stakes need no re-approval.
+  const approve = () =>
+    run("Approve", () =>
+      writeContractAsync({
+        address: G_DOLLAR_ADDRESS,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [VAULT_ADDRESS!, maxUint256],
+      }),
+    );
+
+  const stake = () =>
+    run("Stake", () =>
+      writeContractAsync({
+        address: VAULT_ADDRESS!,
+        abi: agentVaultAbi,
+        functionName: "stake",
+        args: [agent!, wei()],
+      }),
+    );
+
+  const requestUnstake = () =>
+    run("Request unstake", () =>
+      writeContractAsync({
+        address: VAULT_ADDRESS!,
+        abi: agentVaultAbi,
+        functionName: "requestUnstake",
+        args: [agent!],
+      }),
+    );
+
+  const withdraw = () =>
+    run("Withdraw stake", () =>
+      writeContractAsync({
+        address: VAULT_ADDRESS!,
+        abi: agentVaultAbi,
+        functionName: "withdrawStake",
+        args: [agent!, wei()],
+      }),
+    );
+
+  return (
+    <>
+      <Nav />
+      <main className="page">
+      <header className="hero compact">
+        <h1>Manage stake</h1>
+        <p className="lede">
+          Manage the refundable G$ bond behind your agent. A bond of at least
+          the vault minimum is required to keep an agent registered; you can
+          withdraw it any time after a short cooldown (it always returns to you).
+        </p>
+      </header>
+
+      {!agentValid && (
+        <section className="card">
+          <p className="error">Provide a valid agent address: /manage?agent=0x…</p>
+        </section>
+      )}
+
+      {agentValid && !isVaultConfigured() && (
+        <section className="card">
+          <p className="warn">On-chain stake vault not configured.</p>
+          <p className="muted hint">
+            Set <code>VITE_AGENT_VAULT_ADDRESS</code> to the deployed AgentVault
+            address to enable staking here.
+          </p>
+        </section>
+      )}
+
+      {agentValid && isVaultConfigured() && !isConnected && (
+        <section className="card">
+          <p className="muted">Connect your wallet to manage this agent.</p>
+          <ConnectButton />
+        </section>
+      )}
+
+      {agentValid && isVaultConfigured() && isConnected && (
+        <>
+          <section className="card">
+            <h2 className="card-title">On-chain stake</h2>
+            {snapshot.isLoading && <p className="muted">Reading Celo…</p>}
+            {data && (
+              <dl className="kv">
+                <dt>Agent</dt>
+                <dd>{agent}</dd>
+                <dt>Operator</dt>
+                <dd>{/^0x0+$/.test(data[0]) ? "— (unstaked)" : data[0]}</dd>
+                <dt>Stake</dt>
+                <dd>{fmt(data[1])} G$</dd>
+                <dt>Unstake</dt>
+                <dd>
+                  {!unstakeRequested
+                    ? "—"
+                    : cooldownOver
+                      ? "ready to withdraw"
+                      : `unlocks ${new Date(unlockAt * 1000).toLocaleString()}`}
+                </dd>
+              </dl>
+            )}
+          </section>
+
+          {!isOperator && data && (
+            <section className="card">
+              <p className="warn">
+                Only the operator that staked this agent can manage its bond.
+              </p>
+            </section>
+          )}
+
+          {isOperator && (
+            <section className="card form">
+              <h2 className="card-title">Actions</h2>
+              <label className="field">
+                <span>Amount (G$)</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </label>
+
+              <p className="muted hint">
+                Approve once (unlimited) — the vault can then pull G$ for any
+                future stake without re-approving.{" "}
+                {approved && <span className="ok">G$ approved ✓</span>}
+              </p>
+
+              {error && <p className="error">{error}</p>}
+              {notice && <p className="ok">{notice}</p>}
+
+              <div className="actions wrap">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={Boolean(busy) || approved}
+                  onClick={approve}
+                >
+                  {busy === "Approve"
+                    ? "Approving…"
+                    : approved
+                      ? "✓ Approved"
+                      : "1. Approve G$"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={Boolean(busy)}
+                  onClick={stake}
+                >
+                  {busy === "Stake" ? "Staking…" : "2. Stake"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={Boolean(busy)}
+                  onClick={requestUnstake}
+                >
+                  {busy === "Request unstake"
+                    ? "Requesting…"
+                    : "Request unstake"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={Boolean(busy) || !cooldownOver}
+                  onClick={withdraw}
+                  title={
+                    !unstakeRequested
+                      ? "Request an unstake first"
+                      : !cooldownOver
+                        ? "Cooldown still active"
+                        : undefined
+                  }
+                >
+                  {busy === "Withdraw stake" ? "Withdrawing…" : "Withdraw stake"}
+                </button>
+              </div>
+            </section>
+          )}
+        </>
+      )}
+      </main>
+      <Footer />
+    </>
+  );
+}

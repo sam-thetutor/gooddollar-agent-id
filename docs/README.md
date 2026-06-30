@@ -1,12 +1,8 @@
 # GoodDollar Agent ID — Documentation
 
-**GoodDollar Agent ID** is the passport-free **Proof-of-Human layer for AI agents**. It lets any [GoodDollar](https://gooddollar.org) face-verified human cryptographically vouch for their AI agents — issuing a verifiable credential that plugs into the **ERC-8004** agent trust standard on Celo, with **G$** as the agent's accountability stake and capped spending budget.
+**GoodDollar Agent ID** is the passport-free **Proof-of-Human layer for AI agents**. It lets any [GoodDollar](https://gooddollar.org) face-verified human cryptographically vouch for their AI agents — issuing a verifiable, identity-only credential that plugs into the **ERC-8004** agent trust standard on Celo, backed by a **required, refundable G$ bond** (≥ 250 G$).
 
 Built for [GoodBuilders Season 4](https://ubi.gd/goodbuilders).
-
-> **Pivot note.** This project evolved from "G$ Copilot." The copilot now serves as the
-> human on-ramp; the product is the Agent ID layer. Some docs below (04–11) describe
-> reusable infrastructure from that earlier scope — see the implementation plan's reuse map.
 
 ---
 
@@ -20,20 +16,19 @@ Built for [GoodBuilders Season 4](https://ubi.gd/goodbuilders).
 | [**Implementation plan**](./13-implementation-plan.md) | Phased build + reuse map (start here for coding) |
 | [**GoodBuilders application**](./12-goodbuilders-application.md) | Draft submission text |
 
-## Supporting / reused infrastructure docs
+## Supporting infrastructure docs
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](./02-architecture.md) | System design, components, data flows |
+| [Architecture](./02-architecture.md) | System design, components, request flows, deployment |
 | [Monorepo structure](./03-monorepo-structure.md) | Folder layout and package boundaries |
-| [MCP server](./04-mcp-server.md) | Tool definitions and MCP protocol |
-| [Telegram bot](./05-telegram-bot.md) | Secondary channel (deprioritized) |
-| [Mini App](./06-telegram-mini-app.md) | (legacy) earlier MiniPay shell — superseded by `apps/web` |
-| [Wallet connection](./07-wallet-connection.md) | (legacy) wallet connection notes |
-| [Onchain integration](./08-onchain-integration.md) | GoodDollar SDK, Celo |
-| [Data model](./09-data-model.md) | Persistence |
-| [Security](./10-security.md) | Threat model, signing rules |
-| [Roadmap & milestones](./11-roadmap-milestones.md) | KPIs |
+| [MCP server](./04-mcp-server.md) | `verify_agent` + GoodDollar read tools |
+| [Onchain integration](./08-onchain-integration.md) | Identity, AgentVault, ERC-8004 on Celo |
+| [Data model](./09-data-model.md) | Persistence (Agent credentials + audit log) |
+| [Security](./10-security.md) | Threat model, non-custodial signing rules |
+
+> Roadmap and KPIs now live in the [implementation plan](./13-implementation-plan.md)
+> and the [GoodBuilders application](./12-goodbuilders-application.md).
 
 ---
 
@@ -50,7 +45,9 @@ Operator (web + MetaMask) ──verify (GoodDollar face)──▶ humanRoot
 
 **Trust rule:** Non-custodial. The human signs in their own wallet; verification
 re-reads the GoodDollar whitelist live, so credentials auto-invalidate if a human's
-verification lapses. Agents only spend within a capped, revocable G$ budget.
+verification lapses. Signing is free; registering an agent requires a refundable G$
+bond (≥ 250 G$), the bond is revocable after a cooldown, and each human can vouch for
+at most 10 active agents.
 
 ---
 
@@ -60,12 +57,11 @@ verification lapses. Agents only spend within a capped, revocable G$ budget.
 |-------|------------|
 | Credential | EIP-712, Viem, `@goodsdks/citizen-sdk` |
 | SDK / MCP | TypeScript, `@modelcontextprotocol/sdk` |
-| Contracts (Tier 2) | Solidity — stake / budget / attestation |
+| Contracts | Solidity — `AgentVault` (required refundable bond, stake-only) |
 | API | Node.js, Hono, Prisma + Postgres |
 | App | Vite, React, Wagmi v3, Reown AppKit (MetaMask + multi-wallet) |
-| Copilot LLM | Self-hosted Ollama (OpenAI-compatible), swappable |
 | Chain | Celo mainnet (42220), ERC-8004 registry `0x8004…a432` |
-| Hosting | VPS — nginx + PM2 (`gcopilot.geinz.lol`, `gcopilot-api.geinz.lol`) |
+| Hosting | Web on **Vercel** (`gooddollar-agent-id.vercel.app`); API on **VPS** nginx + PM2 (`gcopilot-api.geinz.lol`); npm: `@goodagent/agent-id`, `@goodagent/mcp-server` |
 
 ---
 

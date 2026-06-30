@@ -1,5 +1,5 @@
 {
-  "name": "@g-copilot/chain",
+  "name": "@goodagent/chain",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@g-copilot/shared": "workspace:*",
+    "@goodagent/shared": "workspace:*",
     "viem": "^2.31.3"
   },
   "devDependencies": {

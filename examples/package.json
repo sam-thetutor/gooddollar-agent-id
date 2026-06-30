@@ -1,0 +1,15 @@
+{
+  "name": "@goodagent/examples",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Runnable examples for the GoodDollar Agent ID SDK",
+  "scripts": {
+    "verify": "node verify-agent.mjs",
+    "register": "node register-onchain.mjs"
+  },
+  "dependencies": {
+    "@goodagent/agent-id": "workspace:*",
+    "viem": "^2.31.3"
+  }
+}

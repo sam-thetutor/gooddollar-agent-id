@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { isAddress } from "viem";
 import { Nav } from "../components/Nav.js";
+import { Footer } from "../components/Footer.js";
 import { verifyAgent, type VerifyResult } from "../lib/api.js";
 
 const REASON_LABEL: Record<string, string> = {
@@ -51,8 +52,9 @@ export function Verify() {
   const valid = r?.valid === true;
 
   return (
-    <div className="page">
+    <>
       <Nav />
+      <main className="page">
       <header className="hero compact">
         <h1>Verify an agent</h1>
         <p className="lede">
@@ -100,10 +102,6 @@ export function Verify() {
                 <dd>{r.operator}</dd>
                 <dt>Human root</dt>
                 <dd>{r.humanRoot}</dd>
-                <dt>Scopes</dt>
-                <dd>{r.scopes}</dd>
-                <dt>Stake</dt>
-                <dd>{r.stake ?? "0"} G$</dd>
                 <dt>Expires</dt>
                 <dd>
                   {r.expiresAt
@@ -112,9 +110,34 @@ export function Verify() {
                 </dd>
               </dl>
             )}
+            {valid && r.onchain?.vaultConfigured && (
+              <div className="onchain-block">
+                <p className="muted small">Accountability bond (G$)</p>
+                <dl className="kv">
+                  <dt>Bond staked</dt>
+                  <dd>
+                    {r.onchain.stakeFormatted} G${" "}
+                    {r.onchain.meetsMinStake ? (
+                      <span className="ok">✓ meets {r.onchain.minStakeFormatted} G$ minimum</span>
+                    ) : (
+                      <span className="warn">
+                        below {r.onchain.minStakeFormatted} G$ minimum
+                      </span>
+                    )}
+                  </dd>
+                </dl>
+                <p className="muted small">
+                  Registered agents lock a refundable bond of at least{" "}
+                  {r.onchain.minStakeFormatted} G$. Verifiers may also require a
+                  higher minimum.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </section>
-    </div>
+      </main>
+      <Footer />
+    </>
   );
 }

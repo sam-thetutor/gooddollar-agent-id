@@ -99,9 +99,6 @@ export async function verifyAgentId(
     valid: true,
     operator: fields.operator,
     humanRoot: fields.humanRoot,
-    scopes: fields.scopes,
-    stake: fields.stake,
-    budgetCap: fields.budgetCap,
     expiresAt: fields.expiresAt,
   };
 }

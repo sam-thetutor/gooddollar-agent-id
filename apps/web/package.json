@@ -1,5 +1,5 @@
 {
-  "name": "@g-copilot/web",
+  "name": "@goodagent/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@g-copilot/shared": "workspace:*",
+    "@goodagent/shared": "workspace:*",
     "@reown/appkit": "^1.8.21",
     "@reown/appkit-adapter-wagmi": "^1.8.21",
     "@tanstack/react-query": "^5.101.2",

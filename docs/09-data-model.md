@@ -1,208 +1,85 @@
 # Data model
 
-Database schema for sessions, pending actions, and audit logs.
+The API persists very little: signed Agent ID credentials and an append-only
+audit log. Everything trust-related (human verification, the required G$ bond)
+lives **on-chain**; the database is just a queryable index of issued credentials.
 
-**Recommended:** PostgreSQL via Prisma or Drizzle.
+**Storage:** PostgreSQL via Prisma (`packages/db`). Live on self-hosted Supabase.
 
-## Entity relationship
+## Entities
 
 ```mermaid
 erDiagram
-    TELEGRAM_SESSION ||--o{ PENDING_ACTION : creates
-    TELEGRAM_SESSION ||--o{ AUDIT_LOG : generates
-    PENDING_ACTION ||--o| TRANSACTION : completes
-
-    TELEGRAM_SESSION {
-        string telegram_id PK
-        string wallet_address
-        boolean verified
-        string fv_callback_token
-        timestamp wallet_linked_at
-        timestamp verified_at
+    AGENT_CREDENTIAL {
+        string agent PK
+        string operator
+        string human_root
+        string nonce
+        string issued_at
+        string expires_at
+        string signature
+        int    chain_id
+        string verifying_contract
+        timestamp revoked_at
         timestamp created_at
         timestamp updated_at
     }
 
-    PENDING_ACTION {
-        string id PK
-        string telegram_id FK
-        string action_type
-        string status
-        json payload
-        string tx_hash
-        timestamp expires_at
-        timestamp completed_at
-        timestamp created_at
-    }
-
     AUDIT_LOG {
         string id PK
-        string telegram_id
         string event_type
-        json metadata
+        json   metadata
         timestamp created_at
     }
 ```
 
-## Tables
+### `agent_credentials`
 
-### `telegram_sessions`
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `telegram_id` | `TEXT PK` | Telegram user ID |
-| `wallet_address` | `TEXT NULL` | Checksummed `0x...` |
-| `verified` | `BOOLEAN` | Cached; revalidate on-chain periodically |
-| `fv_callback_token` | `TEXT NULL` | One-time FV session token |
-| `wallet_linked_at` | `TIMESTAMP` | |
-| `verified_at` | `TIMESTAMP` | |
-| `created_at` | `TIMESTAMP` | |
-| `updated_at` | `TIMESTAMP` | |
-
-**Indexes:** `wallet_address`
-
-### `pending_actions`
+The signed EIP-712 Agent ID credential (the off-chain source of truth for an
+agent's identity). Numeric fields are stored as **decimal strings** to
+round-trip `uint256`/`uint64` exactly (see `packages/agent-id` wire form).
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `TEXT PK` | `act_{uuid}` |
-| `telegram_id` | `TEXT FK` | |
-| `action_type` | `ENUM` | `claim`, `transfer`, `create_stream` |
-| `status` | `ENUM` | `pending`, `completed`, `expired`, `failed` |
-| `payload` | `JSONB` | `{ from, to, amount, flowRate, ... }` |
-| `tx_hash` | `TEXT NULL` | Set on completion |
-| `expires_at` | `TIMESTAMP` | Default: created + 15 min |
-| `completed_at` | `TIMESTAMP NULL` | |
-| `created_at` | `TIMESTAMP` | |
+| `agent` | `TEXT PK` | The agent's address (checksummed) |
+| `operator` | `TEXT` | The GoodDollar-verified human who signed |
+| `human_root` | `TEXT` | Operator's GoodDollar root at issuance |
+| `nonce` | `TEXT` | Per-operator nonce |
+| `issued_at` / `expires_at` | `TEXT` | Unix seconds (string) |
+| `signature` | `TEXT` | EIP-712 signature |
+| `chain_id` | `INT` | EIP-712 domain chain id |
+| `verifying_contract` | `TEXT` | EIP-712 domain contract |
+| `revoked_at` | `TIMESTAMP NULL` | Set when the operator revokes |
+| `created_at` / `updated_at` | `TIMESTAMP` | |
 
-**Indexes:** `telegram_id`, `status`, `expires_at`
+**Indexes:** `operator` (for the "My Agents" list) and `human_root` (for the
+per-human cap of 10 active agents and "all agents this human vouched for").
 
 ### `audit_logs`
 
+Append-only accountability trail.
+
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `TEXT PK` | |
-| `telegram_id` | `TEXT` | |
-| `event_type` | `TEXT` | e.g. `wallet_linked`, `claim_completed` |
-| `metadata` | `JSONB` | `{ actionId, txHash, tool, ... }` |
+| `id` | `TEXT PK` | cuid |
+| `event_type` | `TEXT` | e.g. `agent_id_issued` |
+| `metadata` | `JSONB` | `{ agent, operator, ... }` |
 | `created_at` | `TIMESTAMP` | |
 
-Append-only for accountability.
+## Why so little off-chain?
 
-## Prisma schema (reference)
-
-```prisma
-model TelegramSession {
-  telegramId       String    @id @map("telegram_id")
-  walletAddress    String?   @map("wallet_address")
-  verified         Boolean   @default(false)
-  fvCallbackToken  String?   @map("fv_callback_token")
-  walletLinkedAt   DateTime? @map("wallet_linked_at")
-  verifiedAt       DateTime? @map("verified_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
-  actions          PendingAction[]
-
-  @@map("telegram_sessions")
-}
-
-enum ActionType {
-  claim
-  transfer
-  create_stream
-}
-
-enum ActionStatus {
-  pending
-  completed
-  expired
-  failed
-}
-
-model PendingAction {
-  id          String       @id
-  telegramId  String       @map("telegram_id")
-  actionType  ActionType   @map("action_type")
-  status      ActionStatus @default(pending)
-  payload     Json
-  txHash      String?      @map("tx_hash")
-  expiresAt   DateTime     @map("expires_at")
-  completedAt DateTime?    @map("completed_at")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  session     TelegramSession @relation(fields: [telegramId], references: [telegramId])
-
-  @@index([telegramId])
-  @@index([status])
-  @@map("pending_actions")
-}
-```
+Verification re-reads the GoodDollar whitelist **live** on every check, and the
+required G$ bond is read from the `AgentVault` contract (`packages/contracts`).
+The database never holds keys, never caches verification verdicts, and stores no
+PII — it's purely an index so operators can list their agents and the public
+explorer can resolve a stored credential by agent address.
 
 ## API operations
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/sessions/link` | POST | Link wallet to telegramId |
-| `/sessions/:telegramId` | GET | Get session (internal/bot) |
-| `/identity/callback` | GET | FV callback handler |
-| `/actions` | POST | Create pending action |
-| `/actions/:id` | GET | Fetch action for Mini App |
-| `/actions/:id/complete` | POST | Mark complete with txHash |
-| `/actions/expire` | CRON | Expire stale pending actions |
-
-## Session link request
-
-```json
-POST /sessions/link
-{
-  "telegramId": "123456789",
-  "wallet": "0x...",
-  "initData": "..."   // Telegram WebApp initData for HMAC validation
-}
-```
-
-## Pending action payload examples
-
-**Transfer**
-
-```json
-{
-  "from": "0x...",
-  "to": "0x...",
-  "amountWei": "10000000000000000000",
-  "amountFormatted": "10.0"
-}
-```
-
-**Stream**
-
-```json
-{
-  "from": "0x...",
-  "to": "0x...",
-  "flowRatePerMonth": "5.0",
-  "flowRateWei": "..."
-}
-```
-
-## Caching (optional Redis)
-
-| Key | TTL | Value |
-|-----|-----|-------|
-| `verify:{wallet}` | 5 min | `{ isWhitelisted, root }` |
-| `rate:prepare:{telegramId}` | 1 hour | request count |
-| `fv:token:{token}` | 1 hour | telegramId |
-
-## Data retention
-
-| Data | Retention |
-|------|-----------|
-| Sessions | Indefinite (user can `/disconnect`) |
-| Completed actions | 90 days minimum (metrics) |
-| Audit logs | 1 year |
-| Expired pending actions | Delete after 30 days |
-
-## Privacy
-
-- Store **telegram_id + wallet** only — no PII beyond Telegram profile optional cache
-- Do not store face verification biometrics (handled by GoodDollar Identity service)
-- GDPR: support `/disconnect` to delete session row on request
+| `/agent/issue` | POST | Re-verify a signed credential, require an active on-chain bond ≥ `minStake`, enforce the per-human cap, then persist it |
+| `/agent/verify/:address` | GET | Resolve + live-verify a credential (+ on-chain bond, `minStake`, `meetsMinStake`; `?minStake=` adds a verifier-chosen check) |
+| `/agent/list?operator=` | GET | List an operator's issued agents |
+| `/agent/list?humanRoot=` | GET | List every agent a GoodDollar human has vouched for (+ `activeCount`, `maxPerHuman`) |
+| `/wallet/:address` | GET | Read-only GoodDollar status for an address |

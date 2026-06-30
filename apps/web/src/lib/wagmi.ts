@@ -28,8 +28,8 @@ createAppKit({
   metadata: {
     name: "GoodDollar Agent ID",
     description: "The passport-free Proof-of-Human layer for AI agents.",
-    url: "https://gcopilot.geinz.lol",
-    icons: ["https://gcopilot.geinz.lol/icon.png"],
+    url: "https://gooddollar-agent-id.vercel.app",
+    icons: ["https://gooddollar-agent-id.vercel.app/icon.png"],
   },
   features: {
     analytics: false,

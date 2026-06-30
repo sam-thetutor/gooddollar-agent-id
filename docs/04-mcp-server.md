@@ -1,288 +1,84 @@
 # MCP server (`gooddollar-mcp`)
 
-The MCP server exposes GoodDollar operations as **typed tools** consumable by:
+A Model Context Protocol server that lets any MCP-compatible agent runtime
+(Claude Desktop, Cursor, custom frameworks) **verify a GoodDollar Agent ID** and
+read basic GoodDollar state on Celo. All tools are read-only — the server never
+signs or broadcasts transactions.
 
-- G$ Copilot Telegram bot (LangChain tool bindings)
-- Claude Desktop / Cursor via MCP config
-- Any MCP-compatible agent runtime
+Source: `packages/mcp-server`. Built on `@modelcontextprotocol/sdk`.
 
-## Transport modes
+## Transport
 
 | Mode | Use case |
 |------|----------|
-| **stdio** | Local dev, Claude Desktop config |
-| **HTTP/SSE** | Remote agents, bot sidecar (phase 2) |
+| **stdio** | Local dev, Claude Desktop / Cursor config (the standalone binary) |
 
-## Tool categories
-
-| Category | Signing required | Description |
-|----------|------------------|-------------|
-| **Read** | No | Balance, verify status, eligibility |
-| **Prepare** | User signs in Mini App | Returns `actionId` + tx payload |
-| **Identity** | Browser FV flow | Returns verification URL |
+The server factory `createMcpServer({ agentLookup? })` also runs **in-process
+inside the API**, where an `agentLookup` is injected so `verify_agent` can resolve
+a stored credential by agent address. The standalone CLI has no storage, so there
+it requires a full `credential` argument instead.
 
 ## Tool reference
 
+All tools return a JSON text payload. Errors return `{ error, message }` with
+`isError: true`.
+
+### `gooddollar_verify_agent`
+
+Confirm an AI agent is vouched for by a real, currently-verified GoodDollar human.
+
+**Input** — provide **either** `agent` (look up a stored credential; only when the
+host supplies an `agentLookup`) **or** `credential` (a full signed wire-form
+credential to verify directly):
+
+```json
+{ "agent": "0x..." }
+```
+```json
+{ "credential": { "fields": { "...": "..." }, "signature": "0x...", "chainId": 42220, "verifyingContract": "0x..." } }
+```
+
+**Output**
+
+```json
+{
+  "found": true,
+  "valid": true,
+  "agent": "0x...",
+  "operator": "0x...",
+  "humanRoot": "0x...",
+  "expiresAt": "1735689600",
+  "reason": null
+}
+```
+
+`valid` is true only if the signature recovers to `operator`, the credential is
+not expired, and the operator is **still** a whitelisted GoodDollar identity (read
+live on Celo). Unknown agents return `{ found: false, reason: "not_found" }`.
+
 ### `gooddollar_verify_status`
 
-Check if a wallet is face-verified on GoodDollar.
-
-**Input**
-
-```json
-{
-  "wallet": "0x..."
-}
-```
-
-**Output**
-
-```json
-{
-  "wallet": "0x...",
-  "isWhitelisted": true,
-  "root": "0x...",
-  "expiresAt": "2026-12-01T00:00:00Z"
-}
-```
-
-**Implementation:** `IdentitySDK.getWhitelistedRoot`, `getIdentityExpiryData`
-
----
-
-### `gooddollar_claim_eligibility`
-
-Check if wallet can claim UBI today.
-
-**Input**
-
-```json
-{
-  "wallet": "0x..."
-}
-```
-
-**Output**
-
-```json
-{
-  "eligible": true,
-  "claimAmount": "1250000000000000000",
-  "claimAmountFormatted": "1.25",
-  "nextClaimTime": null
-}
-```
-
-**Implementation:** `ClaimSDK.checkEntitlement`, `nextClaimTime`
-
----
+Check whether a wallet is a verified (whitelisted) GoodDollar identity, with its
+root and expiry. Input `{ "wallet": "0x..." }`.
 
 ### `gooddollar_get_balance`
 
-G$ token balance for wallet.
+G$ token balance for a wallet (raw + formatted). Input `{ "wallet": "0x..." }`.
 
-**Input**
+### `gooddollar_claim_eligibility`
 
-```json
-{
-  "wallet": "0x..."
-}
-```
-
-**Output**
-
-```json
-{
-  "balance": "42000000000000000000",
-  "balanceFormatted": "42.0",
-  "symbol": "G$"
-}
-```
-
----
+Whether a wallet can claim its daily UBI now and the entitled amount. Input
+`{ "wallet": "0x..." }`.
 
 ### `gooddollar_get_daily_stats`
 
-Protocol-level daily claim stats.
+GoodDollar UBI cycle stats for the current day. Input `{}`.
 
-**Input:** `{}`
+### `gooddollar_ping`
 
-**Output**
+Check MCP + Celo RPC connectivity. Input `{}`.
 
-```json
-{
-  "claimers": "12345",
-  "amount": "..."
-}
-```
-
-**Implementation:** `ClaimSDK.getDailyStats`
-
----
-
-### `gooddollar_generate_verify_link`
-
-Create face verification URL for wallet onboarding.
-
-**Input**
-
-```json
-{
-  "wallet": "0x...",
-  "callbackToken": "session_abc123",
-  "chainId": 42220
-}
-```
-
-**Output**
-
-```json
-{
-  "verifyUrl": "https://...",
-  "expiresInSeconds": 3600
-}
-```
-
-**Note:** `callbackToken` maps to API session; FV callback hits `/identity/callback`.
-
----
-
-### `gooddollar_prepare_claim`
-
-Prepare daily UBI claim (requires user signature).
-
-**Input**
-
-```json
-{
-  "wallet": "0x...",
-  "telegramId": "123456789"
-}
-```
-
-**Output**
-
-```json
-{
-  "actionId": "act_...",
-  "actionType": "claim",
-  "signUrl": "https://mini-app/sign/act_...",
-  "estimatedClaimAmount": "1.25",
-  "expiresAt": "..."
-}
-```
-
-**Side effect:** Stores pending action in DB.
-
----
-
-### `gooddollar_prepare_transfer`
-
-Prepare G$ transfer (requires user signature).
-
-**Input**
-
-```json
-{
-  "from": "0x...",
-  "to": "0x...",
-  "amount": "10.0",
-  "telegramId": "123456789"
-}
-```
-
-**Validation**
-
-- `amount > 0`
-- `amount <= MAX_TRANSFER` (config, e.g. 1000 G$)
-- `to` is valid checksum address
-- `from` matches linked session wallet
-
-**Output**
-
-```json
-{
-  "actionId": "act_...",
-  "actionType": "transfer",
-  "signUrl": "https://...",
-  "to": "0x...",
-  "amountFormatted": "10.0"
-}
-```
-
----
-
-### `gooddollar_prepare_stream`
-
-Prepare Superfluid G$ stream (requires user signature).
-
-**Input**
-
-```json
-{
-  "from": "0x...",
-  "to": "0x...",
-  "flowRatePerMonth": "5.0",
-  "telegramId": "123456789"
-}
-```
-
-**Output**
-
-```json
-{
-  "actionId": "act_...",
-  "actionType": "create_stream",
-  "signUrl": "https://...",
-  "flowRatePerMonth": "5.0",
-  "bufferRequired": "..."
-}
-```
-
-**Implementation:** CFA forwarder + buffer calculation per [GoodDollar streaming docs](https://docs.gooddollar.org/for-developers/developer-guides/use-gusd-streaming).
-
----
-
-### `gooddollar_get_action_status`
-
-Poll pending/completed action.
-
-**Input**
-
-```json
-{
-  "actionId": "act_..."
-}
-```
-
-**Output**
-
-```json
-{
-  "status": "pending | completed | expired | failed",
-  "txHash": "0x...",
-  "completedAt": "..."
-}
-```
-
-## LangChain binding example
-
-```typescript
-import { DynamicStructuredTool } from '@langchain/core/tools';
-import { z } from 'zod';
-import { mcpClient } from './mcp-client';
-
-export const verifyStatusTool = new DynamicStructuredTool({
-  name: 'gooddollar_verify_status',
-  description: 'Check GoodDollar face verification status for a wallet',
-  schema: z.object({ wallet: z.string() }),
-  func: async ({ wallet }) => {
-    return mcpClient.callTool('gooddollar_verify_status', { wallet });
-  },
-});
-```
-
-## MCP server config (Claude Desktop)
+## Client config (Claude Desktop / Cursor)
 
 ```json
 {
@@ -299,20 +95,21 @@ export const verifyStatusTool = new DynamicStructuredTool({
 }
 ```
 
-## Error handling
+## Verify in code (without MCP)
 
-| Code | Meaning | Agent behavior |
-|------|---------|----------------|
-| `NOT_VERIFIED` | Wallet not whitelisted | Suggest `/verify` flow |
-| `NOT_ELIGIBLE` | Already claimed today | Show `nextClaimTime` |
-| `INSUFFICIENT_BALANCE` | Transfer exceeds balance | Ask lower amount |
-| `SESSION_MISMATCH` | Wallet ≠ linked telegram session | Ask reconnect |
-| `ACTION_EXPIRED` | Pending action TTL passed | Regenerate prepare_* |
+The same verification is available directly via the SDK:
 
-## Safety guardrails
+```ts
+import { verifyAgentId, liveHumanRootLookup } from "@goodagent/agent-id";
 
-- Never return private keys or mnemonics
-- `prepare_*` tools do not broadcast transactions
-- Rate limit per `telegramId` / IP on prepare endpoints
-- Max transfer/stream limits enforced server-side
-- All outputs include human-readable + raw wei amounts
+const { valid, operator } = await verifyAgentId(credential, {
+  humanRootLookup: liveHumanRootLookup,
+});
+```
+
+## Safety
+
+- Read-only: no `prepare`/`send` tools, no key access, never returns secrets.
+- `verify_agent` re-reads the GoodDollar whitelist live; it does not trust a
+  cached or self-asserted verification state.
+- All numeric outputs are JSON-safe strings (bigints serialized to decimal).

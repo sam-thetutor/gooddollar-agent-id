@@ -1,0 +1,12 @@
+{
+  "name": "@goodagent/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AgentVault — G$ stake + delegated budget for GoodDollar Agent IDs (Foundry)",
+  "scripts": {
+    "compile": "forge build",
+    "test": "forge test",
+    "deploy:alfajores": "forge script script/Deploy.s.sol --rpc-url alfajores --broadcast",
+    "deploy:celo": "forge script script/Deploy.s.sol --rpc-url celo --broadcast --verify"
+  }
+}

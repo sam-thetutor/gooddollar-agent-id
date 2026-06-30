@@ -1,32 +1,58 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getAddress, isAddress, type Address } from "viem";
-import { useAccount, useSignTypedData } from "wagmi";
+import {
+  formatUnits,
+  getAddress,
+  isAddress,
+  maxUint256,
+  type Address,
+} from "viem";
+import {
+  useAccount,
+  usePublicClient,
+  useReadContract,
+  useSignTypedData,
+  useWriteContract,
+} from "wagmi";
 import { Nav, ConnectButton } from "../components/Nav.js";
+import { Footer } from "../components/Footer.js";
 import {
   agentIdDomain,
   agentIdTypes,
   buildAgentIdMessage,
   messageToWire,
 } from "../lib/agentId.js";
+import {
+  agentVaultAbi,
+  erc20Abi,
+  G_DOLLAR_ADDRESS,
+  G_DOLLAR_DECIMALS,
+  isVaultConfigured,
+  VAULT_ADDRESS,
+} from "../lib/vault.js";
 import { getWalletOverview, issueAgent } from "../lib/api.js";
 
-const ALL_SCOPES = ["pay", "trade", "post", "vote"] as const;
 const TTL_OPTIONS = [7, 30, 90, 365];
 
 type Identity = { verified: boolean; root: string | null };
+type AgentSnapshot = readonly [`0x${string}`, bigint, bigint];
 
 export function IssueAgent() {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
+  const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
 
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [agent, setAgent] = useState("");
-  const [scopes, setScopes] = useState<string[]>(["pay"]);
   const [ttlDays, setTtlDays] = useState(30);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<string | null>(null);
+  // Set the instant a tx receipt confirms, so the UI is correct even if the
+  // load-balanced RPC read still lags (and a stale read can't re-show the button).
+  const [approvedLocal, setApprovedLocal] = useState(false);
+  const [bondReady, setBondReady] = useState(false);
 
   useEffect(() => {
     if (!isConnected || !address) {
@@ -49,31 +75,148 @@ export function IssueAgent() {
   }, [isConnected, address]);
 
   const agentValid = useMemo(() => isAddress(agent), [agent]);
+  const agentAddr = agentValid ? (getAddress(agent) as `0x${string}`) : null;
+
+  // Bond is per-agent; allowance is per-wallet. Reset the optimistic flags when
+  // those inputs change so we never carry a stale "done" state to a new target.
+  useEffect(() => setBondReady(false), [agentAddr]);
+  useEffect(() => setApprovedLocal(false), [address]);
+
+  // --- on-chain stake reads ------------------------------------------------
+  const minStakeRead = useReadContract({
+    address: VAULT_ADDRESS ?? undefined,
+    abi: agentVaultAbi,
+    functionName: "minStake",
+    query: { enabled: isVaultConfigured() },
+  });
+  const minStake = (minStakeRead.data as bigint | undefined) ?? 0n;
+
+  const snapshot = useReadContract({
+    address: VAULT_ADDRESS ?? undefined,
+    abi: agentVaultAbi,
+    functionName: "getAgent",
+    args: agentAddr ? [agentAddr] : undefined,
+    query: { enabled: Boolean(VAULT_ADDRESS && agentAddr) },
+  });
+  const snap = snapshot.data as AgentSnapshot | undefined;
+  const stakeAmount = snap?.[1] ?? 0n;
+  const vaultOperator = snap?.[0];
+
+  const allowance = useReadContract({
+    address: G_DOLLAR_ADDRESS,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address && VAULT_ADDRESS ? [address, VAULT_ADDRESS] : undefined,
+    query: { enabled: Boolean(address && VAULT_ADDRESS) },
+  });
+
+  const meetsMin =
+    bondReady || (minStake > 0n && stakeAmount >= minStake);
+  const approved =
+    approvedLocal ||
+    (((allowance.data as bigint | undefined) ?? 0n) >= minStake &&
+      minStake > 0n);
+  const operatorBlocked = Boolean(
+    vaultOperator &&
+      !/^0x0+$/.test(vaultOperator) &&
+      address &&
+      getAddress(vaultOperator) !== getAddress(address),
+  );
+
   const canSubmit =
     isConnected &&
     identity?.verified &&
     identity.root &&
     agentValid &&
-    scopes.length > 0 &&
+    meetsMin &&
     !busy;
 
-  function toggleScope(s: string) {
-    setScopes((prev) =>
-      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
-    );
+  // forno.celo.org is load-balanced, so an eth_call right after a receipt can hit
+  // a node a block behind and return stale data. Poll the read until it reflects
+  // the change (or we give up) so the UI flips on the first click — and so a
+  // second click can't fire a duplicate (double-stake) transaction.
+  async function refetchUntil<T>(
+    refetch: () => Promise<{ data?: unknown }>,
+    satisfied: (data: T | undefined) => boolean,
+    tries = 10,
+    delayMs = 1500,
+  ) {
+    for (let i = 0; i < tries; i++) {
+      const { data } = await refetch();
+      if (satisfied(data as T | undefined)) return;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
   }
 
+  async function tx(
+    label: string,
+    fn: () => Promise<`0x${string}`>,
+    confirm: () => Promise<void>,
+  ) {
+    setError(null);
+    setBusy(label);
+    try {
+      const hash = await fn();
+      await publicClient?.waitForTransactionReceipt({ hash });
+      await confirm();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const approve = () =>
+    tx(
+      "Approve",
+      () =>
+        writeContractAsync({
+          address: G_DOLLAR_ADDRESS,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [VAULT_ADDRESS!, maxUint256],
+        }),
+      async () => {
+        setApprovedLocal(true);
+        await refetchUntil<bigint>(
+          () => allowance.refetch(),
+          (data) => (data ?? 0n) >= minStake && minStake > 0n,
+        );
+      },
+    );
+
+  const stake = () => {
+    // Capture the deficit now so a stale re-read can't make us stake twice.
+    const amount = minStake - stakeAmount;
+    return tx(
+      "Stake",
+      () =>
+        writeContractAsync({
+          address: VAULT_ADDRESS!,
+          abi: agentVaultAbi,
+          functionName: "stake",
+          args: [agentAddr!, amount],
+        }),
+      async () => {
+        setBondReady(true);
+        await refetchUntil<AgentSnapshot>(
+          () => snapshot.refetch(),
+          (data) => (data?.[1] ?? 0n) >= minStake,
+        );
+      },
+    );
+  };
+
   async function handleIssue() {
-    if (!address || !identity?.root || !agentValid) return;
+    if (!address || !identity?.root || !agentAddr) return;
     setError(null);
     setIssued(null);
-    setBusy(true);
+    setBusy("Issue");
     try {
       const message = buildAgentIdMessage({
-        agent: getAddress(agent) as Address,
+        agent: agentAddr as Address,
         operator: getAddress(address) as Address,
         humanRoot: getAddress(identity.root) as Address,
-        scopes: scopes.join(","),
         ttlDays,
       });
 
@@ -94,13 +237,17 @@ export function IssueAgent() {
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
+  const minLabel = minStake > 0n ? formatUnits(minStake, G_DOLLAR_DECIMALS) : "…";
+  const stakeLabel = formatUnits(stakeAmount, G_DOLLAR_DECIMALS);
+
   return (
-    <div className="page">
+    <>
       <Nav />
+      <main className="page">
       <header className="hero compact">
         <h1>Issue an Agent ID</h1>
         <p className="lede">
@@ -128,7 +275,7 @@ export function IssueAgent() {
             target="_blank"
             rel="noreferrer"
           >
-            Verify with GoodDollar →
+            Verify with GoodDollar
           </a>
         </section>
       )}
@@ -148,22 +295,6 @@ export function IssueAgent() {
             )}
           </label>
 
-          <div className="field">
-            <span>Scopes (what the agent may do)</span>
-            <div className="chips">
-              {ALL_SCOPES.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  className={`chip ${scopes.includes(s) ? "chip-on" : ""}`}
-                  onClick={() => toggleScope(s)}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <label className="field">
             <span>Expires in</span>
             <select
@@ -178,9 +309,61 @@ export function IssueAgent() {
             </select>
           </label>
 
+          {/* Required refundable bond */}
+          {agentValid && (
+            <div className="field">
+              <span>
+                Accountability bond — required, refundable ({minLabel} G$ min)
+              </span>
+              {operatorBlocked ? (
+                <p className="error small">
+                  This agent is already bonded by a different wallet. Use that
+                  wallet, or choose another agent address.
+                </p>
+              ) : meetsMin ? (
+                <p className="ok small">
+                  ✓ {stakeLabel} G$ bonded on-chain — meets the {minLabel} G$
+                  minimum.
+                </p>
+              ) : (
+                <>
+                  <p className="muted hint">
+                    Registering an agent requires locking a refundable{" "}
+                    {minLabel} G$ bond in the AgentVault (you can withdraw it
+                    later after a short cooldown). Approve once, then stake.
+                  </p>
+                  <div className="actions wrap">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={Boolean(busy) || approved}
+                      onClick={approve}
+                    >
+                      {busy === "Approve"
+                        ? "Approving…"
+                        : approved
+                          ? "✓ Approved"
+                          : "1. Approve G$"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={Boolean(busy) || !approved || minStake === 0n}
+                      onClick={stake}
+                    >
+                      {busy === "Stake"
+                        ? "Staking…"
+                        : `2. Stake ${minLabel} G$`}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <p className="muted hint">
-            Stake &amp; spending budget (G$) arrive with on-chain anchoring — this
-            first credential is off-chain and free to issue.
+            Signing the credential is free and non-custodial. The G$ bond is the
+            only required, on-chain step — and it stays yours (refundable).
           </p>
 
           {error && <p className="error">{error}</p>}
@@ -191,7 +374,9 @@ export function IssueAgent() {
             disabled={!canSubmit}
             onClick={handleIssue}
           >
-            {busy ? "Sign in your wallet…" : "Sign & issue Agent ID"}
+            {busy === "Issue"
+              ? "Sign in your wallet…"
+              : "3. Sign & issue Agent ID"}
           </button>
         </section>
       )}
@@ -201,7 +386,7 @@ export function IssueAgent() {
           <h2>✓ Agent ID issued</h2>
           <p>
             Agent <code>{issued}</code> is now vouched for by your verified human
-            identity.
+            identity, backed by a refundable G$ bond.
           </p>
           <div className="actions">
             <Link to={`/verify?agent=${issued}`} className="btn btn-primary">
@@ -213,6 +398,8 @@ export function IssueAgent() {
           </div>
         </section>
       )}
-    </div>
+      </main>
+      <Footer />
+    </>
   );
 }

@@ -1,10 +1,10 @@
-export class GCopilotError extends Error {
+export class AgentIdError extends Error {
   constructor(
     message: string,
     readonly code: string,
   ) {
     super(message);
-    this.name = "GCopilotError";
+    this.name = "AgentIdError";
   }
 }
 

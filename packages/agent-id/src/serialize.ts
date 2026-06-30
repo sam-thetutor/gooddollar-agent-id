@@ -9,9 +9,6 @@ export interface AgentIdFieldsWire {
   agent: string;
   operator: string;
   humanRoot: string;
-  scopes: string;
-  stake: string;
-  budgetCap: string;
   nonce: string;
   issuedAt: string;
   expiresAt: string;
@@ -30,9 +27,6 @@ export interface VerifyResultWire {
   reason?: string;
   operator?: string;
   humanRoot?: string;
-  scopes?: string;
-  stake?: string;
-  budgetCap?: string;
   expiresAt?: string;
 }
 
@@ -41,9 +35,6 @@ export function fieldsToWire(fields: AgentIdFields): AgentIdFieldsWire {
     agent: fields.agent,
     operator: fields.operator,
     humanRoot: fields.humanRoot,
-    scopes: fields.scopes,
-    stake: fields.stake.toString(),
-    budgetCap: fields.budgetCap.toString(),
     nonce: fields.nonce.toString(),
     issuedAt: fields.issuedAt.toString(),
     expiresAt: fields.expiresAt.toString(),
@@ -55,9 +46,6 @@ export function fieldsFromWire(wire: AgentIdFieldsWire): AgentIdFields {
     agent: getAddress(wire.agent),
     operator: getAddress(wire.operator),
     humanRoot: getAddress(wire.humanRoot),
-    scopes: wire.scopes,
-    stake: BigInt(wire.stake),
-    budgetCap: BigInt(wire.budgetCap),
     nonce: BigInt(wire.nonce),
     issuedAt: BigInt(wire.issuedAt),
     expiresAt: BigInt(wire.expiresAt),
@@ -92,9 +80,6 @@ export function verifyResultToWire(result: VerifyResult): VerifyResultWire {
     reason: result.reason,
     operator: result.operator,
     humanRoot: result.humanRoot,
-    scopes: result.scopes,
-    stake: result.stake?.toString(),
-    budgetCap: result.budgetCap?.toString(),
     expiresAt: result.expiresAt?.toString(),
   };
 }

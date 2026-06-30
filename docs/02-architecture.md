@@ -1,191 +1,162 @@
 # Architecture
 
-## System context
+GoodDollar Agent ID is a **non-custodial Proof-of-Human layer for AI agents**. A
+GoodDollar face-verified human signs an identity-only EIP-712 credential that binds
+their human root to an agent address; to register that agent the human locks a
+**required, refundable G$ bond** (≥ 250 G$) in `AgentVault`, and anyone can then
+verify the agent is human-backed and bonded.
 
-G$ Copilot sits between **users (Telegram)**, **AI orchestration (LangChain)**, **agent tooling (MCP)**, and **GoodDollar on Celo**.
+## System context
 
 ```mermaid
 flowchart TB
     subgraph clients [Clients]
-        TG[Telegram Chat]
-        MA[Telegram Mini App]
-        BR[Browser Fallback /connect]
-        EXT[MCP Clients - Claude / Cursor]
+        WEB[Web app — browser + MetaMask]
+        EXT[MCP clients — Claude / Cursor]
+        SDKC[SDK / REST consumers — marketplaces, agent frameworks]
     end
 
-    subgraph app [Application Layer]
-        BOT[Telegram Bot + LangChain Agent]
-        API[HTTP API - sessions / callbacks]
-        MCP[gooddollar-mcp Server]
+    subgraph app [Application layer]
+        API[HTTP API — Hono]
+        MCP[gooddollar-mcp server]
+        SDK["@goodagent/agent-id SDK (viem-only)"]
     end
 
-    subgraph data [Data Layer]
-        DB[(PostgreSQL / Redis)]
+    subgraph data [Data layer]
+        DB[(PostgreSQL — credentials + audit log)]
     end
 
-    subgraph chain [Celo / GoodDollar]
-        ID[Identity Contract]
-        UB[UBI Scheme / Claim]
-        G$[G$ Token / SuperToken]
-        SF[Superfluid CFA Forwarder]
+    subgraph chain [Celo mainnet]
+        ID[GoodDollar Identity]
+        G$[G$ Token]
+        VAULT[AgentVault — required refundable G$ bond]
+        ERC[ERC-8004 Identity Registry]
     end
 
-    subgraph wallets [User Wallets]
-        WC[WalletConnect]
-        MM[MetaMask / MiniPay / Valora]
-    end
-
-    TG --> BOT
-    MA --> API
-    BR --> API
+    WEB -->|connect + sign EIP-712| API
+    WEB -->|approve / stake / unstake| VAULT
     EXT --> MCP
-    BOT --> MCP
-    BOT --> API
-    MCP --> ID
-    MCP --> UB
-    MCP --> G$
-    MCP --> SF
+    SDKC --> SDK
     API --> DB
-    BOT --> DB
-    MA --> WC --> MM
-    BR --> WC --> MM
-    MA --> G$
-    MA --> UB
+    API --> ID
+    API --> VAULT
+    MCP --> ID
+    SDK --> ID
+    SDK --> ERC
 ```
 
 ## Component responsibilities
 
 | Component | Responsibility | Does NOT do |
 |-----------|----------------|-------------|
-| **Telegram bot** | NLU, command routing, replies, Mini App buttons | Sign transactions, store keys |
-| **LangChain agent** | Tool selection, conversation memory, guardrails | Direct chain writes without user sign |
-| **MCP server** | Tool schemas, read-only chain calls, tx preparation | Broadcast signed txs (except via dedicated relay with user sig) |
-| **Mini App** | WalletConnect, display tx, request wallet signature | Run LLM inference |
-| **HTTP API** | FV callbacks, session tokens, pending tx store, webhooks | Custody funds |
-| **Database** | Map telegram↔wallet, pending actions, audit log | Hold secrets beyond API keys |
+| **Web app** (`apps/web`) | Connect wallet, gate on GoodDollar verification, stake the required refundable bond, sign the EIP-712 credential, manage stake, public verify page | Hold keys, run verification logic of record |
+| **API** (`apps/api`) | Re-verify signed credentials, enforce the per-human cap, persist them, list by operator/human root, resolve + live-verify by agent, read on-chain stake | Custody funds, store private keys or PII |
+| **SDK** (`packages/agent-id`, npm `@goodagent/agent-id`) | Build/sign/verify credentials, live human-root lookup, ERC-8004 encode/verify | Any server state |
+| **MCP server** (`packages/mcp-server`) | Expose `verify_agent` + GoodDollar read tools to agent runtimes | Broadcast transactions |
+| **Chain helpers** (`packages/chain`) | viem reads: identity, G$ balance, AgentVault stake, ERC-8004 agent | Sign or send funds |
+| **Contracts** (`packages/contracts`) | `AgentVault` — required, refundable G$ bond with on-chain `minStake` (stake-only) | Custody beyond the operator's own deposits; any third-party transfer |
+| **Database** (`packages/db`) | Index of signed credentials + append-only audit log | Cache verification verdicts; hold secrets |
 
 ## Request flows
 
-### Flow A — Read-only query (no signing)
+### Flow A — Issue an Agent ID (operator signs)
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant B as Telegram Bot
-    participant A as LangChain Agent
-    participant M as MCP Server
-    participant C as Celo RPC
+    participant U as Operator
+    participant W as Web app
+    participant WAL as Wallet (MetaMask)
+    participant API as API
+    participant C as Celo (GoodDollar Identity)
 
-    U->>B: "What's my balance?"
-    B->>A: Message + session context
-    A->>M: get_balance(wallet)
-    M->>C: eth_call / balanceOf
-    C-->>M: balance
-    M-->>A: formatted result
-    A-->>B: natural language reply
-    B-->>U: "You have 42.5 G$"
+    U->>W: Connect wallet
+    W->>API: GET /wallet/:address (verification status)
+    API->>C: getWhitelistedRoot
+    C-->>API: isWhitelisted + root
+    API-->>W: verified? + G$ balance
+    W->>WAL: signTypedData(AgentID)  (non-custodial)
+    WAL-->>W: signature
+    W->>API: POST /agent/issue (credential)
+    API->>C: re-verify operator root live
+    API->>API: recover signer, check expiry, enforce per-human cap (≤10), persist
+    API-->>W: stored ✓
 ```
 
-### Flow B — Write action (claim / send / stream)
+### Flow B — Verify an agent (anyone)
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant B as Telegram Bot
-    participant A as LangChain Agent
-    participant M as MCP Server
-    participant API as HTTP API
-    participant MA as Mini App
-    participant W as Wallet
-
-    U->>B: "Send 10 G$ to 0xABC..."
-    B->>A: intent
-    A->>M: prepare_transfer(from, to, amount)
-    M-->>A: unsigned tx payload + actionId
-    A->>API: store pending action
-    B-->>U: Button "Confirm in wallet"
-    U->>MA: Opens Mini App ?action=transfer&id=...
-    MA->>W: WalletConnect + signTransaction
-    W-->>MA: txHash
-    MA->>API: POST /actions/complete
-    API->>B: notify user
-    B-->>U: "Sent 10 G$ ✅ tx: 0x..."
-```
-
-### Flow C — Face verification
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant B as Telegram Bot
-    participant API as HTTP API
-    participant ID as GoodDollar Identity
+    participant V as Verifier (dApp / agent / SDK)
+    participant API as API / SDK
     participant C as Celo
 
-    U->>B: /verify
-    B->>API: create FV session (telegram_id, wallet)
-    API-->>B: FV URL with callback
-    B-->>U: "Complete verification" link
-    U->>ID: Face verification flow
-    ID->>API: callback /verified?token=...
-    API->>C: verify getWhitelistedRoot
-    API->>B: webhook update session
-    B-->>U: "Verified ✅ You can claim now"
+    V->>API: GET /agent/verify/:agent  (or verifyAgentId(credential))
+    API->>API: recover EIP-712 signer, check expiry
+    API->>C: getWhitelistedRoot(operator) — LIVE
+    API->>C: AgentVault.getAgentVaultStatus(agent)
+    C-->>API: still verified? + on-chain bond
+    API-->>V: { valid, operator, humanRoot, expiresAt, onchain: { stake, minStake, meetsMinStake } }
 ```
+
+### Flow C — Required refundable bond (operator)
+
+Before issuing, the operator approves G$ to the `AgentVault`, then bonds at least
+`minStake` (250 G$) behind the agent — this is required to register. The bond is
+refundable and revocable after a cooldown, and surfaces on the verify page so
+verifiers can apply their own (higher) minimum.
 
 ## Deployment topology
 
 ```mermaid
 flowchart LR
     subgraph vercel [Vercel]
-        MINI[Mini App static + API routes]
+        WEB[Web app — static SPA]
     end
-
-    subgraph compute [Long-running services]
-        BOT[Telegram Bot process]
-        MCP[MCP Server process]
+    subgraph vps [VPS — nginx + PM2]
+        API[API process]
     end
-
     subgraph managed [Managed data]
-        PG[(PostgreSQL)]
-        RD[(Redis - optional)]
+        PG[(PostgreSQL — self-hosted Supabase)]
     end
+    subgraph celo [Celo mainnet]
+        VAULT[AgentVault]
+        ERC[ERC-8004 registry]
+    end
+    npm[npm — @goodagent/agent-id]
 
-    BOT --> PG
-    MCP --> PG
-    MINI --> PG
-    BOT --> MCP
+    WEB -->|HTTPS| API
+    WEB -->|wallet RPC| VAULT
+    API --> PG
+    API --> VAULT
 ```
 
 | Service | Host | Notes |
 |---------|------|-------|
-| Mini App + sign API | Vercel | Edge-friendly; FV callback URLs |
-| Telegram bot | Railway / Fly.io / VPS | Long polling or webhook |
-| MCP server | Same host or separate | stdio for local; SSE/HTTP for remote |
-| Database | Neon / Supabase / Railway | Sessions + pending actions |
-| Redis | Optional | Rate limits, FV token TTL |
+| Web app | Vercel | Static SPA; `gooddollar-agent-id.vercel.app` |
+| API | VPS (nginx + PM2) | `gcopilot-api.geinz.lol`; CORS open for the SPA |
+| MCP server | Same host / local stdio | `verify_agent` + GoodDollar reads |
+| Database | Self-hosted Supabase (Postgres) | Credentials index + audit log |
+| Contracts | Celo mainnet (42220) | `AgentVault` (stake-only) `0x0409042B55e99Df8c0Feb7525A770838f3A47090` |
+| SDK | npm | `@goodagent/agent-id` (v0.2.0, identity-only) |
 
 ## Environment separation
 
-| Env | Chain | GoodDollar SDK env | Purpose |
-|-----|-------|-------------------|---------|
-| `development` | Celo Alfajores or dev G$ | `development` | Local bot + MCP testing |
-| `staging` | Celo mainnet (limited) | `production` | Pre-launch QA |
-| `production` | Celo mainnet | `production` | Season 4 users |
-
-Dev wallet claims: [goodwallet.dev](https://goodwallet.dev)
+| Env | Chain | GoodDollar SDK env |
+|-----|-------|-------------------|
+| `development` | Celo Alfajores / dev G$ | `development` |
+| `production` | Celo mainnet | `production` |
 
 ## Key design decisions
 
-1. **MCP as shared core** — Bot and external agents use the same tools; avoids duplicating chain logic.
-2. **Mini App for all writes** — Single signing surface; consistent WalletConnect UX.
-3. **Pending action pattern** — Bot stores intent server-side; Mini App loads by `actionId` (no unsigned tx in URL params alone).
-4. **Telegram Web via QR** — WalletConnect shows QR on desktop; mobile Telegram uses deep links.
-5. **Browser fallback** — `/connect` and `/sign` pages for MetaMask extension users outside Telegram WebView.
-
-## Phase 2 extensions (documented, not v1)
-
-- Community bill pool contracts + `/pool` commands
-- Esusu / Balaio tool adapters in MCP
-- Gas faucet tool (Esusu-style sponsorship for first claim)
-- Flow State voting embed in Mini App
+1. **Non-custodial by construction** — the operator signs the credential in their
+   own wallet; the server only re-verifies and indexes.
+2. **Live human root** — verification re-reads the GoodDollar whitelist on every
+   check, so a credential auto-invalidates if the operator's verification lapses.
+3. **Minimal off-chain state** — only the signed credential and an audit log are
+   stored; no PII, no cached verdicts (see [data model](./09-data-model.md)).
+4. **Additive to ERC-8004** — a deployed `GoodDollarHumanProofProvider`
+   implements the standard `IHumanProofProvider` interface (Celo
+   `0x80c4…48c9`), and the proof also embeds in the agent registration file, so
+   the Celo agent stack can adopt GoodDollar as a Proof-of-Human source.
+5. **viem-only SDK** — the published SDK has a single runtime dependency so any
+   agent framework can verify an agent in one call.

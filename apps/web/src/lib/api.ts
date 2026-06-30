@@ -38,9 +38,6 @@ export interface AgentIdFieldsWire {
   agent: string;
   operator: string;
   humanRoot: string;
-  scopes: string;
-  stake: string;
-  budgetCap: string;
   nonce: string;
   issuedAt: string;
   expiresAt: string;
@@ -53,6 +50,17 @@ export interface IssueAgentBody {
   verifyingContract: string;
 }
 
+export interface OnchainStatus {
+  vaultConfigured: boolean;
+  operator: string | null;
+  stake: string;
+  stakeFormatted: string;
+  minStake: string;
+  minStakeFormatted: string;
+  meetsMinStake: boolean;
+  unstakeUnlockAt: string | null;
+}
+
 export interface VerifyResult {
   found?: boolean;
   valid: boolean;
@@ -60,10 +68,11 @@ export interface VerifyResult {
   agent?: string;
   operator?: string;
   humanRoot?: string;
-  scopes?: string;
-  stake?: string;
-  budgetCap?: string;
   expiresAt?: string;
+  onchain?: OnchainStatus | null;
+  /** Present only when the caller passed a verifier-chosen `minStake`. */
+  minStake?: string;
+  meetsMinStake?: boolean;
 }
 
 export interface IssueResult {
@@ -80,8 +89,11 @@ export async function issueAgent(body: IssueAgentBody): Promise<IssueResult> {
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    const reason = (data.reason as string) ?? (data.error as string);
-    throw new Error(reason ?? `Issue failed (${res.status})`);
+    const msg =
+      (data.message as string) ??
+      (data.reason as string) ??
+      (data.error as string);
+    throw new Error(msg ?? `Issue failed (${res.status})`);
   }
   return data as unknown as IssueResult;
 }
@@ -97,20 +109,22 @@ export async function verifyAgent(address: string): Promise<VerifyResult> {
 
 export interface AgentListItem {
   agent: string;
-  scopes: string;
-  stake: string;
-  budgetCap: string;
+  operator: string;
   expiresAt: string;
   revoked: boolean;
   createdAt: string;
 }
 
 export interface AgentListResult {
-  operator: string;
+  operator?: string;
+  humanRoot?: string;
   count: number;
+  activeCount: number;
+  maxPerHuman: number;
   agents: AgentListItem[];
 }
 
+/** List agents by the operator wallet that signed them. */
 export async function listAgents(operator: string): Promise<AgentListResult> {
   const res = await fetch(`${API_BASE}/agent/list?operator=${operator}`);
   if (!res.ok) {
@@ -120,35 +134,14 @@ export async function listAgents(operator: string): Promise<AgentListResult> {
   return (await res.json()) as AgentListResult;
 }
 
-// ---------------------------------------------------------------------------
-// Copilot chat (optional secondary feature)
-// ---------------------------------------------------------------------------
-
-export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface ChatResult {
-  reply: string;
-  toolsUsed: string[];
-}
-
-export async function sendChat(
-  messages: ChatMessage[],
-  wallet?: string,
-): Promise<ChatResult> {
-  const res = await fetch(`${API_BASE}/chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ messages, wallet }),
-  });
+/** List every agent a GoodDollar human (root) has vouched for. */
+export async function listAgentsByHumanRoot(
+  humanRoot: string,
+): Promise<AgentListResult> {
+  const res = await fetch(`${API_BASE}/agent/list?humanRoot=${humanRoot}`);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (body.error === "LLM_NOT_CONFIGURED") {
-      throw new Error("The AI copilot isn't configured yet.");
-    }
-    throw new Error(body.error ?? `Chat failed (${res.status})`);
+    throw new Error(body.error ?? `List failed (${res.status})`);
   }
-  return (await res.json()) as ChatResult;
+  return (await res.json()) as AgentListResult;
 }

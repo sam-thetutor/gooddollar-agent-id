@@ -1,4 +1,4 @@
-import { CELO_CHAIN_ID } from "@g-copilot/shared";
+import { CELO_CHAIN_ID } from "@goodagent/shared";
 import type { Address } from "viem";
 
 /** Off-chain-only credentials use the zero address as verifyingContract. */
@@ -18,9 +18,6 @@ export const agentIdTypes = {
     { name: "agent", type: "address" },
     { name: "operator", type: "address" },
     { name: "humanRoot", type: "address" },
-    { name: "scopes", type: "string" },
-    { name: "stake", type: "uint256" },
-    { name: "budgetCap", type: "uint256" },
     { name: "nonce", type: "uint256" },
     { name: "issuedAt", type: "uint64" },
     { name: "expiresAt", type: "uint64" },
@@ -31,9 +28,6 @@ export interface AgentIdMessage {
   agent: Address;
   operator: Address;
   humanRoot: Address;
-  scopes: string;
-  stake: bigint;
-  budgetCap: bigint;
   nonce: bigint;
   issuedAt: bigint;
   expiresAt: bigint;
@@ -43,9 +37,6 @@ export interface BuildMessageInput {
   agent: Address;
   operator: Address;
   humanRoot: Address;
-  scopes: string;
-  stake?: bigint;
-  budgetCap?: bigint;
   ttlDays?: number;
 }
 
@@ -56,9 +47,6 @@ export function buildAgentIdMessage(input: BuildMessageInput): AgentIdMessage {
     agent: input.agent,
     operator: input.operator,
     humanRoot: input.humanRoot,
-    scopes: input.scopes,
-    stake: input.stake ?? 0n,
-    budgetCap: input.budgetCap ?? 0n,
     nonce: 0n,
     issuedAt,
     expiresAt: issuedAt + ttl,
@@ -71,9 +59,6 @@ export function messageToWire(m: AgentIdMessage) {
     agent: m.agent,
     operator: m.operator,
     humanRoot: m.humanRoot,
-    scopes: m.scopes,
-    stake: m.stake.toString(),
-    budgetCap: m.budgetCap.toString(),
     nonce: m.nonce.toString(),
     issuedAt: m.issuedAt.toString(),
     expiresAt: m.expiresAt.toString(),

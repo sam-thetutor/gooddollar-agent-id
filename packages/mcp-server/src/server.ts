@@ -10,7 +10,7 @@ import {
   getGBalance,
   getVerifyStatus,
   pingChain,
-} from "@g-copilot/chain";
+} from "@goodagent/chain";
 import {
   credentialFromWire,
   liveHumanRootLookup,
@@ -18,8 +18,8 @@ import {
   verifyResultToWire,
   type AgentIdCredential,
   type AgentIdCredentialWire,
-} from "@g-copilot/agent-id";
-import { GCopilotError } from "@g-copilot/shared";
+} from "@goodagent/agent-id";
+import { AgentIdError } from "@goodagent/shared";
 
 const SERVER_NAME = "gooddollar-mcp";
 const SERVER_VERSION = "0.1.0";
@@ -60,7 +60,7 @@ function jsonResult(payload: unknown) {
 }
 
 function errorResult(error: unknown) {
-  const code = error instanceof GCopilotError ? error.code : "UNKNOWN";
+  const code = error instanceof AgentIdError ? error.code : "UNKNOWN";
   const message = error instanceof Error ? error.message : String(error);
   return {
     content: [
@@ -76,7 +76,7 @@ function errorResult(error: unknown) {
 function requireWallet(args: Record<string, unknown> | undefined): string {
   const wallet = args?.wallet;
   if (typeof wallet !== "string" || wallet.length === 0) {
-    throw new GCopilotError("Missing required 'wallet' argument.", "BAD_INPUT");
+    throw new AgentIdError("Missing required 'wallet' argument.", "BAD_INPUT");
   }
   return wallet;
 }
@@ -121,7 +121,7 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
       {
         name: "gooddollar_verify_agent",
         description:
-          "Verify a GoodDollar Agent ID — confirm an AI agent is vouched for by a real, currently-verified GoodDollar human. Pass either an 'agent' address (to look up a stored credential) or a full 'credential' object. Returns validity, the human root, scopes, and expiry.",
+          "Verify a GoodDollar Agent ID — confirm an AI agent is vouched for by a real, currently-verified GoodDollar human. Pass either an 'agent' address (to look up a stored credential) or a full 'credential' object. Returns validity, the human root, and expiry.",
         inputSchema: {
           type: "object",
           properties: {
@@ -181,7 +181,7 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
               });
             }
           } else {
-            throw new GCopilotError(
+            throw new AgentIdError(
               "Provide a 'credential' object, or an 'agent' address (address lookup is not available in this context).",
               "BAD_INPUT",
             );
@@ -194,7 +194,7 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
         }
         default:
           return errorResult(
-            new GCopilotError(`Unknown tool: ${name}`, "UNKNOWN_TOOL"),
+            new AgentIdError(`Unknown tool: ${name}`, "UNKNOWN_TOOL"),
           );
       }
     } catch (error) {
