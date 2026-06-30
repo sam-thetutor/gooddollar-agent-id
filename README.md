@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="GoodDollar Agent ID" width="160" />
+</p>
+
 # GoodDollar Agent ID
 
 The passport-free **Proof-of-Human layer for AI agents** — powered by [GoodDollar](https://gooddollar.org) on Celo. Built for [GoodBuilders Season 4](https://ubi.gd/goodbuilders).
