@@ -29,7 +29,7 @@ createAppKit({
     name: "GoodAgent",
     description: "The passport-free Proof-of-Human layer for AI agents.",
     url: "https://gooddollar-agent-id.vercel.app",
-    icons: ["https://gooddollar-agent-id.vercel.app/icon.png"],
+    icons: ["https://gooddollar-agent-id.vercel.app/icon-256.png"],
   },
   features: {
     analytics: false,
