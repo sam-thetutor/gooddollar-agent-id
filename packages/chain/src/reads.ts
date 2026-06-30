@@ -2,18 +2,23 @@ import {
   CELO_CHAIN_ID,
   ErrorCodes,
   G_DOLLAR_DECIMALS,
-  GCopilotError,
-} from "@g-copilot/shared";
-import { formatUnits, getAddress, type Address } from "viem";
+  AgentIdError,
+} from "@goodagent/shared";
+import { formatUnits, getAddress, hexToString, type Address } from "viem";
 import {
+  agentVaultAbi,
   erc20Abi,
+  erc8004IdentityAbi,
   identityAbi,
   ubiSchemeAbi,
 } from "./abis.js";
 import {
+  ERC8004_IDENTITY_REGISTRY,
   G_DOLLAR_ADDRESS,
+  GOODDOLLAR_PROOF_METADATA_KEY,
   IDENTITY_ADDRESS,
   UBI_SCHEME_ADDRESS,
+  getAgentVaultAddress,
 } from "./addresses.js";
 import { createCeloPublicClient } from "./client.js";
 
@@ -23,7 +28,7 @@ function normalizeAddress(value: string): Address {
   try {
     return getAddress(value);
   } catch {
-    throw new GCopilotError(
+    throw new AgentIdError(
       `Invalid address: ${value}`,
       ErrorCodes.INVALID_ADDRESS,
     );
@@ -55,7 +60,7 @@ export async function getGBalance(wallet: string): Promise<BalanceResult> {
       symbol: "G$",
     };
   } catch (error) {
-    throw new GCopilotError(
+    throw new AgentIdError(
       `Failed to read balance: ${(error as Error).message}`,
       ErrorCodes.RPC_ERROR,
     );
@@ -120,7 +125,7 @@ export async function getVerifyStatus(
       expiresAt,
     };
   } catch (error) {
-    throw new GCopilotError(
+    throw new AgentIdError(
       `Failed to read identity status: ${(error as Error).message}`,
       ErrorCodes.RPC_ERROR,
     );
@@ -175,11 +180,190 @@ export async function getClaimEligibility(
       claimAmountFormatted: formatUnits(amount, G_DOLLAR_DECIMALS),
     };
   } catch (error) {
-    throw new GCopilotError(
+    throw new AgentIdError(
       `Failed to read claim eligibility: ${(error as Error).message}`,
       ErrorCodes.RPC_ERROR,
     );
   }
+}
+
+export interface AgentVaultStatusResult {
+  agent: string;
+  /** True once the vault is deployed and configured (AGENT_VAULT_ADDRESS set). */
+  vaultConfigured: boolean;
+  /** Operator that controls this agent's bond, or null if never staked. */
+  operator: string | null;
+  /** G$ currently bonded behind the agent (required refundable accountability stake). */
+  stake: string;
+  stakeFormatted: string;
+  /** Protocol minimum bond required to register an agent (base units). */
+  minStake: string;
+  minStakeFormatted: string;
+  /** Whether the live bond meets the protocol minimum. */
+  meetsMinStake: boolean;
+  /** ISO timestamp after which a requested unstake can be withdrawn, or null. */
+  unstakeUnlockAt: string | null;
+}
+
+/**
+ * Reads the required refundable G$ bond backing an agent from the AgentVault.
+ * Returns a `vaultConfigured: false` snapshot (all zeros) when the vault has
+ * not been deployed/configured yet, so callers can render gracefully.
+ */
+export async function getAgentVaultStatus(
+  agent: string,
+): Promise<AgentVaultStatusResult> {
+  const account = normalizeAddress(agent);
+  const vault = getAgentVaultAddress();
+
+  const empty: AgentVaultStatusResult = {
+    agent: account,
+    vaultConfigured: false,
+    operator: null,
+    stake: "0",
+    stakeFormatted: "0",
+    minStake: "0",
+    minStakeFormatted: "0",
+    meetsMinStake: false,
+    unstakeUnlockAt: null,
+  };
+
+  if (!vault) return empty;
+
+  const client = createCeloPublicClient();
+
+  try {
+    const [[operator, stake, unlockAt], minStake] = await Promise.all([
+      client.readContract({
+        address: vault,
+        abi: agentVaultAbi,
+        functionName: "getAgent",
+        args: [account],
+      }),
+      client.readContract({
+        address: vault,
+        abi: agentVaultAbi,
+        functionName: "minStake",
+      }),
+    ]);
+
+    const zeroOperator = /^0x0+$/.test(operator);
+
+    return {
+      agent: account,
+      vaultConfigured: true,
+      operator: zeroOperator ? null : operator,
+      stake: stake.toString(),
+      stakeFormatted: formatUnits(stake, G_DOLLAR_DECIMALS),
+      minStake: minStake.toString(),
+      minStakeFormatted: formatUnits(minStake, G_DOLLAR_DECIMALS),
+      meetsMinStake: stake >= minStake,
+      unstakeUnlockAt:
+        unlockAt > 0n
+          ? new Date(Number(unlockAt) * 1000).toISOString()
+          : null,
+    };
+  } catch (error) {
+    throw new AgentIdError(
+      `Failed to read agent vault status: ${(error as Error).message}`,
+      ErrorCodes.RPC_ERROR,
+    );
+  }
+}
+
+export interface Erc8004AgentResult {
+  agentId: string;
+  /** ERC-721 owner of the agent NFT (the operator/custodian). */
+  owner: string;
+  /** Resolved registration-file URI (`tokenURI`). */
+  agentURI: string;
+  /** The agent's payment wallet (reserved `agentWallet` metadata), if set. */
+  agentWallet: string | null;
+  /**
+   * Decoded GoodDollar proof stored on-chain under the reserved metadata key,
+   * or null if the agent never attached one. This is the JSON value we wrote via
+   * `setMetadata` (typically `{ type, credential }`).
+   */
+  gooddollarProof: unknown | null;
+  registered: boolean;
+}
+
+/**
+ * Read an ERC-8004 agent from the Identity Registry on Celo: owner, registration
+ * URI, payment wallet, and any on-chain GoodDollar proof. Returns
+ * `registered:false` if the agentId doesn't exist.
+ */
+export async function getErc8004Agent(
+  agentId: bigint | number | string,
+): Promise<Erc8004AgentResult> {
+  const id = BigInt(agentId);
+  const client = createCeloPublicClient();
+  const registry = ERC8004_IDENTITY_REGISTRY[CELO_CHAIN_ID];
+
+  let owner: Address;
+  try {
+    owner = await client.readContract({
+      address: registry,
+      abi: erc8004IdentityAbi,
+      functionName: "ownerOf",
+      args: [id],
+    });
+  } catch {
+    // Non-existent token reverts ownerOf.
+    return {
+      agentId: id.toString(),
+      owner: "0x0000000000000000000000000000000000000000",
+      agentURI: "",
+      agentWallet: null,
+      gooddollarProof: null,
+      registered: false,
+    };
+  }
+
+  const [agentURI, walletRes, metaRes] = await Promise.all([
+    client
+      .readContract({
+        address: registry,
+        abi: erc8004IdentityAbi,
+        functionName: "tokenURI",
+        args: [id],
+      })
+      .catch(() => ""),
+    client
+      .readContract({
+        address: registry,
+        abi: erc8004IdentityAbi,
+        functionName: "getAgentWallet",
+        args: [id],
+      })
+      .catch(() => null),
+    client
+      .readContract({
+        address: registry,
+        abi: erc8004IdentityAbi,
+        functionName: "getMetadata",
+        args: [id, GOODDOLLAR_PROOF_METADATA_KEY],
+      })
+      .catch(() => "0x" as `0x${string}`),
+  ]);
+
+  let gooddollarProof: unknown | null = null;
+  if (metaRes && metaRes !== "0x") {
+    try {
+      gooddollarProof = JSON.parse(hexToString(metaRes as `0x${string}`));
+    } catch {
+      gooddollarProof = null;
+    }
+  }
+
+  return {
+    agentId: id.toString(),
+    owner,
+    agentURI,
+    agentWallet: walletRes ? (walletRes as Address) : null,
+    gooddollarProof,
+    registered: true,
+  };
 }
 
 export interface DailyStatsResult {
@@ -200,7 +384,7 @@ export async function getDailyStats(): Promise<DailyStatsResult> {
 
     return { currentDay: currentDay.toString() };
   } catch (error) {
-    throw new GCopilotError(
+    throw new AgentIdError(
       `Failed to read daily stats: ${(error as Error).message}`,
       ErrorCodes.RPC_ERROR,
     );

@@ -1,7 +1,19 @@
 {
-  "name": "@g-copilot/agent-id",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@goodagent/agent-id",
+  "version": "0.4.0",
+  "description": "GoodDollar Agent ID — passport-free Proof-of-Human credentials for AI agents (EIP-712), with ERC-8004 interop. Verify that an agent is backed by a real, currently-verified GoodDollar human.",
+  "keywords": [
+    "gooddollar",
+    "agent",
+    "identity",
+    "proof-of-human",
+    "erc-8004",
+    "eip-712",
+    "celo",
+    "ai-agents",
+    "sybil-resistance"
+  ],
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,6 +23,11 @@
       "default": "./dist/index.js"
     }
   },
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -18,8 +35,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@g-copilot/chain": "workspace:*",
-    "@g-copilot/shared": "workspace:*",
     "viem": "^2.31.3"
   },
   "devDependencies": {

@@ -1,25 +1,32 @@
-import { CELO_CHAIN_ID } from "@g-copilot/shared";
 import type { Address } from "viem";
 
 export const AGENT_ID_DOMAIN_NAME = "GoodDollar Agent ID";
 export const AGENT_ID_DOMAIN_VERSION = "1";
 
+/** Celo mainnet chain id (default EIP-712 domain chain). */
+export const CELO_CHAIN_ID = 42220;
+
 /**
- * Default `verifyingContract` for off-chain-only credentials (no on-chain anchor
- * yet). Phase E replaces this with the deployed AgentVault address.
+ * Default `verifyingContract` for the EIP-712 domain. The Agent ID credential is
+ * a pure *identity* statement and is not bound to a specific contract, so it uses
+ * the zero address by default; callers may override via {@link DomainOptions}.
  */
 export const OFFCHAIN_VERIFYING_CONTRACT =
   "0x0000000000000000000000000000000000000000" as const;
 
-/** EIP-712 field definitions for the `AgentID` struct (order matters). */
+/**
+ * EIP-712 field definitions for the `AgentID` struct (order matters).
+ *
+ * The credential is **identity-only**: it states that a GoodDollar-verified human
+ * (`operator`, with root `humanRoot`) vouches for `agent` until `expiresAt`.
+ * It carries no capability or money fields — the required G$ bond lives on-chain
+ * in the AgentVault and is read live at verify time.
+ */
 export const agentIdTypes = {
   AgentID: [
     { name: "agent", type: "address" },
     { name: "operator", type: "address" },
     { name: "humanRoot", type: "address" },
-    { name: "scopes", type: "string" },
-    { name: "stake", type: "uint256" },
-    { name: "budgetCap", type: "uint256" },
     { name: "nonce", type: "uint256" },
     { name: "issuedAt", type: "uint64" },
     { name: "expiresAt", type: "uint64" },

@@ -1,6 +1,7 @@
 import { useAppKit } from "@reown/appkit/react";
 import { Link, NavLink } from "react-router-dom";
 import { useAccount } from "wagmi";
+import { Logo } from "./Logo.js";
 
 function shorten(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
@@ -30,22 +31,25 @@ export function ConnectButton() {
 
 export function Nav() {
   return (
-    <nav className="nav">
-      <Link to="/" className="brand">
-        <span className="brand-mark">◈</span> GoodDollar Agent ID
-      </Link>
-      <div className="nav-links">
-        <NavLink to="/issue" className="nav-link">
-          Issue
-        </NavLink>
-        <NavLink to="/agents" className="nav-link">
-          My Agents
-        </NavLink>
-        <NavLink to="/verify" className="nav-link">
-          Verify
-        </NavLink>
-        <ConnectButton />
+    <header className="site-header">
+      <div className="container nav">
+        <Link to="/" className="brand">
+          <Logo className="brand-logo" />
+          GoodDollar Agent ID
+        </Link>
+        <div className="nav-links">
+          <NavLink to="/issue" className="nav-link">
+            Issue
+          </NavLink>
+          <NavLink to="/agents" className="nav-link">
+            My Agents
+          </NavLink>
+          <NavLink to="/verify" className="nav-link">
+            Verify
+          </NavLink>
+          <ConnectButton />
+        </div>
       </div>
-    </nav>
+    </header>
   );
 }

@@ -1,5 +1,6 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "examples"
 
 # Dependency overrides live in the root package.json under "pnpm.overrides".

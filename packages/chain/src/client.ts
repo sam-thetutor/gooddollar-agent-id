@@ -1,4 +1,4 @@
-import { CELO_CHAIN_ID } from "@g-copilot/shared";
+import { CELO_CHAIN_ID } from "@goodagent/shared";
 import {
   createPublicClient,
   http,

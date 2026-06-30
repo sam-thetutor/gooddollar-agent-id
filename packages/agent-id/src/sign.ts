@@ -14,9 +14,6 @@ export interface BuildAgentIdInput {
   agent: Address;
   operator: Address;
   humanRoot: Address;
-  scopes: string;
-  stake?: bigint;
-  budgetCap?: bigint;
   nonce?: bigint;
   /** Defaults to now (seconds). */
   issuedAt?: bigint;
@@ -40,9 +37,6 @@ export function buildAgentId(input: BuildAgentIdInput): AgentIdFields {
     agent: input.agent,
     operator: input.operator,
     humanRoot: input.humanRoot,
-    scopes: input.scopes,
-    stake: input.stake ?? 0n,
-    budgetCap: input.budgetCap ?? 0n,
     nonce: input.nonce ?? 0n,
     issuedAt,
     expiresAt,
@@ -61,7 +55,7 @@ export function hashAgentId(fields: AgentIdFields, opts?: DomainOptions): Hex {
 
 /**
  * Sign an Agent ID with a viem `LocalAccount` (server-side / tests). In the
- * browser, the Mini App signs via wagmi's `signTypedData` and assembles the
+ * browser, the web app signs via wagmi's `signTypedData` and assembles the
  * {@link AgentIdCredential} itself using the same domain/types.
  */
 export async function signAgentId(

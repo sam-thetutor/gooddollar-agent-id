@@ -1,6 +1,6 @@
 # GoodDollar Agent ID — Pitch Deck
 
-> Slide-by-slide deck for GoodBuilders Season 4. Each `---` is a new slide.
+> Slide-by-slide deck. Each `---` is a new slide.
 > Headline = what the audience reads; **Say** = speaker notes; keep ~1 idea per slide.
 
 ---
@@ -21,7 +21,7 @@ Powered by GoodDollar · Built on Celo · ERC-8004 compatible
 **AI agents are becoming economic actors.**
 They book, pay, trade, negotiate, and represent us online.
 
-By 2026, agents don't just *answer* — they *transact*.
+Agents don't just *answer* anymore — they *transact*.
 
 **Say:** "The internet is filling with autonomous agents that move money. That's the context for everything in this deck."
 
@@ -41,15 +41,15 @@ Or is it one of 10,000 bots spun up by a sybil farm?
 
 ---
 
-## Slide 4 — Celo already started solving it
+## Slide 4 — The race already started
 
-The agent-trust race is happening **on Celo right now**:
+The agent-trust stack is being built **on Celo right now**:
 
 - **ERC-8004** — the agent trust standard (Identity / Reputation / Validation)
-- **Self Agent ID** — proof-of-human extension
-- **Celo Agent Visa** — passport for agents
+- **Self Agent ID** — a proof-of-human extension
+- **Agent registries** — portable, on-chain agent identities
 
-**Say:** "This isn't theoretical. Celo is building the agent identity stack as we speak. Good — we build on it, not against it."
+**Say:** "This isn't theoretical. The agent identity stack is being built as we speak. Good — we build on it, not against it."
 
 ---
 
@@ -57,7 +57,7 @@ The agent-trust race is happening **on Celo right now**:
 
 # Proof-of-Human today = **passport / Aadhaar scan**
 
-Self requires scanning a biometric **passport chip**.
+The leading approach requires scanning a biometric **passport chip**.
 
 That excludes **hundreds of millions** of people:
 the underbanked, the Global South, the document-less.
@@ -74,7 +74,7 @@ verified by **face**, not passport.
 > The people GoodDollar already proved are real
 > are **locked out of the agent economy.**
 
-**Say:** "GoodDollar has already solved unique-human proof for exactly the people Self can't reach. That asset is sitting unused for agents."
+**Say:** "GoodDollar has already solved unique-human proof for exactly the people passports can't reach. That asset is sitting unused for agents."
 
 ---
 
@@ -86,7 +86,7 @@ Let any **GoodDollar face-verified human** cryptographically
 **vouch for their AI agents** — no passport required —
 and make that proof readable by **ERC-8004**.
 
-**Say:** "We turn GoodDollar's 900K verified humans into a passport-free Proof-of-Human provider for the agent economy."
+**Say:** "We turn GoodDollar's verified humans into a passport-free Proof-of-Human provider for the agent economy."
 
 ---
 
@@ -120,85 +120,90 @@ the human's verification lapses.
 
 ---
 
-## Slide 10 — G$ becomes agent money
+## Slide 10 — Sybil resistance + a required, refundable G$ bond
 
-Novel utility — not basic claim/send:
+Signing a credential is **free and non-custodial**. To *register* an agent (so it's
+discoverable and verifiable), the operator locks a **refundable** G$ bond — a deposit,
+not a fee:
 
-- **Stake / bond** — operator locks G$ behind an agent (skin in the game)
-- **Delegated budget** — agent spends only within a **capped, revocable** G$ allowance
-- **Pay-per-verify** (optional) — sustainable infra economics
+- **Per-human cap** — one verified human can vouch for at most **10** active agents
+- **Required refundable bond** — registering an agent locks a refundable bond of **≥ 250 G$** in `AgentVault`; it returns to the operator on unstake (short cooldown)
+- **Verifier-chosen higher minimum** — verifiers can demand more bond than the protocol floor
 
-**Say:** "G$ isn't a wrapper here — it's the accountability collateral and the spending rail for agents."
+**Say:** "G$ has a guaranteed, non-zero role: every registered agent is backed by a refundable bond. It's a deposit — payable from a few days of UBI and fully refundable — not a paywall, so it stays mission-aligned while giving the token real, recurring demand."
 
 ---
 
 ## Slide 11 — Why we win (vs alternatives)
 
-| | Self Agent ID | **GoodDollar Agent ID** |
+| | Passport-based Proof-of-Human | **GoodDollar Agent ID** |
 |---|---|---|
 | Human proof | Passport / Aadhaar | **Face — no passport** |
-| Reaches | Document-holders | **The document-less (900K)** |
+| Reaches | Document-holders | **The document-less (≈900K)** |
 | Standard | ERC-8004 | **Same standard** |
-| Token role | — | **G$ stake + budget** |
-| On-ramp | Self app | **Web app + MetaMask** |
+| Freshness | One-time snapshot | **Re-checked on every verify** |
+| Token role | — | **Required refundable G$ bond** |
+| On-ramp | Dedicated app | **Web app + MetaMask** |
 
-**Say:** "We're additive: ERC-8004 handles agent identity, we supply the human root Self can't."
+**Say:** "We're additive: ERC-8004 handles agent identity, we supply the human root passports can't."
 
 ---
 
 ## Slide 12 — Why it matters
 
-- **Inclusion:** the document-less get to participate in the agent economy — GoodDollar's whole mission.
-- **Trust:** the agent economy gets a sybil-resistant human root.
-- **Demand:** real, recurring G$ utility (stake + budgets) tied to agents.
-- **Ecosystem:** open SDK/MCP any Celo team can adopt.
+- **Inclusion:** the document-less get to participate in the agent economy — GoodDollar's whole mission. The bond is refundable and payable from UBI, not a paywall.
+- **Trust:** the agent economy gets a sybil-resistant human root (per-human cap + skin-in-the-game bond).
+- **Demand:** a *required* refundable G$ bond gives the token a guaranteed, non-zero accountability role — every registered agent locks G$.
+- **Ecosystem:** an open SDK / MCP any team can adopt.
 
 **Say:** "It matters because it's inclusion AND infrastructure AND new G$ demand in one product."
 
 ---
 
-## Slide 13 — Traction & what's already built
+## Slide 13 — This already works (live)
 
-Reusing live infrastructure (pivoted from G$ Copilot):
+Not a concept — **built, tested, and on mainnet**:
 
-- GoodDollar identity reads · MCP server · web app (MetaMask) + self-hosted AI copilot
-- Live: `gcopilot.geinz.lol` (app) · `gcopilot-api.geinz.lol` (API)
+- **SDK on npm** — `@goodagent/agent-id`: identity-only EIP-712 issue + **live** GoodDollar verify; `viem`-only
+- **`AgentVault` on Celo mainnet** — required, refundable G$ bond, `minStake` 250 G$ enforced on-chain · Foundry tested (14/14) · [`0x040904…7090`](https://celoscan.io/address/0x0409042B55e99Df8c0Feb7525A770838f3A47090)
+- **ERC-8004 `IHumanProofProvider` on Celo mainnet** — a deployed, standard-conformant GoodDollar Proof-of-Human provider reading the live whitelist · Foundry tested (10/10) · [`0x80c4…48c9`](https://celoscan.io/address/0x80c4de6872049cb20989156bca50134c781f48c9)
+- **Web app + public Explorer** — connect → verify → stake bond → issue → verify any agent
 
-**Say:** "We're not starting from zero — the on-ramp, identity reads, and deploy are already running."
+Live: `gooddollar-agent-id.vercel.app` (app) · `@goodagent/agent-id` (npm)
 
----
-
-## Slide 14 — Roadmap (12 weeks)
-
-| Week | Milestone |
-|------|-----------|
-| 4 | Verify → issue EIP-712 Agent ID; `verifyAgent` API live |
-| 8 | G$ stake + budget; public Explorer; 50 agents · 100 verifications |
-| 12 | ERC-8004 Tier 1 attestation; SDK + MCP on npm; 200 agents |
-
-**Targets:** 200+ Agent IDs · 150+ new verifications · 1,000+ verify calls · 250K+ G$ · 2+ integrations
-
-**Say:** "A demoable product by week 4, ecosystem-ready by week 12."
+**Say:** "Everything here is already running — identity credential, live verify, the required on-chain G$ bond, a deployed ERC-8004 Proof-of-Human provider, and the SDK on npm."
 
 ---
 
-## Slide 15 — The ask / close
+## Slide 14 — Roadmap
+
+| Stage | What |
+|-------|------|
+| **Shipped** | Identity-only SDK on npm · live GoodDollar verify · per-human cap · required refundable `AgentVault` bond (250 G$, on-chain `minStake`) · **deployed ERC-8004 `IHumanProofProvider`** · registration interop · web app + public Explorer |
+| **Next** | Get the GoodDollar provider **accepted** into a live PoH registry (Self / 8004 coordination) so Self-stack verifiers natively recognize GoodDollar humans; first ecosystem integrations |
+| **Later** | Agent reputation signals · multi-registry discovery · verifier-policy tooling |
+
+**Say:** "GoodDollar already implements the same Proof-of-Human provider interface Self uses, and it's deployed. The next step is getting it adopted into the registries verifiers already trust."
+
+---
+
+## Slide 15 — Close
 
 # Make GoodDollar the human root of the agent economy.
 
-900K verified humans. Zero passports required.
+≈900K verified humans. Zero passports required.
 One standard everyone already builds on.
 
-**GoodDollar Agent ID** — built for GoodBuilders Season 4.
-
-**Say:** "Fund the layer that lets the world's underbanked stand behind their AI agents — and turns GoodDollar's biggest asset into agent-economy infrastructure."
+**Say:** "GoodDollar Agent ID lets the world's underbanked stand behind their AI agents — and turns GoodDollar's biggest asset into agent-economy infrastructure."
 
 ---
 
 ## Appendix — One-liner & elevator pitch
 
 **One-liner:**
-GoodDollar Agent ID is the passport-free Proof-of-Human layer that lets verified humans vouch for their AI agents, with G$ as the stake and budget.
+GoodDollar Agent ID is the passport-free Proof-of-Human layer that lets verified humans vouch for their AI agents, backed by a required, refundable G$ bond.
 
 **Elevator (30s):**
-AI agents are becoming economic actors, and the unsolved problem is proving a real, unique human stands behind one. Celo's stack solves this with passport scans — which excludes the billions GoodDollar serves. GoodDollar Agent ID uses GoodDollar's face verification to issue a Proof-of-Human credential for agents that plugs straight into ERC-8004, with G$ as the agent's accountability stake and spending budget. We make GoodDollar's 900K verified humans the foundation of the agent economy.
+AI agents are becoming economic actors, and the unsolved problem is proving a real, unique human stands behind one. The leading solutions rely on passport scans — which exclude the billions GoodDollar serves. GoodDollar Agent ID uses GoodDollar's face verification to issue a Proof-of-Human credential for agents that plugs straight into ERC-8004. Signing is free and non-custodial; registering an agent locks a small, refundable G$ bond (≥ 250 G$, payable from UBI and fully refundable), so the token has a guaranteed role while the system stays inclusive and sybil-resistant (each human can vouch for up to 10 agents). We make GoodDollar's verified humans the foundation of the agent economy.
+
+**Links:** `gooddollar-agent-id.vercel.app` · npm `@goodagent/agent-id`

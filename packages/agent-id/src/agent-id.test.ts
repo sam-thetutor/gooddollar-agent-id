@@ -34,7 +34,6 @@ async function issueCredential(
     agent: AGENT,
     operator: overrides?.operator ?? operatorAccount.address,
     humanRoot: HUMAN_ROOT,
-    scopes: "pay,trade",
     expiresAt: overrides?.expiresAt,
   });
   return signAgentId(operatorAccount, fields);
@@ -48,7 +47,7 @@ describe("Agent ID — issue & verify", () => {
     });
     expect(result.valid).toBe(true);
     expect(result.operator).toBe(operatorAccount.address);
-    expect(result.scopes).toBe("pay,trade");
+    expect(result.humanRoot).toBe(HUMAN_ROOT);
   });
 
   it("rejects an expired credential", async () => {
@@ -84,7 +83,6 @@ describe("Agent ID — issue & verify", () => {
       agent: AGENT,
       operator: operatorAccount.address,
       humanRoot: HUMAN_ROOT,
-      scopes: "pay",
     });
     const cred = await signAgentId(otherAccount, fields);
     const result = await verifyAgentId(cred, {
@@ -98,7 +96,7 @@ describe("Agent ID — issue & verify", () => {
     const cred = await issueCredential();
     const tampered: AgentIdCredential = {
       ...cred,
-      fields: { ...cred.fields, scopes: "pay,trade,admin" },
+      fields: { ...cred.fields, nonce: cred.fields.nonce + 1n },
     };
     const result = await verifyAgentId(tampered, {
       humanRootLookup: verifiedLookup,
@@ -111,7 +109,7 @@ describe("Agent ID — issue & verify", () => {
   it("survives a wire round-trip and still verifies", async () => {
     const cred = await issueCredential();
     const roundTripped = credentialFromWire(credentialToWire(cred));
-    expect(roundTripped.fields.stake).toBe(cred.fields.stake);
+    expect(roundTripped.fields.humanRoot).toBe(cred.fields.humanRoot);
     expect(roundTripped.fields.expiresAt).toBe(cred.fields.expiresAt);
     const result = await verifyAgentId(roundTripped, {
       humanRootLookup: verifiedLookup,

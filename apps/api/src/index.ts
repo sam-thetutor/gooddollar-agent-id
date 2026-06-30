@@ -10,54 +10,38 @@ loadEnv({ path: existsSync(rootEnv) ? rootEnv : undefined });
 
 import { serve } from "@hono/node-server";
 import {
+  getAgentVaultStatus,
   getClaimEligibility,
   getGBalance,
   getVerifyStatus,
   pingChain,
-} from "@g-copilot/chain";
+} from "@goodagent/chain";
 import {
-  completePendingAction,
-  createPendingAction,
-  deleteSession,
-  expireStaleActions,
+  MAX_AGENTS_PER_HUMAN,
+  countActiveAgentsByHumanRoot,
   getAgentCredential,
-  getPendingAction,
-  getSession,
-  linkWallet,
+  listAgentCredentialsByHumanRoot,
   listAgentCredentialsByOperator,
   upsertAgentCredential,
-  verifyLinkToken,
   writeAudit,
-} from "@g-copilot/db";
+} from "@goodagent/db";
 import {
   credentialFromWire,
   liveHumanRootLookup,
   verifyAgentId,
   verifyResultToWire,
   type AgentIdCredentialWire,
-} from "@g-copilot/agent-id";
+} from "@goodagent/agent-id";
 import {
   addressSchema,
-  chatRequestSchema,
-  completeActionSchema,
-  createActionSchema,
   healthResponseSchema,
   issueAgentRequestSchema,
-  linkWalletSchema,
-} from "@g-copilot/shared";
+} from "@goodagent/shared";
 import { getAddress } from "viem";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { isLlmConfigured, runChat } from "./lib/agent.js";
-import { notifyTelegram, validateInitData } from "./lib/telegram.js";
 
 const app = new Hono();
-
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
-// Enforce Telegram initData HMAC in production, or when explicitly required.
-const REQUIRE_INIT_DATA =
-  process.env.NODE_ENV === "production" ||
-  process.env.REQUIRE_INIT_DATA === "true";
 
 app.use("*", cors({ origin: "*" }));
 
@@ -65,7 +49,7 @@ app.get("/health", async (c) => {
   const chainOk = await pingChain();
   const body = healthResponseSchema.parse({
     ok: true,
-    service: "g-copilot-api",
+    service: "gooddollar-agent-id-api",
     version: "0.1.0",
   });
   return c.json({ ...body, chain: chainOk ? "ok" : "unreachable" });
@@ -79,16 +63,8 @@ app.get("/", (c) =>
       "GET /health",
       "GET /wallet/:address",
       "POST /agent/issue",
-      "GET /agent/verify/:address",
-      "GET /agent/list?operator=",
-      "POST /chat",
-      "GET /sessions/:telegramId",
-      "POST /sessions/link",
-      "DELETE /sessions/:telegramId",
-      "POST /actions",
-      "GET /actions/:id",
-      "POST /actions/:id/complete",
-      "POST /actions/expire",
+      "GET /agent/verify/:address?minStake=",
+      "GET /agent/list?operator=  (or ?humanRoot=)",
     ],
   }),
 );
@@ -123,9 +99,6 @@ function recordToWire(rec: {
   agent: string;
   operator: string;
   humanRoot: string;
-  scopes: string;
-  stake: string;
-  budgetCap: string;
   nonce: string;
   issuedAt: string;
   expiresAt: string;
@@ -138,9 +111,6 @@ function recordToWire(rec: {
       agent: rec.agent,
       operator: rec.operator,
       humanRoot: rec.humanRoot,
-      scopes: rec.scopes,
-      stake: rec.stake,
-      budgetCap: rec.budgetCap,
       nonce: rec.nonce,
       issuedAt: rec.issuedAt,
       expiresAt: rec.expiresAt,
@@ -179,13 +149,53 @@ app.post("/agent/issue", async (c) => {
   }
 
   const w = parsed.data;
+  const agentAddr = getAddress(w.fields.agent);
+  const humanRoot = getAddress(w.fields.humanRoot);
+
+  // Economic requirement: an agent must carry an active refundable G$ bond of at
+  // least the vault's `minStake` to be registered. This gives G$ a non-optional
+  // role while keeping the deposit fully refundable (it only returns to the
+  // operator). The bond must be in place on-chain before issuing.
+  const vault = await getAgentVaultStatus(agentAddr).catch(() => null);
+  if (!vault || !vault.vaultConfigured) {
+    return c.json(
+      { error: "VAULT_UNAVAILABLE", message: "Stake vault is not reachable." },
+      503,
+    );
+  }
+  if (!vault.meetsMinStake) {
+    return c.json(
+      {
+        error: "STAKE_REQUIRED",
+        message: `A refundable bond of at least ${vault.minStakeFormatted} G$ must be staked for this agent before it can be registered.`,
+        minStake: vault.minStake,
+        minStakeFormatted: vault.minStakeFormatted,
+        stake: vault.stake,
+        stakeFormatted: vault.stakeFormatted,
+      },
+      402,
+    );
+  }
+
+  // Sybil guard: one verified human may vouch for at most MAX_AGENTS_PER_HUMAN
+  // active agents. Re-issuing an existing agent doesn't count against the cap.
+  const activeCount = await countActiveAgentsByHumanRoot(humanRoot, agentAddr);
+  if (activeCount >= MAX_AGENTS_PER_HUMAN) {
+    return c.json(
+      {
+        error: "AGENT_CAP_REACHED",
+        message: `This human already vouches for the maximum of ${MAX_AGENTS_PER_HUMAN} agents. Revoke one to add another.`,
+        max: MAX_AGENTS_PER_HUMAN,
+        active: activeCount,
+      },
+      409,
+    );
+  }
+
   const stored = await upsertAgentCredential({
-    agent: getAddress(w.fields.agent),
+    agent: agentAddr,
     operator: getAddress(w.fields.operator),
-    humanRoot: getAddress(w.fields.humanRoot),
-    scopes: w.fields.scopes,
-    stake: w.fields.stake,
-    budgetCap: w.fields.budgetCap,
+    humanRoot,
     nonce: w.fields.nonce,
     issuedAt: w.fields.issuedAt,
     expiresAt: w.fields.expiresAt,
@@ -194,7 +204,7 @@ app.post("/agent/issue", async (c) => {
     verifyingContract: getAddress(w.verifyingContract),
   });
 
-  await writeAudit("agent_id_issued", undefined, {
+  await writeAudit("agent_id_issued", {
     agent: stored.agent,
     operator: stored.operator,
   });
@@ -231,12 +241,39 @@ app.get("/agent/verify/:address", async (c) => {
     });
   }
 
+  // Optional verifier-chosen minimum bond (base units, e.g. wei of G$). When
+  // provided we report whether the live on-chain stake meets it — the identity
+  // verdict itself never depends on stake.
+  const minStakeRaw = c.req.query("minStake");
+  let minStake: bigint | null = null;
+  if (minStakeRaw !== undefined) {
+    if (!/^\d+$/.test(minStakeRaw)) {
+      return c.json({ error: "BAD_MIN_STAKE" }, 400);
+    }
+    minStake = BigInt(minStakeRaw);
+  }
+
   try {
     const credential = credentialFromWire(recordToWire(rec));
-    const result = await verifyAgentId(credential, {
-      humanRootLookup: liveHumanRootLookup,
+    const [result, onchain] = await Promise.all([
+      verifyAgentId(credential, { humanRootLookup: liveHumanRootLookup }),
+      getAgentVaultStatus(agent).catch(() => null),
+    ]);
+    const meetsMinStake =
+      minStake === null
+        ? undefined
+        : onchain
+          ? BigInt(onchain.stake) >= minStake
+          : false;
+    return c.json({
+      found: true,
+      agent,
+      ...verifyResultToWire(result),
+      onchain,
+      ...(minStake === null
+        ? {}
+        : { minStake: minStake.toString(), meetsMinStake }),
     });
-    return c.json({ found: true, agent, ...verifyResultToWire(result) });
   } catch (error) {
     return c.json(
       { error: "VERIFY_ERROR", message: (error as Error).message },
@@ -245,172 +282,48 @@ app.get("/agent/verify/:address", async (c) => {
   }
 });
 
-// List the agents an operator has issued (for the "My Agents" dashboard).
+// List the agents a human has vouched for. Query by `operator` (the wallet that
+// signed) or by `humanRoot` (the GoodDollar identity, which spans an operator's
+// wallets) — the latter powers "all agents this human vouched for".
 app.get("/agent/list", async (c) => {
-  const raw = c.req.query("operator");
-  if (!raw || !addressSchema.safeParse(raw).success) {
-    return c.json({ error: "BAD_OPERATOR" }, 400);
+  const operatorRaw = c.req.query("operator");
+  const humanRootRaw = c.req.query("humanRoot");
+
+  let rows;
+  let key: { operator?: string; humanRoot?: string };
+  if (humanRootRaw) {
+    if (!addressSchema.safeParse(humanRootRaw).success) {
+      return c.json({ error: "BAD_HUMAN_ROOT" }, 400);
+    }
+    const humanRoot = getAddress(humanRootRaw);
+    rows = await listAgentCredentialsByHumanRoot(humanRoot);
+    key = { humanRoot };
+  } else if (operatorRaw) {
+    if (!addressSchema.safeParse(operatorRaw).success) {
+      return c.json({ error: "BAD_OPERATOR" }, 400);
+    }
+    const operator = getAddress(operatorRaw);
+    rows = await listAgentCredentialsByOperator(operator);
+    key = { operator };
+  } else {
+    return c.json({ error: "MISSING_QUERY" }, 400);
   }
-  const operator = getAddress(raw);
-  const rows = await listAgentCredentialsByOperator(operator);
+
   const agents = rows.map((r) => ({
     agent: r.agent,
-    scopes: r.scopes,
-    stake: r.stake,
-    budgetCap: r.budgetCap,
+    operator: r.operator,
     expiresAt: r.expiresAt,
     revoked: Boolean(r.revokedAt),
     createdAt: r.createdAt,
   }));
-  return c.json({ operator, count: agents.length, agents });
-});
-
-// ---------------------------------------------------------------------------
-// Chat copilot (LLM + MCP tools)
-// ---------------------------------------------------------------------------
-
-app.post("/chat", async (c) => {
-  const parsed = chatRequestSchema.safeParse(
-    await c.req.json().catch(() => null),
-  );
-  if (!parsed.success) {
-    return c.json({ error: "BAD_INPUT", issues: parsed.error.issues }, 400);
-  }
-  if (!isLlmConfigured()) {
-    return c.json({ error: "LLM_NOT_CONFIGURED" }, 503);
-  }
-  try {
-    const result = await runChat(parsed.data.messages, {
-      wallet: parsed.data.wallet,
-    });
-    return c.json(result);
-  } catch (error) {
-    return c.json(
-      { error: "CHAT_ERROR", message: (error as Error).message },
-      500,
-    );
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Sessions
-// ---------------------------------------------------------------------------
-
-app.get("/sessions/:telegramId", async (c) => {
-  const session = await getSession(c.req.param("telegramId"));
-  if (!session) return c.json({ error: "NOT_FOUND" }, 404);
-  return c.json(session);
-});
-
-app.post("/sessions/link", async (c) => {
-  const parsed = linkWalletSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) {
-    return c.json({ error: "BAD_INPUT", issues: parsed.error.issues }, 400);
-  }
-  const { telegramId, wallet, initData, token } = parsed.data;
-
-  // Two ways to prove the caller owns this Telegram id:
-  //   1. Telegram WebApp `initData` (HMAC) — available inside Telegram's webview.
-  //   2. A signed link `token` — for MiniPay's in-app browser / normal browsers
-  //      where there is no Telegram WebApp context.
-  // initData is checked whenever present; otherwise a valid token is accepted;
-  // otherwise (in production) we reject.
-  if (initData) {
-    if (!BOT_TOKEN) {
-      return c.json({ error: "SERVER_MISCONFIGURED" }, 500);
-    }
-    const result = validateInitData(initData, BOT_TOKEN);
-    if (!result.ok) {
-      return c.json({ error: "INVALID_INIT_DATA", reason: result.reason }, 401);
-    }
-    if (result.telegramId && result.telegramId !== telegramId) {
-      return c.json({ error: "TELEGRAM_ID_MISMATCH" }, 401);
-    }
-  } else if (token) {
-    const result = verifyLinkToken(token);
-    if (!result.ok) {
-      return c.json({ error: "INVALID_TOKEN", reason: result.reason }, 401);
-    }
-    if (result.telegramId !== telegramId) {
-      return c.json({ error: "TELEGRAM_ID_MISMATCH" }, 401);
-    }
-  } else if (REQUIRE_INIT_DATA) {
-    return c.json({ error: "INIT_DATA_REQUIRED" }, 401);
-  }
-
-  const session = await linkWallet(telegramId, wallet);
-  await writeAudit("wallet_linked", telegramId, { wallet });
-  const short = `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
-  await notifyTelegram(
-    BOT_TOKEN,
-    telegramId,
-    `✅ Wallet *${short}* connected. Send /status to see your GoodDollar info.`,
-  );
-  return c.json(session);
-});
-
-app.delete("/sessions/:telegramId", async (c) => {
-  const telegramId = c.req.param("telegramId");
-  await deleteSession(telegramId);
-  await writeAudit("session_deleted", telegramId);
-  return c.json({ ok: true });
-});
-
-// ---------------------------------------------------------------------------
-// Pending actions
-// ---------------------------------------------------------------------------
-
-app.post("/actions", async (c) => {
-  const parsed = createActionSchema.safeParse(
-    await c.req.json().catch(() => null),
-  );
-  if (!parsed.success) {
-    return c.json({ error: "BAD_INPUT", issues: parsed.error.issues }, 400);
-  }
-  const action = await createPendingAction({
-    telegramId: parsed.data.telegramId,
-    actionType: parsed.data.actionType,
-    payload: parsed.data.payload,
-    ttlMinutes: parsed.data.ttlMinutes,
+  const activeCount = agents.filter((a) => !a.revoked).length;
+  return c.json({
+    ...key,
+    count: agents.length,
+    activeCount,
+    maxPerHuman: MAX_AGENTS_PER_HUMAN,
+    agents,
   });
-  return c.json(action, 201);
-});
-
-app.get("/actions/:id", async (c) => {
-  const action = await getPendingAction(c.req.param("id"));
-  if (!action) return c.json({ error: "NOT_FOUND" }, 404);
-  return c.json(action);
-});
-
-app.post("/actions/:id/complete", async (c) => {
-  const id = c.req.param("id");
-  const parsed = completeActionSchema.safeParse(
-    await c.req.json().catch(() => null),
-  );
-  if (!parsed.success) {
-    return c.json({ error: "BAD_INPUT", issues: parsed.error.issues }, 400);
-  }
-
-  const existing = await getPendingAction(id);
-  if (!existing) return c.json({ error: "NOT_FOUND" }, 404);
-  if (existing.status !== "pending") {
-    return c.json({ error: "ACTION_NOT_PENDING", status: existing.status }, 409);
-  }
-  if (existing.expiresAt.getTime() < Date.now()) {
-    return c.json({ error: "ACTION_EXPIRED" }, 410);
-  }
-
-  const action = await completePendingAction(id, parsed.data.txHash);
-  await writeAudit("action_completed", existing.telegramId, {
-    actionId: id,
-    txHash: parsed.data.txHash,
-  });
-  return c.json(action);
-});
-
-app.post("/actions/expire", async (c) => {
-  const count = await expireStaleActions();
-  return c.json({ ok: true, expired: count });
 });
 
 const port = Number(process.env.API_PORT ?? 3001);

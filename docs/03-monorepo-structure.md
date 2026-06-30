@@ -1,179 +1,139 @@
 # Monorepo structure
 
-Planned layout for the G$ Copilot monorepo (pnpm workspaces).
+pnpm workspace layout for GoodDollar Agent ID.
 
 ```
-g-copilot/
+fff/
 ├── apps/
-│   ├── telegram-bot/          # LangChain + Telegraf bot
-│   ├── mini-app/              # Vite + React Telegram Mini App
-│   ├── web-fallback/          # Browser connect/sign pages (optional merge into mini-app)
-│   └── api/                   # HTTP API: callbacks, sessions, webhooks
+│   ├── web/                   # Vite + React + Wagmi/Reown — issue, verify, manage
+│   └── api/                   # Hono HTTP API — issue / verify / list
 │
 ├── packages/
-│   ├── mcp-server/            # gooddollar-mcp — MCP tool implementations
-│   ├── chain/                 # Viem clients, addresses, ABIs, Superfluid helpers
-│   ├── shared/                # Types, constants, validation (Zod)
-│   └── db/                    # Prisma/Drizzle schema + repositories
+│   ├── agent-id/              # SDK (npm: @goodagent/agent-id) — sign/verify + ERC-8004
+│   ├── chain/                 # viem reads: identity, G$, AgentVault, ERC-8004
+│   ├── contracts/             # Foundry — AgentVault.sol (required refundable G$ bond)
+│   ├── db/                    # Prisma schema + repositories (credentials, audit)
+│   ├── mcp-server/            # gooddollar-mcp — verify_agent + GoodDollar read tools
+│   └── shared/                # Zod schemas, constants, error types
 │
+├── examples/                  # Runnable SDK demos (verify-agent.mjs)
 ├── docs/                      # Project documentation (this folder)
 │
 ├── package.json               # Workspace root
 ├── pnpm-workspace.yaml
-├── turbo.json                 # Optional: Turborepo task pipeline
-├── .env.example
-└── README.md                  # Quickstart (links to docs/)
+├── vercel.json                # Web app deploy config (monorepo build)
+├── docker-compose.yml         # Local Postgres for dev
+└── README.md
 ```
 
 ## Package boundaries
 
-### `apps/telegram-bot`
+### `apps/web`
 
 | Concern | Location |
 |---------|----------|
-| Telegraf handlers | `src/handlers/` |
-| LangChain agent + tools wrapper | `src/agent/` |
-| MCP client (calls local MCP or in-process) | `src/mcp/` |
-| Session middleware | `src/middleware/session.ts` |
+| Wallet config (Reown AppKit + Wagmi) | `src/lib/wagmi.ts` |
+| API client | `src/lib/api.ts` |
+| EIP-712 credential helpers | `src/lib/agentId.ts` |
+| AgentVault address/abi | `src/lib/vault.ts` |
+| Pages | `src/pages/` — `Home`, `IssueAgent`, `Verify`, `MyAgents`, `ManageAgent` |
 
-**Dependencies:** `@g-copilot/mcp-server`, `@g-copilot/shared`, `@g-copilot/db`, `langchain`, `telegraf`
-
-### `apps/mini-app`
-
-| Concern | Location |
-|---------|----------|
-| Wagmi config | `src/lib/wagmi.ts` |
-| Connect page | `src/pages/Connect.tsx` |
-| Sign / confirm page | `src/pages/Sign.tsx` |
-| Telegram WebApp SDK integration | `src/lib/telegram.ts` |
-
-**Dependencies:** `@g-copilot/chain`, `@g-copilot/shared`, `@goodsdks/citizen-sdk`, `wagmi`, `viem`
+**Depends on:** `@goodagent/shared`, `wagmi`, `viem`, `@reown/appkit`
 
 ### `apps/api`
 
 | Concern | Location |
 |---------|----------|
-| FV callback | `src/routes/identity/callback.ts` |
-| Pending actions CRUD | `src/routes/actions/` |
-| Telegram webhook (optional) | `src/routes/telegram/` |
-| Health + metrics | `src/routes/health.ts` |
+| Routes + server | `src/index.ts` |
 
-**Dependencies:** `@g-copilot/db`, `@g-copilot/chain`, `@g-copilot/shared`
+Routes: `GET /health`, `GET /wallet/:address`, `POST /agent/issue`,
+`GET /agent/verify/:address`, `GET /agent/list?operator=`.
 
-### `packages/mcp-server`
+**Depends on:** `@goodagent/agent-id`, `@goodagent/chain`, `@goodagent/db`, `@goodagent/shared`
+
+### `packages/agent-id` — published as `@goodagent/agent-id`
 
 | Concern | Location |
 |---------|----------|
-| MCP server entry | `src/index.ts` |
-| Tool definitions | `src/tools/*.ts` |
-| Tool registration | `src/server.ts` |
+| EIP-712 domain/types | `src/eip712.ts` |
+| Build + sign | `src/sign.ts` |
+| Verify (+ live human root) | `src/verify.ts`, `src/chain-lookup.ts` |
+| Wire (bigint↔string) serialization | `src/serialize.ts` |
+| ERC-8004 encode / verify | `src/erc8004.ts` |
 
-**Publish name:** `@gooddollar/mcp` or `gooddollar-mcp`
+**Runtime dependency:** `viem` only.
 
 ### `packages/chain`
 
 | Concern | Location |
 |---------|----------|
-| Celo public client factory | `src/client.ts` |
-| Contract addresses | `src/addresses.ts` |
-| G$ / Identity / UBI ABIs | `src/abis/` |
-| Superfluid stream helpers | `src/superfluid.ts` |
-| Tx builders (unsigned) | `src/transactions/` |
+| Celo client | `src/client.ts` |
+| Addresses (G$, AgentVault, ERC-8004) | `src/addresses.ts` |
+| ABIs | `src/abis.ts` |
+| Reads (identity, balance, vault, erc8004) | `src/reads.ts` |
 
-### `packages/shared`
+### `packages/contracts`
 
-| Concern | Location |
-|---------|----------|
-| Zod schemas for tools + API | `src/schemas/` |
-| Error types | `src/errors.ts` |
-| Chain ID, decimals, limits | `src/constants.ts` |
+Foundry project for two contracts:
+- `AgentVault.sol` — required, refundable G$ bond with on-chain `minStake`
+  (250 G$) enforcement. Deployed to Celo mainnet at
+  `0x0409042B55e99Df8c0Feb7525A770838f3A47090`.
+- `GoodDollarHumanProofProvider.sol` — a standard ERC-8004 `IHumanProofProvider`
+  backed by the GoodDollar whitelist. Deployed to Celo mainnet at
+  `0x80c4de6872049cb20989156bca50134c781f48c9`.
 
 ### `packages/db`
 
 | Concern | Location |
 |---------|----------|
-| Schema | `prisma/schema.prisma` or `src/schema.ts` |
-| Repositories | `src/repositories/` |
+| Prisma schema | `prisma/schema.prisma` (`AgentCredential`, `AuditLog`) |
+| Credential repository | `src/agent-credentials.ts` |
+| Audit log | `src/audit.ts` |
+
+### `packages/mcp-server`
+
+`gooddollar-mcp` — stdio MCP server. Tools: `gooddollar_verify_agent` plus
+GoodDollar reads (`get_balance`, `verify_status`, `claim_eligibility`,
+`get_daily_stats`, `ping`). See [MCP server](./04-mcp-server.md).
+
+### `packages/shared`
+
+Zod schemas (`src/schemas/`), constants (chain id, decimals), error types.
 
 ## Inter-package dependency graph
 
 ```mermaid
 flowchart BT
-    BOT[telegram-bot]
-    MINI[mini-app]
-    API[api]
+    WEB[apps/web]
+    API[apps/api]
     MCP[mcp-server]
+    AGENTID["agent-id (@goodagent)"]
     CHAIN[chain]
     SHARED[shared]
     DB[db]
 
-    BOT --> MCP
-    BOT --> DB
-    BOT --> SHARED
-    MINI --> CHAIN
-    MINI --> SHARED
-    API --> DB
+    WEB --> SHARED
+    API --> AGENTID
     API --> CHAIN
+    API --> DB
+    API --> MCP
     API --> SHARED
+    MCP --> AGENTID
     MCP --> CHAIN
     MCP --> SHARED
+    AGENTID -.->|viem only| AGENTID
     CHAIN --> SHARED
     DB --> SHARED
 ```
 
-## Scripts (root `package.json`)
-
-```json
-{
-  "scripts": {
-    "dev": "turbo dev",
-    "dev:bot": "pnpm --filter telegram-bot dev",
-    "dev:mini": "pnpm --filter mini-app dev",
-    "dev:api": "pnpm --filter api dev",
-    "dev:mcp": "pnpm --filter mcp-server dev",
-    "build": "turbo build",
-    "lint": "turbo lint",
-    "db:push": "pnpm --filter db push",
-    "db:studio": "pnpm --filter db studio"
-  }
-}
-```
-
-## Environment variables (`.env.example`)
+## Common scripts
 
 ```bash
-# Telegram
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_WEBHOOK_SECRET=          # if using webhooks
-MINI_APP_URL=https://...          # Vercel URL for Mini App
-
-# WalletConnect
-WALLETCONNECT_PROJECT_ID=
-
-# Database
-DATABASE_URL=
-
-# GoodDollar / Chain
-GOODDOLLAR_ENV=production         # production | development
-CELO_RPC_URL=https://forno.celo.org
-
-# LLM
-OPENAI_API_KEY=                   # or ANTHROPIC_API_KEY
-
-# API
-API_BASE_URL=https://...
-FV_CALLBACK_SECRET=                 # HMAC for identity callbacks
-
-# MCP (optional remote)
-MCP_SERVER_URL=
+pnpm --filter @goodagent/web dev          # web app (Vite, :5173)
+pnpm --filter @goodagent/api dev          # API (tsx watch, :3001)
+pnpm --filter @goodagent/agent-id test    # SDK unit tests
+pnpm --filter @goodagent/db db:push       # apply Prisma schema
+pnpm --filter @goodagent/examples verify  # run the SDK example
 ```
 
-## Implementation order
-
-1. `packages/shared` + `packages/chain`
-2. `packages/mcp-server` (read-only tools first)
-3. `packages/db` + `apps/api`
-4. `apps/mini-app` (connect + sign)
-5. `apps/telegram-bot` (commands → MCP → Mini App buttons)
-
-See [Roadmap & milestones](./11-roadmap-milestones.md).
+See [implementation plan](./13-implementation-plan.md) for the phased build.

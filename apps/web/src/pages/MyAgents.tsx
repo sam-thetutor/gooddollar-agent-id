@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAccount } from "wagmi";
 import { Nav, ConnectButton } from "../components/Nav.js";
+import { Footer } from "../components/Footer.js";
 import { listAgents, type AgentListItem } from "../lib/api.js";
 
 function shorten(a: string): string {
@@ -18,6 +19,7 @@ function expiryLabel(secondsStr: string): string {
 export function MyAgents() {
   const { address, isConnected } = useAccount();
   const [agents, setAgents] = useState<AgentListItem[] | null>(null);
+  const [cap, setCap] = useState<{ active: number; max: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,7 +29,11 @@ export function MyAgents() {
     }
     let cancelled = false;
     listAgents(address)
-      .then((r) => !cancelled && setAgents(r.agents))
+      .then((r) => {
+        if (cancelled) return;
+        setAgents(r.agents);
+        setCap({ active: r.activeCount, max: r.maxPerHuman });
+      })
       .catch((err: Error) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
@@ -35,11 +41,23 @@ export function MyAgents() {
   }, [isConnected, address]);
 
   return (
-    <div className="page">
+    <>
       <Nav />
+      <main className="page">
       <header className="hero compact">
         <h1>My Agents</h1>
-        <p className="lede">Agent IDs you've issued.</p>
+        <p className="lede">
+          Agent IDs you've issued.
+          {cap && (
+            <>
+              {" "}
+              <strong>
+                {cap.active}/{cap.max}
+              </strong>{" "}
+              active — each verified human can vouch for up to {cap.max}.
+            </>
+          )}
+        </p>
       </header>
 
       {!isConnected && (
@@ -67,10 +85,9 @@ export function MyAgents() {
       {isConnected && agents && agents.length > 0 && (
         <section className="list">
           {agents.map((a) => (
-            <Link key={a.agent} to={`/verify?agent=${a.agent}`} className="card row">
+            <div key={a.agent} className="card row">
               <div>
                 <p className="row-title">{shorten(a.agent)}</p>
-                <p className="muted small">{a.scopes}</p>
               </div>
               <div className="row-meta">
                 <span className={a.revoked ? "warn" : "ok"}>
@@ -79,11 +96,21 @@ export function MyAgents() {
                 <span className="muted small">
                   exp {expiryLabel(a.expiresAt)}
                 </span>
+                <span className="row-actions">
+                  <Link to={`/verify?agent=${a.agent}`} className="link-sm">
+                    Verify
+                  </Link>
+                  <Link to={`/manage?agent=${a.agent}`} className="link-sm">
+                    Manage
+                  </Link>
+                </span>
               </div>
-            </Link>
+            </div>
           ))}
         </section>
       )}
-    </div>
+      </main>
+      <Footer />
+    </>
   );
 }
