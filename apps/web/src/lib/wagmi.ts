@@ -26,7 +26,7 @@ createAppKit({
   networks: [celo],
   projectId,
   metadata: {
-    name: "GoodDollar Agent ID",
+    name: "GoodAgent",
     description: "The passport-free Proof-of-Human layer for AI agents.",
     url: "https://gooddollar-agent-id.vercel.app",
     icons: ["https://gooddollar-agent-id.vercel.app/icon.png"],

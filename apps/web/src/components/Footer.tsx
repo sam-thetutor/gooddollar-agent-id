@@ -1,7 +1,7 @@
 import { Logo } from "./Logo.js";
 
 const VAULT_URL =
-  "https://celoscan.io/address/0x2CcDe0a686927E482Ae998550c97949965BeDC84";
+  "https://celoscan.io/address/0x0409042B55e99Df8c0Feb7525A770838f3A47090";
 
 export function Footer() {
   return (
@@ -10,7 +10,7 @@ export function Footer() {
         <div className="footer-brand">
           <span className="brand">
             <Logo className="brand-logo" />
-            GoodDollar Agent ID
+            GoodAgent
           </span>
           <p className="muted">
             The passport-free Proof-of-Human layer for AI agents. Built on Celo
@@ -40,7 +40,7 @@ export function Footer() {
         </div>
       </div>
       <div className="container footer-bottom">
-        © {new Date().getFullYear()} GoodDollar Agent ID · Non-custodial ·
+        © {new Date().getFullYear()} GoodAgent · Non-custodial ·
         Open source
       </div>
     </footer>
