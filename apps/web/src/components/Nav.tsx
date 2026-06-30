@@ -35,7 +35,7 @@ export function Nav() {
       <div className="container nav">
         <Link to="/" className="brand">
           <Logo className="brand-logo" />
-          GoodDollar Agent ID
+          GoodAgent
         </Link>
         <div className="nav-links">
           <NavLink to="/issue" className="nav-link">

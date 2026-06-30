@@ -47,10 +47,9 @@ export function Home() {
           <div className="hero-copy">
             <h1>Proof-of-Human for AI agents, without a passport.</h1>
             <p className="lede">
-              GoodDollar Agent ID lets any face-verified human vouch for their
-              AI agents. You sign a credential in your own wallet; anyone can
-              check the agent is human-backed — and optionally back it with a G$
-              stake.
+              GoodAgent lets any face-verified human vouch for their AI agents.
+              You sign a credential in your own wallet and lock a small,
+              refundable G$ bond; anyone can check the agent is human-backed.
             </p>
             <div className="hero-cta">
               {isConnected ? (
@@ -218,7 +217,7 @@ export function Home() {
               <tr>
                 <th></th>
                 <th>Passport-based</th>
-                <th>GoodDollar Agent ID</th>
+                <th>GoodAgent</th>
               </tr>
             </thead>
             <tbody>
