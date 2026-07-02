@@ -28,6 +28,8 @@ export interface VerifyResultWire {
   operator?: string;
   humanRoot?: string;
   expiresAt?: string;
+  stake?: string;
+  minStake?: string;
 }
 
 export function fieldsToWire(fields: AgentIdFields): AgentIdFieldsWire {
@@ -81,5 +83,7 @@ export function verifyResultToWire(result: VerifyResult): VerifyResultWire {
     operator: result.operator,
     humanRoot: result.humanRoot,
     expiresAt: result.expiresAt?.toString(),
+    stake: result.stake?.toString(),
+    minStake: result.minStake?.toString(),
   };
 }

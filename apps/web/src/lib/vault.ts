@@ -2,14 +2,20 @@
 // time via VITE_AGENT_VAULT_ADDRESS once packages/contracts is deployed; until
 // then the management UI renders a "not yet deployed" notice.
 
+import { isAddress } from "viem";
+
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 const rawVault = import.meta.env.VITE_AGENT_VAULT_ADDRESS as
   | string
   | undefined;
 
+// Only accept a well-formed, non-zero address; anything else disables staking
+// UI rather than letting a malformed address reach a contract call.
 export const VAULT_ADDRESS: `0x${string}` | null =
-  rawVault && rawVault !== ZERO ? (rawVault as `0x${string}`) : null;
+  rawVault && rawVault !== ZERO && isAddress(rawVault)
+    ? (rawVault as `0x${string}`)
+    : null;
 
 export function isVaultConfigured(): boolean {
   return VAULT_ADDRESS !== null;

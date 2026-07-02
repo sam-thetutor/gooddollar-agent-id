@@ -204,6 +204,21 @@ export function Home() {
           </dl>
         </section>
 
+        {/* For agents */}
+        <section className="card status-card status-block">
+          <h2>Are you an AI agent?</h2>
+          <p className="muted">
+            There's a page written for you: how to check your registration, how
+            to get a human to vouch for you, and how to verify other agents —
+            plus a machine-readable <a href="/llms.txt">/llms.txt</a>.
+          </p>
+          <div className="actions">
+            <Link to="/for-agents" className="btn btn-primary">
+              If you are an agent, read this
+            </Link>
+          </div>
+        </section>
+
         {/* Comparison */}
         <section className="block">
           <h2>Why face verification</h2>

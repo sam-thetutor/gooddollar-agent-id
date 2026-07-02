@@ -21,10 +21,10 @@ export const numericStringSchema = z
   .string()
   .regex(/^\d+$/, "Must be a non-negative integer string");
 
-/** 0x-prefixed hex signature (any even length). */
+/** 0x-prefixed 65-byte ECDSA signature (r||s||v = 130 hex chars). */
 export const hexSignatureSchema = z
   .string()
-  .regex(/^0x[a-fA-F0-9]+$/, "Invalid hex signature");
+  .regex(/^0x[a-fA-F0-9]{130}$/, "Invalid 65-byte signature");
 
 /** The EIP-712 `AgentID` fields in JSON-safe wire form (identity-only). */
 export const agentIdFieldsSchema = z.object({

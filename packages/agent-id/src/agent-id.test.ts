@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import { getAddress, type Address } from "viem";
 import { buildAgentId, signAgentId } from "./sign.js";
-import { verifyAgentId, type HumanRootLookup } from "./verify.js";
+import {
+  verifyAgentId,
+  type HumanRootLookup,
+  type StakeLookup,
+} from "./verify.js";
 import { credentialFromWire, credentialToWire } from "./serialize.js";
 import type { AgentIdCredential } from "./types.js";
 
@@ -115,6 +119,32 @@ describe("Agent ID — issue & verify", () => {
       humanRootLookup: verifiedLookup,
     });
     expect(result.valid).toBe(true);
+  });
+
+  it("fails with insufficient_bond when the live stake is below the vault minimum", async () => {
+    const cred = await issueCredential();
+    const MIN = 250n * 10n ** 18n;
+    const withdrawnLookup: StakeLookup = () => ({ stake: 0n, minStake: MIN });
+    const result = await verifyAgentId(cred, {
+      humanRootLookup: verifiedLookup,
+      stakeLookup: withdrawnLookup,
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("insufficient_bond");
+    expect(result.stake).toBe(0n);
+    expect(result.minStake).toBe(MIN);
+  });
+
+  it("stays valid while the live stake meets the vault minimum", async () => {
+    const cred = await issueCredential();
+    const MIN = 250n * 10n ** 18n;
+    const bondedLookup: StakeLookup = () => ({ stake: MIN, minStake: MIN });
+    const result = await verifyAgentId(cred, {
+      humanRootLookup: verifiedLookup,
+      stakeLookup: bondedLookup,
+    });
+    expect(result.valid).toBe(true);
+    expect(result.stake).toBe(MIN);
   });
 
   it("honors an explicit `now` for time checks", async () => {

@@ -47,10 +47,36 @@ export function buildAgentIdMessage(input: BuildMessageInput): AgentIdMessage {
     agent: input.agent,
     operator: input.operator,
     humanRoot: input.humanRoot,
-    nonce: 0n,
+    // Monotonic per-issue nonce (issue time in seconds). The API rejects a
+    // re-issue whose nonce isn't strictly greater than the stored one, so an
+    // old signed credential can't be replayed to overwrite or un-revoke a
+    // newer registration.
+    nonce: issuedAt,
     issuedAt,
     expiresAt: issuedAt + ttl,
   };
+}
+
+/** EIP-712 types for a revocation the operator signs (must match the API). */
+export const revokeTypes = {
+  RevokeAgentID: [
+    { name: "agent", type: "address" },
+    { name: "operator", type: "address" },
+    { name: "nonce", type: "uint256" },
+  ],
+} as const;
+
+export interface RevokeMessage {
+  agent: Address;
+  operator: Address;
+  nonce: bigint;
+}
+
+export function buildRevokeMessage(
+  agent: Address,
+  operator: Address,
+): RevokeMessage {
+  return { agent, operator, nonce: BigInt(Math.floor(Date.now() / 1000)) };
 }
 
 /** Convert a signing message into the JSON-safe wire form the API expects. */

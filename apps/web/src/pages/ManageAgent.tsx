@@ -5,6 +5,7 @@ import {
   useAccount,
   usePublicClient,
   useReadContract,
+  useSignTypedData,
   useWriteContract,
 } from "wagmi";
 import { Nav, ConnectButton } from "../components/Nav.js";
@@ -17,6 +18,8 @@ import {
   isVaultConfigured,
   VAULT_ADDRESS,
 } from "../lib/vault.js";
+import { agentIdDomain, buildRevokeMessage, revokeTypes } from "../lib/agentId.js";
+import { revokeAgent } from "../lib/api.js";
 
 type AgentSnapshot = readonly [
   `0x${string}`, // operator
@@ -34,6 +37,7 @@ export function ManageAgent() {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const { signTypedDataAsync } = useSignTypedData();
 
   const [amount, setAmount] = useState("250");
   const [busy, setBusy] = useState<string | null>(null);
@@ -144,6 +148,36 @@ export function ManageAgent() {
       }),
     );
 
+  // Identity revocation: a free EIP-712 signature (no on-chain tx) that tells
+  // the registry to stop verifying this agent, independent of the bond.
+  async function revoke() {
+    if (!agent || !address) return;
+    setError(null);
+    setNotice(null);
+    setBusy("Revoke");
+    try {
+      const operator = getAddress(address) as `0x${string}`;
+      const message = buildRevokeMessage(agent, operator);
+      const signature = await signTypedDataAsync({
+        domain: agentIdDomain,
+        types: revokeTypes,
+        primaryType: "RevokeAgentID",
+        message,
+      });
+      await revokeAgent({
+        agent,
+        operator,
+        nonce: message.nonce.toString(),
+        signature,
+      });
+      setNotice("Agent ID revoked — it no longer verifies as human-backed.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <>
       <Nav />
@@ -152,8 +186,10 @@ export function ManageAgent() {
         <h1>Manage stake</h1>
         <p className="lede">
           Manage the refundable G$ bond behind your agent. A bond of at least
-          the vault minimum is required to keep an agent registered; you can
-          withdraw it any time after a short cooldown (it always returns to you).
+          the vault minimum is required to keep an agent registered. You can
+          withdraw it after a short cooldown (it always returns to you), but
+          withdrawing below the minimum invalidates the Agent ID until you
+          re-stake — verifiers check the live bond on every verification.
         </p>
       </header>
 
@@ -280,6 +316,23 @@ export function ManageAgent() {
                   }
                 >
                   {busy === "Withdraw stake" ? "Withdrawing…" : "Withdraw stake"}
+                </button>
+              </div>
+
+              <div className="revoke-block">
+                <h3 className="card-title">Revoke identity</h3>
+                <p className="muted hint">
+                  Revoking is a free signature (no gas) that stops this agent
+                  from verifying as human-backed, independent of the bond. You
+                  can still withdraw your bond separately.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={Boolean(busy)}
+                  onClick={revoke}
+                >
+                  {busy === "Revoke" ? "Sign in your wallet…" : "Revoke Agent ID"}
                 </button>
               </div>
             </section>

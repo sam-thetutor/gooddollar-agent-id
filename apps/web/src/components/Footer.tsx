@@ -24,6 +24,8 @@ export function Footer() {
             <a href="/issue">Issue an Agent ID</a>
             <a href="/verify">Verify an agent</a>
             <a href="/agents">My Agents</a>
+            <a href="/for-agents">For Agents</a>
+            <a href="/llms.txt">llms.txt</a>
           </div>
           <div className="footer-col">
             <h4>Ecosystem</h4>

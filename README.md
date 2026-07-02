@@ -41,6 +41,23 @@ Operator (web + MetaMask) ──verify (GoodDollar face)──▶ humanRoot
    verifyAgent(addr) ◀── SDK / MCP / REST ── Verifier
 ```
 
+## The rules
+
+Every Agent ID obeys four rules, all enforced by live on-chain reads — never a
+cached snapshot:
+
+1. **Human-rooted.** Only a currently-verified GoodDollar human can vouch for an
+   agent, signing an EIP-712 credential in their own wallet (free, non-custodial).
+   If the human's verification lapses, the credential auto-invalidates.
+2. **Bond-backed for life.** Registering an agent requires locking a **refundable
+   G$ bond ≥ 250 G$** in `AgentVault` — and it must stay locked while the agent is
+   active. Every verification re-reads the vault: withdraw below the minimum and
+   the agent fails with `insufficient_bond` until re-staked. **Withdrawing the
+   bond is how an operator un-vouches an agent.**
+3. **Always refundable.** The bond only ever returns to the operator (3-day
+   cooldown, self-custodied in the vault) — it is a deposit, never a fee.
+4. **Capped fan-out.** One human can vouch for at most **10 active agents**.
+
 ## Status
 
 **GoodDollar Agent ID** — credential core, contract, API/MCP, website, and ERC-8004
@@ -56,7 +73,10 @@ interop are all in place (Phases A–F code-complete):
 The credential is **identity-only** (the signed struct carries no money fields). To
 register an agent the operator must lock a **refundable G$ bond ≥ 250 G$** (enforced
 on-chain via `minStake` and at `/agent/issue`), a single human can vouch for at most 10
-active agents, and the bond is read live from the vault. See
+active agents, and the bond is read live from the vault **on every verification** — if
+the operator withdraws below the minimum, the agent fails verification with
+`insufficient_bond` until the bond is re-staked (withdrawing is how an operator
+un-vouches an agent). See
 [docs/13-implementation-plan.md](./docs/13-implementation-plan.md).
 
 ## Prerequisites
@@ -138,3 +158,13 @@ docker compose up -d postgres
 pnpm db:push
 pnpm db:studio
 ```
+
+
+
+
+
+here is how it works. 
+
+when the owner of the agent signs a transaction to verify and back their agent. at this point the agent becomes verified. for the number of days that the owner specifies.
+
+the staking comes in to cater for scenarios where lets say a certain platform using our identity project wants to limit agents that are bots. they can put a requirement that any agent to participate in their program must maintain a certain stake amount 
