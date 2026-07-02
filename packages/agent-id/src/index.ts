@@ -18,14 +18,20 @@ export {
 export type { BuildAgentIdInput } from "./sign.js";
 
 export { verifyAgentId } from "./verify.js";
-export type { HumanRootLookup, VerifyOptions } from "./verify.js";
+export type { HumanRootLookup, StakeLookup, VerifyOptions } from "./verify.js";
 
 export {
+  AGENT_VAULT_CELO,
   GOODDOLLAR_IDENTITY_CELO,
   createHumanRootLookup,
+  createStakeLookup,
   liveHumanRootLookup,
+  liveStakeLookup,
 } from "./chain-lookup.js";
-export type { HumanRootLookupOptions } from "./chain-lookup.js";
+export type {
+  HumanRootLookupOptions,
+  StakeLookupOptions,
+} from "./chain-lookup.js";
 
 export {
   ERC8004_IDENTITY_REGISTRY_CELO,

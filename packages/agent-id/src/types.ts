@@ -41,14 +41,19 @@ export type VerifyFailureReason =
   | "expired"
   | "operator_not_verified"
   | "human_root_mismatch"
+  // The live G$ bond behind the agent was withdrawn / is below the vault
+  // minimum (only when the verifier supplies a `stakeLookup`):
+  | "insufficient_bond"
   // ERC-8004 registration-file verification (see erc8004.ts):
   | "no_gooddollar_proof"
   | "bad_credential";
 
 /**
- * Result of verifying an Agent ID credential. This is the *identity* verdict;
- * any optional on-chain G$ stake is read separately (see `packages/chain`'s
- * `getAgentVaultStatus`) and merged in by callers that care about the bond.
+ * Result of verifying an Agent ID credential. The core checks are identity
+ * (signature, expiry, live human root). When the verifier supplies a
+ * `stakeLookup`, the live G$ bond is also enforced: a bond below the vault
+ * minimum fails verification with `insufficient_bond` — withdrawing the bond
+ * un-verifies the agent until it is re-staked.
  */
 export interface VerifyResult {
   valid: boolean;
@@ -56,4 +61,8 @@ export interface VerifyResult {
   operator?: Address;
   humanRoot?: Address;
   expiresAt?: bigint;
+  /** Live G$ bond behind the agent (base units); set when a stakeLookup ran. */
+  stake?: bigint;
+  /** Vault minimum bond (base units); set when a stakeLookup ran. */
+  minStake?: bigint;
 }

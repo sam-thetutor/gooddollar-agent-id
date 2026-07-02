@@ -10,6 +10,21 @@ free, and global**. A credential auto-invalidates the moment the operator's
 GoodDollar verification lapses, because verification reads the human root **live**
 on every check.
 
+## The rules
+
+1. **Human-rooted** — only a currently-verified GoodDollar human (face verification,
+   no passport) can vouch for an agent, by signing an EIP-712 credential in their
+   own wallet. Signing is free and non-custodial.
+2. **Bond-backed** — registering an agent requires locking a **refundable G$ bond
+   ≥ 250 G$** in the on-chain `AgentVault`, and the bond must **stay locked for the
+   agent's whole active life**: verification re-reads the vault live and fails with
+   `insufficient_bond` the moment the bond drops below the minimum. Withdrawing the
+   bond (3-day cooldown, always refunded to the operator) is how an operator
+   *un-vouches* an agent.
+3. **Live, not snapshot** — both the human root and the bond are re-read on-chain
+   on every verification. There is no cached "verified" state to go stale.
+4. **Capped fan-out** — one human can vouch for at most 10 active agents.
+
 ## Install
 
 ```bash
@@ -37,17 +52,27 @@ const credential = await signAgentId(operator, fields); // EIP-712 signed
 ## Verify a credential (anyone)
 
 ```ts
-import { verifyAgentId, liveHumanRootLookup } from "@goodagent/agent-id";
+import {
+  verifyAgentId,
+  liveHumanRootLookup,
+  liveStakeLookup,
+} from "@goodagent/agent-id";
 
 const result = await verifyAgentId(credential, {
   humanRootLookup: liveHumanRootLookup, // reads GoodDollar Identity on Celo
+  stakeLookup: liveStakeLookup,         // reads the live G$ bond in AgentVault
 });
 
-result.valid; // true only if signature ok, not expired, operator verified NOW
+result.valid; // true only if: signature ok, not expired, operator verified NOW,
+              // and the required G$ bond is still locked (>= vault minimum)
+result.reason; // e.g. "insufficient_bond" if the operator withdrew the bond
+result.stake;  // live bond (base units), alongside result.minStake
 ```
 
-Use `createHumanRootLookup({ rpcUrl })` to point at your own Celo RPC, or supply
-any custom lookup (e.g. a cached one) for tests.
+Use `createHumanRootLookup({ rpcUrl })` / `createStakeLookup({ rpcUrl, vault })`
+to point at your own Celo RPC, or supply custom lookups (e.g. cached ones) for
+tests. If you omit `stakeLookup`, only the identity checks run — pass it whenever
+you want the full "human-backed **and** bonded" guarantee (recommended).
 
 ## ERC-8004 interop
 
@@ -110,8 +135,10 @@ on-chain `proofDigest`.
 | Export | Purpose |
 |---|---|
 | `buildAgentId`, `signAgentId`, `hashAgentId` | Build & sign the EIP-712 credential |
-| `verifyAgentId` | Verify signature + expiry + **live** human root |
+| `verifyAgentId` | Verify signature + expiry + **live** human root + **live** G$ bond |
 | `liveHumanRootLookup`, `createHumanRootLookup` | GoodDollar Identity read on Celo |
+| `liveStakeLookup`, `createStakeLookup` | Live `AgentVault` bond read on Celo |
+| `AGENT_VAULT_CELO` | Deployed `AgentVault` address (Celo mainnet) |
 | `agentIdDomain`, `agentIdTypes` | EIP-712 domain/types (for wallets) |
 | `credentialToWire` / `credentialFromWire` | JSON-safe (bigint→string) serialization |
 | `buildErc8004Registration`, `verifyErc8004Registration` | ERC-8004 encode / verify |
@@ -126,9 +153,14 @@ on-chain `proofDigest`.
 2. Reject if the credential is expired.
 3. Read the operator's GoodDollar root **live** (`getWhitelistedRoot`); reject if not verified now.
 4. Reject if the live root ≠ the root in the credential.
+5. With a `stakeLookup`: read the agent's **live** G$ bond in `AgentVault`; reject
+   with `insufficient_bond` if it is below the vault minimum (i.e. the operator
+   withdrew their stake). The agent verifies again as soon as the bond is re-staked —
+   no re-signing needed.
 
-Optional on-chain accountability (a revocable G$ **stake** that vouches for the agent) is
-provided by the `AgentVault` contract — see the monorepo `packages/contracts`.
+The bond is a **required, refundable** accountability stake (≥ 250 G$ on Celo
+mainnet) enforced by the `AgentVault` contract — see the monorepo
+`packages/contracts`. It only ever returns to the operator.
 
 ## License
 

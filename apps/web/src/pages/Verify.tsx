@@ -14,6 +14,8 @@ const REASON_LABEL: Record<string, string> = {
   human_root_mismatch: "The operator's identity root no longer matches.",
   signature_mismatch: "Signature does not match the operator.",
   bad_signature: "Invalid signature.",
+  insufficient_bond:
+    "The required G$ bond was withdrawn — this agent is no longer vouched for. It becomes valid again once the operator re-stakes the minimum bond.",
 };
 
 type State =
@@ -96,6 +98,12 @@ export function Verify() {
             {!valid && r.reason && (
               <p className="muted">{REASON_LABEL[r.reason] ?? r.reason}</p>
             )}
+            {valid && r.bondChecked === false && (
+              <p className="warn small">
+                ⚠ Couldn't read the on-chain bond just now — identity is
+                confirmed but the bond is unverified. Try again shortly.
+              </p>
+            )}
             {valid && (
               <dl className="kv">
                 <dt>Operator</dt>
@@ -110,7 +118,7 @@ export function Verify() {
                 </dd>
               </dl>
             )}
-            {valid && r.onchain?.vaultConfigured && (
+            {(valid || r.reason === "insufficient_bond") && r.onchain?.vaultConfigured && (
               <div className="onchain-block">
                 <p className="muted small">Accountability bond (G$)</p>
                 <dl className="kv">
@@ -126,10 +134,18 @@ export function Verify() {
                     )}
                   </dd>
                 </dl>
+                {r.unstakePending && (
+                  <p className="warn small">
+                    ⚠ The operator has requested an unstake — the bond may be
+                    withdrawn once the cooldown ends. Re-check before relying on
+                    this agent.
+                  </p>
+                )}
                 <p className="muted small">
-                  Registered agents lock a refundable bond of at least{" "}
-                  {r.onchain.minStakeFormatted} G$. Verifiers may also require a
-                  higher minimum.
+                  Registered agents must keep a refundable bond of at least{" "}
+                  {r.onchain.minStakeFormatted} G$ locked for as long as they
+                  are active — withdrawing it invalidates the Agent ID.
+                  Verifiers may also require a higher minimum.
                 </p>
               </div>
             )}

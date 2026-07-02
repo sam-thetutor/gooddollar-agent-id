@@ -18,14 +18,15 @@ import {
 } from "@goodagent/chain";
 import {
   MAX_AGENTS_PER_HUMAN,
-  countActiveAgentsByHumanRoot,
   getAgentCredential,
+  issueAgentCredential,
   listAgentCredentialsByHumanRoot,
   listAgentCredentialsByOperator,
-  upsertAgentCredential,
+  revokeAgentCredential,
   writeAudit,
 } from "@goodagent/db";
 import {
+  agentIdDomain,
   credentialFromWire,
   liveHumanRootLookup,
   verifyAgentId,
@@ -37,13 +38,50 @@ import {
   healthResponseSchema,
   issueAgentRequestSchema,
 } from "@goodagent/shared";
-import { getAddress } from "viem";
+import { getAddress, isAddressEqual, recoverTypedDataAddress } from "viem";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
 const app = new Hono();
 
 app.use("*", cors({ origin: "*" }));
+
+// --- basic in-memory rate limiting -----------------------------------------
+// The verify/wallet endpoints each fan out to several Celo RPC reads, so an
+// unthrottled caller can exhaust our RPC quota. A fixed-window per-IP counter
+// is enough for a single-process deployment (behind nginx, the real client IP
+// arrives in x-forwarded-for). Not a substitute for an edge WAF at scale.
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 120;
+const rateHits = new Map<string, { count: number; reset: number }>();
+
+app.use("*", async (c, next) => {
+  const ip =
+    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
+    c.req.header("x-real-ip") ||
+    "unknown";
+  const now = Date.now();
+  const rec = rateHits.get(ip);
+  if (!rec || now > rec.reset) {
+    rateHits.set(ip, { count: 1, reset: now + RATE_WINDOW_MS });
+  } else {
+    rec.count += 1;
+    if (rec.count > RATE_MAX) {
+      return c.json({ error: "RATE_LIMITED" }, 429);
+    }
+  }
+  // Opportunistic cleanup so the map can't grow unbounded.
+  if (rateHits.size > 10_000) {
+    for (const [k, v] of rateHits) if (now > v.reset) rateHits.delete(k);
+  }
+  await next();
+});
+
+// Short-lived cache for the default (no ?minStake) verify verdict, keyed by
+// lowercased agent address. Verification is live, but a 15s TTL is well within
+// tolerance and sharply cuts RPC load under repeated lookups of the same agent.
+const VERIFY_CACHE_TTL_MS = 15_000;
+const verifyCache = new Map<string, { at: number; body: unknown }>();
 
 app.get("/health", async (c) => {
   const chainOk = await pingChain();
@@ -63,6 +101,7 @@ app.get("/", (c) =>
       "GET /health",
       "GET /wallet/:address",
       "POST /agent/issue",
+      "POST /agent/revoke",
       "GET /agent/verify/:address?minStake=",
       "GET /agent/list?operator=  (or ?humanRoot=)",
     ],
@@ -86,7 +125,8 @@ app.get("/wallet/:address", async (c) => {
     ]);
     return c.json({ address, balance, verify, claim });
   } catch (error) {
-    return c.json({ error: "CHAIN_ERROR", message: (error as Error).message }, 502);
+    console.error("wallet overview failed", address, error);
+    return c.json({ error: "CHAIN_ERROR" }, 502);
   }
 });
 
@@ -177,37 +217,86 @@ app.post("/agent/issue", async (c) => {
     );
   }
 
-  // Sybil guard: one verified human may vouch for at most MAX_AGENTS_PER_HUMAN
-  // active agents. Re-issuing an existing agent doesn't count against the cap.
-  const activeCount = await countActiveAgentsByHumanRoot(humanRoot, agentAddr);
-  if (activeCount >= MAX_AGENTS_PER_HUMAN) {
+  const operatorAddr = getAddress(w.fields.operator);
+
+  // Anti-hijack: the credential's operator must be the same wallet that owns
+  // the on-chain bond. Otherwise any verified human could sign a credential for
+  // someone else's already-bonded agent and ride their stake.
+  if (vault.operator && !isAddressEqual(getAddress(vault.operator), operatorAddr)) {
     return c.json(
       {
-        error: "AGENT_CAP_REACHED",
-        message: `This human already vouches for the maximum of ${MAX_AGENTS_PER_HUMAN} agents. Revoke one to add another.`,
-        max: MAX_AGENTS_PER_HUMAN,
-        active: activeCount,
+        error: "OPERATOR_MISMATCH",
+        message:
+          "The agent's on-chain bond is owned by a different wallet than the credential's operator. Stake from the operator wallet, or sign with the wallet that owns the bond.",
       },
-      409,
+      403,
     );
   }
 
-  const stored = await upsertAgentCredential({
-    agent: agentAddr,
-    operator: getAddress(w.fields.operator),
-    humanRoot,
-    nonce: w.fields.nonce,
-    issuedAt: w.fields.issuedAt,
-    expiresAt: w.fields.expiresAt,
-    signature: w.signature,
-    chainId: w.chainId,
-    verifyingContract: getAddress(w.verifyingContract),
-  });
+  // Atomic issue: enforces the per-human cap, forbids a different operator from
+  // overwriting an existing registration, and requires a strictly increasing
+  // nonce so an old signed credential can't be replayed to overwrite or
+  // un-revoke a newer one — all inside one serializable transaction.
+  const outcome = await issueAgentCredential(
+    {
+      agent: agentAddr,
+      operator: operatorAddr,
+      humanRoot,
+      nonce: w.fields.nonce,
+      issuedAt: w.fields.issuedAt,
+      expiresAt: w.fields.expiresAt,
+      signature: w.signature,
+      chainId: w.chainId,
+      verifyingContract: getAddress(w.verifyingContract),
+    },
+    MAX_AGENTS_PER_HUMAN,
+  );
+
+  if (!outcome.ok) {
+    switch (outcome.error) {
+      case "OPERATOR_MISMATCH":
+        return c.json(
+          {
+            error: "OPERATOR_MISMATCH",
+            message:
+              "This agent is already registered by a different operator. Only the original operator can re-issue it.",
+          },
+          403,
+        );
+      case "STALE_NONCE":
+        return c.json(
+          {
+            error: "STALE_NONCE",
+            message:
+              "This credential's nonce is not newer than the stored one. Re-issue with a fresh credential.",
+            storedNonce: outcome.storedNonce,
+          },
+          409,
+        );
+      case "AGENT_CAP_REACHED":
+        return c.json(
+          {
+            error: "AGENT_CAP_REACHED",
+            message: `This human already vouches for the maximum of ${outcome.max} agents. Revoke one to add another.`,
+            max: outcome.max,
+            active: outcome.active,
+          },
+          409,
+        );
+      default:
+        return c.json({ error: "ISSUE_FAILED" }, 500);
+    }
+  }
+
+  const stored = outcome.credential;
 
   await writeAudit("agent_id_issued", {
     agent: stored.agent,
     operator: stored.operator,
   });
+
+  // A successful (re-)issue changes the stored verdict; drop any cached entry.
+  verifyCache.delete(stored.agent.toLowerCase());
 
   return c.json(
     {
@@ -219,6 +308,73 @@ app.post("/agent/issue", async (c) => {
   );
 });
 
+// EIP-712 revocation: the operator proves control of their wallet by signing
+// this struct. Free and non-custodial — no on-chain tx. Withdrawing the bond
+// is the *economic* un-vouch; this is the *identity* one.
+const revokeTypes = {
+  RevokeAgentID: [
+    { name: "agent", type: "address" },
+    { name: "operator", type: "address" },
+    { name: "nonce", type: "uint256" },
+  ],
+} as const;
+
+// Revoke a stored credential. Only the wallet that issued it (its stored
+// operator) can revoke, proven by an EIP-712 signature.
+app.post("/agent/revoke", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    agent?: string;
+    operator?: string;
+    nonce?: string;
+    signature?: string;
+  } | null;
+
+  if (
+    !body ||
+    !addressSchema.safeParse(body.agent).success ||
+    !addressSchema.safeParse(body.operator).success ||
+    typeof body.nonce !== "string" ||
+    !/^\d+$/.test(body.nonce) ||
+    typeof body.signature !== "string" ||
+    !/^0x[0-9a-fA-F]+$/.test(body.signature)
+  ) {
+    return c.json({ error: "BAD_INPUT" }, 400);
+  }
+
+  const agent = getAddress(body.agent as string);
+  const operator = getAddress(body.operator as string);
+
+  let recovered: `0x${string}`;
+  try {
+    recovered = await recoverTypedDataAddress({
+      domain: agentIdDomain(),
+      types: revokeTypes,
+      primaryType: "RevokeAgentID",
+      message: { agent, operator, nonce: BigInt(body.nonce) },
+      signature: body.signature as `0x${string}`,
+    });
+  } catch {
+    return c.json({ error: "BAD_SIGNATURE" }, 400);
+  }
+  if (!isAddressEqual(recovered, operator)) {
+    return c.json({ error: "SIGNATURE_MISMATCH" }, 400);
+  }
+
+  const rec = await getAgentCredential(agent);
+  if (!rec) return c.json({ error: "NOT_FOUND" }, 404);
+  if (!isAddressEqual(getAddress(rec.operator), operator)) {
+    return c.json({ error: "NOT_OPERATOR" }, 403);
+  }
+  if (rec.revokedAt) {
+    return c.json({ ok: true, agent, alreadyRevoked: true });
+  }
+
+  await revokeAgentCredential(agent);
+  await writeAudit("agent_id_revoked", { agent, operator });
+  verifyCache.delete(agent.toLowerCase());
+  return c.json({ ok: true, agent });
+});
+
 // Public verify: anyone can check whether an agent is human-backed right now.
 app.get("/agent/verify/:address", async (c) => {
   const raw = c.req.param("address");
@@ -226,6 +382,27 @@ app.get("/agent/verify/:address", async (c) => {
     return c.json({ error: "BAD_ADDRESS" }, 400);
   }
   const agent = getAddress(raw);
+
+  // Optional verifier-chosen minimum bond (base units, e.g. wei of G$). When
+  // provided we additionally report whether the live stake meets it. Note the
+  // verdict itself already enforces the *vault* minimum below.
+  const minStakeRaw = c.req.query("minStake");
+  let minStake: bigint | null = null;
+  if (minStakeRaw !== undefined) {
+    if (!/^\d+$/.test(minStakeRaw)) {
+      return c.json({ error: "BAD_MIN_STAKE" }, 400);
+    }
+    minStake = BigInt(minStakeRaw);
+  }
+
+  // Serve the default verdict from the short-lived cache when possible.
+  const cacheKey = agent.toLowerCase();
+  if (minStake === null) {
+    const cached = verifyCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < VERIFY_CACHE_TTL_MS) {
+      return c.json(cached.body as Record<string, unknown>);
+    }
+  }
 
   const rec = await getAgentCredential(agent);
   if (!rec) {
@@ -241,44 +418,53 @@ app.get("/agent/verify/:address", async (c) => {
     });
   }
 
-  // Optional verifier-chosen minimum bond (base units, e.g. wei of G$). When
-  // provided we report whether the live on-chain stake meets it — the identity
-  // verdict itself never depends on stake.
-  const minStakeRaw = c.req.query("minStake");
-  let minStake: bigint | null = null;
-  if (minStakeRaw !== undefined) {
-    if (!/^\d+$/.test(minStakeRaw)) {
-      return c.json({ error: "BAD_MIN_STAKE" }, 400);
-    }
-    minStake = BigInt(minStakeRaw);
-  }
-
   try {
     const credential = credentialFromWire(recordToWire(rec));
-    const [result, onchain] = await Promise.all([
-      verifyAgentId(credential, { humanRootLookup: liveHumanRootLookup }),
-      getAgentVaultStatus(agent).catch(() => null),
-    ]);
+    // The bond is required for the whole life of the registration, not just at
+    // issue time: verification re-reads the live vault stake and fails with
+    // `insufficient_bond` if the operator withdrew below the vault minimum.
+    const onchainPromise = getAgentVaultStatus(agent).catch(() => null);
+    // Track whether the bond was actually read: if the vault is unreachable we
+    // don't hard-fail identity on an RPC blip, but we must NOT silently report
+    // a bond-less agent as fully valid — callers see `bondChecked: false`.
+    let bondChecked = true;
+    const result = await verifyAgentId(credential, {
+      humanRootLookup: liveHumanRootLookup,
+      stakeLookup: async () => {
+        const vault = await onchainPromise;
+        if (!vault || !vault.vaultConfigured) {
+          bondChecked = false;
+          return { stake: 0n, minStake: 0n };
+        }
+        return { stake: BigInt(vault.stake), minStake: BigInt(vault.minStake) };
+      },
+    });
+    const onchain = await onchainPromise;
     const meetsMinStake =
       minStake === null
         ? undefined
         : onchain
           ? BigInt(onchain.stake) >= minStake
           : false;
-    return c.json({
+    const body = {
       found: true,
       agent,
       ...verifyResultToWire(result),
+      bondChecked,
+      unstakePending: Boolean(onchain && onchain.unstakeUnlockAt),
       onchain,
       ...(minStake === null
         ? {}
         : { minStake: minStake.toString(), meetsMinStake }),
-    });
+    };
+    // Only cache the live-read default verdict (never a partial/unchecked one).
+    if (minStake === null && bondChecked) {
+      verifyCache.set(cacheKey, { at: Date.now(), body });
+    }
+    return c.json(body);
   } catch (error) {
-    return c.json(
-      { error: "VERIFY_ERROR", message: (error as Error).message },
-      502,
-    );
+    console.error("verify failed", agent, error);
+    return c.json({ error: "VERIFY_ERROR" }, 502);
   }
 });
 

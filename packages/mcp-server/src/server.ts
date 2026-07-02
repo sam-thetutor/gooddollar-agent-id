@@ -14,6 +14,7 @@ import {
 import {
   credentialFromWire,
   liveHumanRootLookup,
+  liveStakeLookup,
   verifyAgentId,
   verifyResultToWire,
   type AgentIdCredential,
@@ -121,7 +122,7 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
       {
         name: "gooddollar_verify_agent",
         description:
-          "Verify a GoodDollar Agent ID — confirm an AI agent is vouched for by a real, currently-verified GoodDollar human. Pass either an 'agent' address (to look up a stored credential) or a full 'credential' object. Returns validity, the human root, and expiry.",
+          "Verify a GoodDollar Agent ID — confirm an AI agent is vouched for by a real, currently-verified GoodDollar human AND still carries its required refundable G$ bond on-chain (a withdrawn bond fails with 'insufficient_bond'). Pass either an 'agent' address (to look up a stored credential) or a full 'credential' object. Returns validity, the human root, expiry, and the live bond.",
         inputSchema: {
           type: "object",
           properties: {
@@ -189,6 +190,9 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
 
           const result = await verifyAgentId(credential, {
             humanRootLookup: liveHumanRootLookup,
+            // Enforce the live G$ bond too: verification fails with
+            // `insufficient_bond` if the operator withdrew below the minimum.
+            stakeLookup: liveStakeLookup,
           });
           return jsonResult({ found: true, ...verifyResultToWire(result) });
         }

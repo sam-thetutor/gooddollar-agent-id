@@ -70,6 +70,10 @@ export interface VerifyResult {
   humanRoot?: string;
   expiresAt?: string;
   onchain?: OnchainStatus | null;
+  /** False when the live bond couldn't be read (RPC issue) — verdict is partial. */
+  bondChecked?: boolean;
+  /** True when an unstake has been requested and the cooldown is counting down. */
+  unstakePending?: boolean;
   /** Present only when the caller passed a verifier-chosen `minStake`. */
   minStake?: string;
   meetsMinStake?: boolean;
@@ -105,6 +109,31 @@ export async function verifyAgent(address: string): Promise<VerifyResult> {
     throw new Error(body.error ?? `Verify failed (${res.status})`);
   }
   return (await res.json()) as VerifyResult;
+}
+
+export interface RevokeBody {
+  agent: string;
+  operator: string;
+  nonce: string;
+  signature: string;
+}
+
+/** Revoke a credential with an operator-signed EIP-712 revocation. */
+export async function revokeAgent(body: RevokeBody): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/agent/revoke`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    throw new Error(
+      (data.message as string) ??
+        (data.error as string) ??
+        `Revoke failed (${res.status})`,
+    );
+  }
+  return data as { ok: boolean };
 }
 
 export interface AgentListItem {

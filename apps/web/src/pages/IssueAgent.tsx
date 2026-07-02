@@ -44,6 +44,7 @@ export function IssueAgent() {
   const publicClient = usePublicClient();
 
   const [identity, setIdentity] = useState<Identity | null>(null);
+  const [identityError, setIdentityError] = useState(false);
   const [agent, setAgent] = useState("");
   const [ttlDays, setTtlDays] = useState(30);
   const [busy, setBusy] = useState<string | null>(null);
@@ -60,6 +61,7 @@ export function IssueAgent() {
       return;
     }
     let cancelled = false;
+    setIdentityError(false);
     getWalletOverview(address)
       .then((d) => {
         if (!cancelled)
@@ -68,7 +70,13 @@ export function IssueAgent() {
             root: d.verify.root,
           });
       })
-      .catch(() => !cancelled && setIdentity({ verified: false, root: null }));
+      .catch(() => {
+        // Don't mislabel an API/RPC outage as "not verified" — surface an error.
+        if (!cancelled) {
+          setIdentity(null);
+          setIdentityError(true);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -259,6 +267,15 @@ export function IssueAgent() {
         <section className="card">
           <p className="muted">Connect your wallet to issue an Agent ID.</p>
           <ConnectButton />
+        </section>
+      )}
+
+      {isConnected && identityError && (
+        <section className="card">
+          <p className="error">
+            Couldn't reach the API to read your GoodDollar status. Check your
+            connection and try again.
+          </p>
         </section>
       )}
 
