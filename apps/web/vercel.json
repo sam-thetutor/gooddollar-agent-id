@@ -4,5 +4,8 @@
   "installCommand": "cd ../.. && pnpm install",
   "buildCommand": "cd ../.. && pnpm --filter @goodagent/web build",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/((?!assets/|llms.txt|.*\\.\\w+$).*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://gcopilot-api.geinz.lol/:path*" },
+    { "source": "/((?!assets/|llms.txt|.*\\.\\w+$).*)", "destination": "/index.html" }
+  ]
 }
