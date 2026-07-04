@@ -2,12 +2,35 @@
 
 Runnable demos for the `@goodagent/agent-id` SDK.
 
+## agent-lifecycle.mjs
+
+The **agent's side** of the system — registration is agent-first, so this is
+where a new agent starts:
+
+1. **Attest** — sign the `AttestAgent` message offline (`signAgentAttestation`);
+   anyone can relay it on-chain via `relayAgentAttestation`. Required before an
+   operator can register you.
+2. **Check** — read the live `AgentAttestation` registry (`isAgentAttested`).
+3. **Authenticate** — sign a fresh `AgentAuth` challenge and verify it
+   (`signAgentAuth` / `verifyAgentAuth`), including a forged-signature rejection.
+
+```bash
+pnpm --filter @goodagent/examples agent
+# or, from this folder:  node agent-lifecycle.mjs
+```
+
+No gas needed — on-chain interactions are read-only; the attest signature is
+printed instead of relayed.
+
 ## verify-agent.mjs
 
 End-to-end, **SDK-only** flow (no server needed):
 
 1. An operator issues + EIP-712-signs an Agent ID credential.
-2. Anyone verifies it — signature + expiry + a **live** GoodDollar human-root read on Celo.
+2. Anyone verifies it with `verifyAgentIdLive` — signature + expiry plus **live**
+   on-chain reads of the human root, the G$ bond, the revocation registry, and
+   the agent's key attestation (`bondChecked` / `revocationChecked` /
+   `agentProven` flags in the result).
 3. The credential is wrapped as an **ERC-8004** registration file and verified back out.
 
 ```bash

@@ -6,7 +6,8 @@
   "description": "Runnable examples for the GoodDollar Agent ID SDK",
   "scripts": {
     "verify": "node verify-agent.mjs",
-    "register": "node register-onchain.mjs"
+    "register": "node register-onchain.mjs",
+    "agent": "node agent-lifecycle.mjs"
   },
   "dependencies": {
     "@goodagent/agent-id": "workspace:*",

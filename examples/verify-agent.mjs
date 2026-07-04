@@ -16,6 +16,7 @@ import {
   buildAgentId,
   signAgentId,
   verifyAgentId,
+  verifyAgentIdLive,
   credentialToWire,
   liveHumanRootLookup,
   buildErc8004Registration,
@@ -51,15 +52,20 @@ const mockLookup = () => humanRoot;
 const okResult = await verifyAgentId(credential, { humanRootLookup: mockLookup });
 console.log("2a) Verify (operator treated as verified):", okResult.valid ? "✅ valid" : `❌ ${okResult.reason}`);
 
-// 2b. Verify against the LIVE GoodDollar Identity contract on Celo -----------
+// 2b. Verify with ALL live checks on (the recommended entry point) -----------
+// verifyAgentIdLive re-reads the human root, the G$ bond, the on-chain
+// revocation registry, AND the agent's key attestation on Celo — every call.
 // The throwaway operator key is NOT GoodDollar-verified, so this correctly
-// returns operator_not_verified — proving the live, on-chain check is real.
-const liveResult = await verifyAgentId(credential, {
-  humanRootLookup: liveHumanRootLookup,
-});
+// fails — proving the live, on-chain checks are real.
+const liveResult = await verifyAgentIdLive(credential);
 console.log(
-  "2b) Verify (LIVE Celo human-root read):",
+  "2b) verifyAgentIdLive (root + bond + revocation + attestation):",
   liveResult.valid ? "✅ valid" : `❌ ${liveResult.reason} (expected for a random key)`,
+);
+console.log(
+  "    bondChecked:", liveResult.bondChecked,
+  "· revocationChecked:", liveResult.revocationChecked,
+  "· agentProven:", liveResult.agentProven ?? false,
 );
 line();
 
