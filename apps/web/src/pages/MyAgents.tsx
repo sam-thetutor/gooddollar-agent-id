@@ -105,30 +105,32 @@ export function MyAgents() {
       )}
 
       {isConnected && agents && agents.length > 0 && (
-        <section className="list">
+        <section className="agent-grid">
           {agents.map((a, i) => (
-            <div key={a.agent} className="card row">
-              <div>
-                <p className="row-title">{shorten(a.agent)}</p>
-                {provenByIndex(i) === false && (
-                  <span className="warn small">key not attested</span>
-                )}
-              </div>
-              <div className="row-meta">
-                <span className={a.revoked ? "warn" : "ok"}>
+            <div key={a.agent} className="card agent-card">
+              <div className="agent-card-head">
+                <p className="row-title" title={a.agent}>
+                  {shorten(a.agent)}
+                </p>
+                <span className={`pill ${a.revoked ? "pill-bad" : "pill-ok"}`}>
                   {a.revoked ? "revoked" : "active"}
                 </span>
-                <span className="muted small">
+              </div>
+              <div className="agent-card-pills">
+                {provenByIndex(i) === false && (
+                  <span className="pill pill-warn">key not attested</span>
+                )}
+                <span className="pill pill-muted">
                   exp {expiryLabel(a.expiresAt)}
                 </span>
-                <span className="row-actions">
-                  <Link to={`/verify?agent=${a.agent}`} className="link-sm">
-                    Verify
-                  </Link>
-                  <Link to={`/manage?agent=${a.agent}`} className="link-sm">
-                    Manage
-                  </Link>
-                </span>
+              </div>
+              <div className="agent-card-actions">
+                <Link to={`/verify?agent=${a.agent}`} className="link-sm">
+                  Verify
+                </Link>
+                <Link to={`/manage?agent=${a.agent}`} className="link-sm">
+                  Manage
+                </Link>
               </div>
             </div>
           ))}

@@ -946,6 +946,186 @@ a:hover {
   color: var(--danger);
 }
 
+/* Verdict panel (Verify page) */
+.verdict-panel {
+  padding: 1.8rem 1.8rem 1.6rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  margin-bottom: 1.4rem;
+}
+
+.verdict-head {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.verdict-panel .verdict-badge {
+  font-size: 1.7rem;
+  margin-bottom: 0;
+}
+
+.verdict-agent {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.verdict-reason {
+  margin: 0.7rem 0 0;
+  color: var(--danger);
+  font-size: 0.95rem;
+}
+
+.verdict-kv {
+  margin-top: 1.3rem;
+}
+
+.verdict-note {
+  margin-top: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.8rem;
+  margin-top: 1.4rem;
+}
+
+.check-item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.9rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: rgba(7, 10, 14, 0.45);
+}
+
+.check-icon {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.check-pass .check-icon {
+  color: var(--accent);
+  background: rgba(95, 207, 150, 0.14);
+}
+
+.check-fail .check-icon {
+  color: var(--danger);
+  background: rgba(224, 106, 106, 0.14);
+}
+
+.check-warn .check-icon {
+  color: var(--warning);
+  background: rgba(228, 179, 99, 0.14);
+}
+
+.check-idle .check-icon {
+  color: var(--muted);
+  background: rgba(140, 150, 160, 0.12);
+}
+
+.check-label {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.check-detail {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* Status pills */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+
+.pill-ok {
+  color: var(--accent);
+  background: rgba(95, 207, 150, 0.1);
+  border-color: rgba(95, 207, 150, 0.3);
+}
+
+.pill-bad {
+  color: var(--danger);
+  background: rgba(224, 106, 106, 0.1);
+  border-color: rgba(224, 106, 106, 0.3);
+}
+
+.pill-warn {
+  color: var(--warning);
+  background: rgba(228, 179, 99, 0.1);
+  border-color: rgba(228, 179, 99, 0.3);
+}
+
+.pill-muted {
+  color: var(--muted);
+  background: rgba(140, 150, 160, 0.08);
+  border-color: var(--border-2);
+}
+
+/* Agent card grid (My Agents) */
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.9rem;
+}
+
+.agent-card {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.agent-card:hover {
+  border-color: rgba(95, 207, 150, 0.35);
+  transform: translateY(-1px);
+}
+
+.agent-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.agent-card-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.agent-card-actions {
+  display: flex;
+  gap: 0.9rem;
+  margin-top: auto;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
 .kv {
   display: grid;
   grid-template-columns: 150px 1fr;

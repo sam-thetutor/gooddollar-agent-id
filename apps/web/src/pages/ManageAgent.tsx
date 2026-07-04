@@ -238,30 +238,36 @@ export function ManageAgent() {
             <h2 className="card-title">On-chain stake</h2>
             {snapshot.isLoading && <p className="muted">Reading Celo…</p>}
             {data && (
-              <dl className="kv">
-                <dt>Agent</dt>
-                <dd>{agent}</dd>
-                <dt>Operator</dt>
-                <dd>{/^0x0+$/.test(data[0]) ? "— (unstaked)" : data[0]}</dd>
-                <dt>Stake</dt>
-                <dd>{fmt(data[1])} G$</dd>
-                <dt>Unstake</dt>
-                <dd>
-                  {!unstakeRequested
-                    ? "—"
-                    : cooldownOver
-                      ? "ready to withdraw"
-                      : `unlocks ${new Date(unlockAt * 1000).toLocaleString()}`}
-                </dd>
-                <dt>Key attestation</dt>
-                <dd>
-                  {!attestationLoaded
-                    ? "…"
-                    : agentProven
-                      ? "✓ proven on-chain"
-                      : "not attested"}
-                </dd>
-              </dl>
+              <>
+                <div className="agent-card-pills">
+                  <span
+                    className={`pill ${data[1] > 0n ? "pill-ok" : "pill-muted"}`}
+                  >
+                    {fmt(data[1])} G$ staked
+                  </span>
+                  {attestationLoaded && (
+                    <span className={`pill ${agentProven ? "pill-ok" : "pill-warn"}`}>
+                      {agentProven ? "key attested" : "key not attested"}
+                    </span>
+                  )}
+                  {isRevokedOnChain && (
+                    <span className="pill pill-bad">revoked on-chain</span>
+                  )}
+                  {unstakeRequested && (
+                    <span className="pill pill-warn">
+                      {cooldownOver
+                        ? "unstake ready"
+                        : `unstake unlocks ${new Date(unlockAt * 1000).toLocaleDateString()}`}
+                    </span>
+                  )}
+                </div>
+                <dl className="kv">
+                  <dt>Agent</dt>
+                  <dd>{agent}</dd>
+                  <dt>Operator</dt>
+                  <dd>{/^0x0+$/.test(data[0]) ? "— (unstaked)" : data[0]}</dd>
+                </dl>
+              </>
             )}
           </section>
 

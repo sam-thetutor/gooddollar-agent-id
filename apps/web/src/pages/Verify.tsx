@@ -7,8 +7,7 @@ import { verifyAgent, type VerifyResult } from "../lib/api.js";
 
 const REASON_LABEL: Record<string, string> = {
   not_found: "No Agent ID found for this address.",
-  revoked:
-    "This agent was revoked by its operator (on-chain kill switch or registry flag).",
+  revoked: "This agent was revoked by its operator.",
   expired: "This credential has expired.",
   operator_not_verified:
     "The operator is no longer a verified GoodDollar human.",
@@ -16,7 +15,104 @@ const REASON_LABEL: Record<string, string> = {
   signature_mismatch: "Signature does not match the operator.",
   bad_signature: "Invalid signature.",
   insufficient_bond:
-    "The required G$ bond was withdrawn — this agent is no longer vouched for. It becomes valid again once the operator re-stakes the minimum bond.",
+    "The required G$ bond was withdrawn. The agent becomes valid again once the operator re-stakes the minimum.",
+};
+
+type CheckState = "pass" | "fail" | "warn" | "idle";
+
+interface Check {
+  label: string;
+  state: CheckState;
+  detail: string;
+}
+
+const HUMAN_FAIL_REASONS = new Set([
+  "expired",
+  "operator_not_verified",
+  "human_root_mismatch",
+  "signature_mismatch",
+  "bad_signature",
+]);
+
+/** Derive the four per-check verdicts from a verify response. */
+function deriveChecks(r: VerifyResult): Check[] {
+  const notFound = r.found === false;
+  const reason = r.reason;
+
+  let human: Check;
+  if (notFound) {
+    human = { label: "Human vouch", state: "idle", detail: "no credential" };
+  } else if (reason && HUMAN_FAIL_REASONS.has(reason)) {
+    human = { label: "Human vouch", state: "fail", detail: reason.replace(/_/g, " ") };
+  } else {
+    human = {
+      label: "Human vouch",
+      state: "pass",
+      detail: "verified GoodDollar human",
+    };
+  }
+
+  let bond: Check;
+  if (notFound) {
+    bond = { label: "G$ bond", state: "idle", detail: "—" };
+  } else if (reason === "insufficient_bond") {
+    bond = {
+      label: "G$ bond",
+      state: "fail",
+      detail: r.onchain
+        ? `${r.onchain.stakeFormatted} of ${r.onchain.minStakeFormatted} G$`
+        : "below minimum",
+    };
+  } else if (r.bondChecked === false) {
+    bond = { label: "G$ bond", state: "warn", detail: "couldn't read on-chain" };
+  } else if (r.valid) {
+    bond = {
+      label: "G$ bond",
+      state: r.unstakePending ? "warn" : "pass",
+      detail: r.onchain
+        ? `${r.onchain.stakeFormatted} G$ staked${r.unstakePending ? " — unstake pending" : ""}`
+        : "meets minimum",
+    };
+  } else {
+    bond = { label: "G$ bond", state: "idle", detail: "not evaluated" };
+  }
+
+  let revocation: Check;
+  if (notFound) {
+    revocation = { label: "Revocation", state: "idle", detail: "—" };
+  } else if (reason === "revoked") {
+    revocation = { label: "Revocation", state: "fail", detail: "revoked by operator" };
+  } else if (r.valid) {
+    revocation = { label: "Revocation", state: "pass", detail: "not revoked" };
+  } else {
+    revocation = { label: "Revocation", state: "idle", detail: "not evaluated" };
+  }
+
+  let attestation: Check;
+  if (notFound) {
+    attestation = { label: "Key attested", state: "idle", detail: "—" };
+  } else if (r.agentProven) {
+    attestation = {
+      label: "Key attested",
+      state: "pass",
+      detail: "agent proved key ownership on-chain",
+    };
+  } else {
+    attestation = {
+      label: "Key attested",
+      state: "warn",
+      detail: "agent never attested its key",
+    };
+  }
+
+  return [human, bond, revocation, attestation];
+}
+
+const CHECK_ICON: Record<CheckState, string> = {
+  pass: "✓",
+  fail: "✗",
+  warn: "!",
+  idle: "—",
 };
 
 type State =
@@ -53,60 +149,78 @@ export function Verify() {
 
   const r = state.kind === "done" ? state.result : null;
   const valid = r?.valid === true;
+  const checks = r ? deriveChecks(r) : null;
 
   return (
     <>
       <Nav />
       <main className="page">
-      <header className="hero compact">
-        <h1>Verify an agent</h1>
-        <p className="lede">
-          Check whether an AI agent is backed by a real, currently-verified
-          GoodDollar human.
-        </p>
-      </header>
+        <header className="hero compact">
+          <h1>Verify an agent</h1>
+          <p className="lede">
+            Is this AI agent backed by a real, currently-verified human?
+          </p>
+        </header>
 
-      <section className="card form">
-        <div className="verify-input">
-          <input
-            type="text"
-            placeholder="0x… agent address"
-            value={input}
-            onChange={(e) => setInput(e.target.value.trim())}
-          />
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              setParams(input ? { agent: input } : {});
-              run(input);
-            }}
-          >
-            Verify
-          </button>
-        </div>
+        <section className="card form">
+          <div className="verify-input">
+            <input
+              type="text"
+              placeholder="0x… agent address"
+              value={input}
+              onChange={(e) => setInput(e.target.value.trim())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  setParams(input ? { agent: input } : {});
+                  run(input);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setParams(input ? { agent: input } : {});
+                run(input);
+              }}
+            >
+              Verify
+            </button>
+          </div>
 
-        {state.kind === "loading" && (
-          <p className="muted">Checking on Celo…</p>
-        )}
-        {state.kind === "error" && <p className="error">{state.message}</p>}
+          {state.kind === "loading" && <p className="muted">Checking on Celo…</p>}
+          {state.kind === "error" && <p className="error">{state.message}</p>}
+        </section>
 
-        {r && (
-          <div className={`verdict ${valid ? "verdict-ok" : "verdict-bad"}`}>
-            <div className="verdict-badge">
-              {valid ? "✓ Human-backed" : "✗ Not valid"}
+        {r && checks && (
+          <section className={`verdict-panel ${valid ? "verdict-ok" : "verdict-bad"}`}>
+            <div className="verdict-head">
+              <span className="verdict-badge">
+                {valid ? "✓ Human-backed" : "✗ Not valid"}
+              </span>
+              {r.agent && <code className="verdict-agent">{r.agent}</code>}
             </div>
+
             {!valid && r.reason && (
-              <p className="muted">{REASON_LABEL[r.reason] ?? r.reason}</p>
-            )}
-            {valid && r.bondChecked === false && (
-              <p className="warn small">
-                ⚠ Couldn't read the on-chain bond just now — identity is
-                confirmed but the bond is unverified. Try again shortly.
+              <p className="verdict-reason">
+                {REASON_LABEL[r.reason] ?? r.reason}
               </p>
             )}
+
+            <div className="check-grid">
+              {checks.map((c) => (
+                <div key={c.label} className={`check-item check-${c.state}`}>
+                  <span className="check-icon">{CHECK_ICON[c.state]}</span>
+                  <div>
+                    <p className="check-label">{c.label}</p>
+                    <p className="check-detail">{c.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
             {valid && (
-              <dl className="kv">
+              <dl className="kv verdict-kv">
                 <dt>Operator</dt>
                 <dd>{r.operator}</dd>
                 <dt>Human root</dt>
@@ -117,65 +231,19 @@ export function Verify() {
                     ? new Date(Number(r.expiresAt) * 1000).toLocaleString()
                     : "—"}
                 </dd>
-                <dt>Key ownership</dt>
-                <dd>
-                  {r.agentProven ? (
-                    <span className="ok">
-                      ✓ proven — the agent attested on-chain that it controls
-                      this address
-                    </span>
-                  ) : (
-                    <span className="warn">
-                      unproven — the agent has not attested it controls this
-                      address
-                    </span>
-                  )}
-                </dd>
               </dl>
             )}
+
             {valid && (
-              <p className="muted small">
-                This confirms a verified human vouches for this address and it
-                isn't revoked on-chain. It does <strong>not</strong> prove the
-                party you're talking to controls this address — for that, ask
-                the agent to sign a fresh challenge and check it with the
-                authenticated <code>/agent/verify-auth</code> endpoint.
+              <p className="muted small verdict-note">
+                This proves a human vouches for this address — not that your
+                counterparty controls it. To authenticate the party you're
+                talking to, have the agent sign a fresh challenge and check it
+                via <code>POST /agent/verify-auth</code>.
               </p>
             )}
-            {(valid || r.reason === "insufficient_bond") && r.onchain?.vaultConfigured && (
-              <div className="onchain-block">
-                <p className="muted small">Accountability bond (G$)</p>
-                <dl className="kv">
-                  <dt>Bond staked</dt>
-                  <dd>
-                    {r.onchain.stakeFormatted} G${" "}
-                    {r.onchain.meetsMinStake ? (
-                      <span className="ok">✓ meets {r.onchain.minStakeFormatted} G$ minimum</span>
-                    ) : (
-                      <span className="warn">
-                        below {r.onchain.minStakeFormatted} G$ minimum
-                      </span>
-                    )}
-                  </dd>
-                </dl>
-                {r.unstakePending && (
-                  <p className="warn small">
-                    ⚠ The operator has requested an unstake — the bond may be
-                    withdrawn once the cooldown ends. Re-check before relying on
-                    this agent.
-                  </p>
-                )}
-                <p className="muted small">
-                  Registered agents must keep a refundable bond of at least{" "}
-                  {r.onchain.minStakeFormatted} G$ locked for as long as they
-                  are active — withdrawing it invalidates the Agent ID.
-                  Verifiers may also require a higher minimum.
-                </p>
-              </div>
-            )}
-          </div>
+          </section>
         )}
-      </section>
       </main>
       <Footer />
     </>
