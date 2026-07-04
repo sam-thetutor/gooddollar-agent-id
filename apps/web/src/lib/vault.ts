@@ -21,6 +21,73 @@ export function isVaultConfigured(): boolean {
   return VAULT_ADDRESS !== null;
 }
 
+/** AgentRevocation registry on Celo mainnet (operator on-chain kill switch). */
+export const AGENT_REVOCATION_ADDRESS =
+  "0xA86a133626989115a6499b6cA67c3c8dA1662137" as const;
+
+export const agentRevocationAbi = [
+  {
+    type: "function",
+    name: "revoke",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "reinstate",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "isRevoked",
+    stateMutability: "view",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+/** AgentAttestation registry on Celo mainnet (agent key proof-of-possession). */
+export const AGENT_ATTESTATION_ADDRESS =
+  "0xe5EFd6755e8a2035c924f9BaCDecD067B3dcf6C2" as const;
+
+export const agentAttestationAbi = [
+  {
+    type: "function",
+    name: "attest",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "attestFor",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "agent", type: "address" },
+      { name: "deadline", type: "uint256" },
+      { name: "signature", type: "bytes" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "provenAt",
+    stateMutability: "view",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "nonces",
+    stateMutability: "view",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
 /** G$ token on Celo mainnet (18 decimals). */
 export const G_DOLLAR_ADDRESS =
   "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A" as const;

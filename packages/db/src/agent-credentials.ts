@@ -12,6 +12,8 @@ export interface AgentCredentialInput {
   signature: string;
   chainId: number;
   verifyingContract: string;
+  /** True when the agent proved possession of its key at issue time. */
+  agentProven?: boolean;
 }
 
 /** Max active (non-revoked) agents a single GoodDollar human may vouch for. */

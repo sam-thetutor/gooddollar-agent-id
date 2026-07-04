@@ -12,3 +12,4 @@ coverage
 
 # Internal docs — kept local, not published
 docs/
+.test-agent.json

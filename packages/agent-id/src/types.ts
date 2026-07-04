@@ -44,6 +44,9 @@ export type VerifyFailureReason =
   // The live G$ bond behind the agent was withdrawn / is below the vault
   // minimum (only when the verifier supplies a `stakeLookup`):
   | "insufficient_bond"
+  // The operator flagged the agent as revoked on-chain in the AgentRevocation
+  // registry (only when the verifier supplies a `revocationLookup`):
+  | "revoked"
   // ERC-8004 registration-file verification (see erc8004.ts):
   | "no_gooddollar_proof"
   | "bad_credential";
@@ -65,4 +68,26 @@ export interface VerifyResult {
   stake?: bigint;
   /** Vault minimum bond (base units); set when a stakeLookup ran. */
   minStake?: bigint;
+  /**
+   * Whether the live G$ bond was actually read and enforced. `false` means the
+   * verifier ran an identity-only check (no `stakeLookup`) — a valid verdict
+   * then says nothing about the bond. Always present so a skipped bond check is
+   * explicit, never silent.
+   */
+  bondChecked: boolean;
+  /**
+   * Whether the on-chain revocation registry was consulted. `false` means no
+   * `revocationLookup` was supplied, so a valid verdict does not account for a
+   * possible operator revocation.
+   */
+  revocationChecked: boolean;
+  /**
+   * Whether the agent has proven on-chain (AgentAttestation registry) that it
+   * controls its own key. Informational — it does not gate validity, but
+   * careful verifiers should prefer `agentProven: true`. Only set when the
+   * verifier read the attestation registry (e.g. via `verifyAgentIdLive`).
+   */
+  agentProven?: boolean;
+  /** Unix seconds of the agent's first on-chain attestation (when proven). */
+  agentProvenAt?: bigint;
 }

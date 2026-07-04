@@ -29,6 +29,10 @@ model AgentCredential {
   signature         String
   chainId           Int       @map("chain_id")
   verifyingContract String    @map("verifying_contract")
+  // True when the agent proved possession of its key at issue time (signed an
+  // AgentAuth challenge). Distinguishes self-attested agents from ones an
+  // operator merely named by address.
+  agentProven       Boolean   @default(false) @map("agent_proven")
   revokedAt         DateTime? @map("revoked_at")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")

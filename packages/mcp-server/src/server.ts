@@ -13,9 +13,7 @@ import {
 } from "@goodagent/chain";
 import {
   credentialFromWire,
-  liveHumanRootLookup,
-  liveStakeLookup,
-  verifyAgentId,
+  verifyAgentIdLive,
   verifyResultToWire,
   type AgentIdCredential,
   type AgentIdCredentialWire,
@@ -122,7 +120,7 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
       {
         name: "gooddollar_verify_agent",
         description:
-          "Verify a GoodDollar Agent ID — confirm an AI agent is vouched for by a real, currently-verified GoodDollar human AND still carries its required refundable G$ bond on-chain (a withdrawn bond fails with 'insufficient_bond'). Pass either an 'agent' address (to look up a stored credential) or a full 'credential' object. Returns validity, the human root, expiry, and the live bond.",
+          "Verify a GoodDollar Agent ID — confirm an AI agent is vouched for by a real, currently-verified GoodDollar human, is not revoked on-chain (fails with 'revoked'), AND still carries its required refundable G$ bond on-chain (a withdrawn bond fails with 'insufficient_bond'). Pass either an 'agent' address (to look up a stored credential) or a full 'credential' object. Returns validity, the human root, expiry, the live bond, and whether the bond/revocation were checked. NOTE: this proves a human vouches for the agent address — it does NOT prove the party you're talking to controls that address (use an agent-signed AgentAuth for that).",
         inputSchema: {
           type: "object",
           properties: {
@@ -188,12 +186,9 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
             );
           }
 
-          const result = await verifyAgentId(credential, {
-            humanRootLookup: liveHumanRootLookup,
-            // Enforce the live G$ bond too: verification fails with
-            // `insufficient_bond` if the operator withdrew below the minimum.
-            stakeLookup: liveStakeLookup,
-          });
+          // All live checks on by default: human root, on-chain revocation,
+          // and the G$ bond (fails with `revoked` / `insufficient_bond`).
+          const result = await verifyAgentIdLive(credential);
           return jsonResult({ found: true, ...verifyResultToWire(result) });
         }
         default:

@@ -7,7 +7,8 @@ import { verifyAgent, type VerifyResult } from "../lib/api.js";
 
 const REASON_LABEL: Record<string, string> = {
   not_found: "No Agent ID found for this address.",
-  revoked: "This credential was revoked by the operator.",
+  revoked:
+    "This agent was revoked by its operator (on-chain kill switch or registry flag).",
   expired: "This credential has expired.",
   operator_not_verified:
     "The operator is no longer a verified GoodDollar human.",
@@ -116,7 +117,30 @@ export function Verify() {
                     ? new Date(Number(r.expiresAt) * 1000).toLocaleString()
                     : "—"}
                 </dd>
+                <dt>Key ownership</dt>
+                <dd>
+                  {r.agentProven ? (
+                    <span className="ok">
+                      ✓ proven — the agent attested on-chain that it controls
+                      this address
+                    </span>
+                  ) : (
+                    <span className="warn">
+                      unproven — the agent has not attested it controls this
+                      address
+                    </span>
+                  )}
+                </dd>
               </dl>
+            )}
+            {valid && (
+              <p className="muted small">
+                This confirms a verified human vouches for this address and it
+                isn't revoked on-chain. It does <strong>not</strong> prove the
+                party you're talking to controls this address — for that, ask
+                the agent to sign a fresh challenge and check it with the
+                authenticated <code>/agent/verify-auth</code> endpoint.
+              </p>
             )}
             {(valid || r.reason === "insufficient_bond") && r.onchain?.vaultConfigured && (
               <div className="onchain-block">

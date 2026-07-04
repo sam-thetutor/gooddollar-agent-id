@@ -28,9 +28,13 @@ import {
 import {
   agentIdDomain,
   credentialFromWire,
+  liveAttestationLookup,
   liveHumanRootLookup,
+  liveRevocationLookup,
+  verifyAgentAuth,
   verifyAgentId,
   verifyResultToWire,
+  type AgentAuthWire,
   type AgentIdCredentialWire,
 } from "@goodagent/agent-id";
 import {
@@ -103,6 +107,7 @@ app.get("/", (c) =>
       "POST /agent/issue",
       "POST /agent/revoke",
       "GET /agent/verify/:address?minStake=",
+      "POST /agent/verify-auth",
       "GET /agent/list?operator=  (or ?humanRoot=)",
     ],
   }),
@@ -164,9 +169,10 @@ function recordToWire(rec: {
 // Submit a signed credential: we re-verify (signature + live human root) before
 // persisting, so only genuinely human-backed credentials are ever stored.
 app.post("/agent/issue", async (c) => {
-  const parsed = issueAgentRequestSchema.safeParse(
-    await c.req.json().catch(() => null),
-  );
+  const rawBody = (await c.req.json().catch(() => null)) as
+    | (Record<string, unknown> & { agentProof?: AgentAuthWire })
+    | null;
+  const parsed = issueAgentRequestSchema.safeParse(rawBody);
   if (!parsed.success) {
     return c.json({ error: "BAD_INPUT", issues: parsed.error.issues }, 400);
   }
@@ -178,6 +184,53 @@ app.post("/agent/issue", async (c) => {
     return c.json({ error: "BAD_CREDENTIAL", message: (error as Error).message }, 400);
   }
 
+  const w = parsed.data;
+  const agentAddr = getAddress(w.fields.agent);
+  const humanRoot = getAddress(w.fields.humanRoot);
+
+  // Agent-first gate: registration REQUIRES proof that the agent's key exists
+  // and consented — either an on-chain attestation in the AgentAttestation
+  // registry (preferred: publicly verifiable forever), or a fresh AgentAuth
+  // signed by the agent's key and bound to the "register" audience. Without
+  // this, an operator could vouch for an address they don't control (squatted
+  // registrations). Checked first: the agent consents, then the human vouches.
+  let agentProven = false;
+  const provenAt = await Promise.resolve(liveAttestationLookup(agentAddr)).catch(
+    () => null,
+  );
+  if (provenAt === null) {
+    return c.json(
+      {
+        error: "ATTESTATION_UNAVAILABLE",
+        message: "Could not read the AgentAttestation registry. Try again.",
+      },
+      503,
+    );
+  }
+  if (provenAt !== 0n) {
+    agentProven = true;
+  } else if (rawBody?.agentProof) {
+    const proof = await verifyAgentAuth(rawBody.agentProof, {
+      expectedAgent: agentAddr,
+      expectedAudience: "gooddollar-agent-id:register",
+      maxAgeSeconds: 900n,
+    });
+    if (!proof.valid) {
+      return c.json({ error: "BAD_AGENT_PROOF", reason: proof.reason }, 400);
+    }
+    agentProven = true;
+  } else {
+    return c.json(
+      {
+        error: "AGENT_NOT_ATTESTED",
+        message:
+          "The agent must prove it controls this address before it can be registered. Either call attest() on the AgentAttestation registry from the agent's account (or relay its signed AttestAgent message via attestFor), or include a fresh agent-signed 'agentProof' (AgentAuth, audience 'gooddollar-agent-id:register') in this request.",
+        attestation: "0xe5EFd6755e8a2035c924f9BaCDecD067B3dcf6C2",
+      },
+      403,
+    );
+  }
+
   const verification = await verifyAgentId(credential, {
     humanRootLookup: liveHumanRootLookup,
   });
@@ -187,10 +240,6 @@ app.post("/agent/issue", async (c) => {
       400,
     );
   }
-
-  const w = parsed.data;
-  const agentAddr = getAddress(w.fields.agent);
-  const humanRoot = getAddress(w.fields.humanRoot);
 
   // Economic requirement: an agent must carry an active refundable G$ bond of at
   // least the vault's `minStake` to be registered. This gives G$ a non-optional
@@ -248,6 +297,7 @@ app.post("/agent/issue", async (c) => {
       signature: w.signature,
       chainId: w.chainId,
       verifyingContract: getAddress(w.verifyingContract),
+      agentProven,
     },
     MAX_AGENTS_PER_HUMAN,
   );
@@ -302,6 +352,7 @@ app.post("/agent/issue", async (c) => {
     {
       ok: true,
       agent: stored.agent,
+      agentProven,
       verification: verifyResultToWire(verification),
     },
     201,
@@ -424,12 +475,22 @@ app.get("/agent/verify/:address", async (c) => {
     // issue time: verification re-reads the live vault stake and fails with
     // `insufficient_bond` if the operator withdrew below the vault minimum.
     const onchainPromise = getAgentVaultStatus(agent).catch(() => null);
+    // Key proof-of-possession: read the on-chain AgentAttestation registry in
+    // parallel. Informational (doesn't gate validity); falls back to the DB
+    // flag set when an agentProof was supplied at issue time.
+    const attestationPromise = Promise.resolve(liveAttestationLookup(agent)).catch(
+      () => 0n,
+    );
     // Track whether the bond was actually read: if the vault is unreachable we
     // don't hard-fail identity on an RPC blip, but we must NOT silently report
     // a bond-less agent as fully valid — callers see `bondChecked: false`.
     let bondChecked = true;
     const result = await verifyAgentId(credential, {
       humanRootLookup: liveHumanRootLookup,
+      // On-chain kill switch: an operator revocation in the AgentRevocation
+      // registry fails verification with `revoked`, honored the same way the
+      // SDK/MCP see it (not just the off-chain DB flag handled above).
+      revocationLookup: liveRevocationLookup,
       stakeLookup: async () => {
         const vault = await onchainPromise;
         if (!vault || !vault.vaultConfigured) {
@@ -440,6 +501,7 @@ app.get("/agent/verify/:address", async (c) => {
       },
     });
     const onchain = await onchainPromise;
+    const provenAt = await attestationPromise;
     const meetsMinStake =
       minStake === null
         ? undefined
@@ -451,6 +513,8 @@ app.get("/agent/verify/:address", async (c) => {
       agent,
       ...verifyResultToWire(result),
       bondChecked,
+      agentProven: provenAt !== 0n || rec.agentProven,
+      ...(provenAt !== 0n ? { agentProvenAt: provenAt.toString() } : {}),
       unstakePending: Boolean(onchain && onchain.unstakeUnlockAt),
       onchain,
       ...(minStake === null
@@ -464,6 +528,81 @@ app.get("/agent/verify/:address", async (c) => {
     return c.json(body);
   } catch (error) {
     console.error("verify failed", agent, error);
+    return c.json({ error: "VERIFY_ERROR" }, 502);
+  }
+});
+
+// Authenticated verify: proves the *caller controls the agent key*, not just
+// that a valid credential exists for the address. The agent signs a fresh
+// AgentAuth challenge; we verify the credential live AND that the auth recovers
+// to the agent. Use this (not GET /verify) to authenticate a counterparty —
+// a copied public credential is useless without a matching live auth.
+app.post("/agent/verify-auth", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    auth?: AgentAuthWire;
+    audience?: string;
+    minStake?: string;
+  } | null;
+
+  if (!body || !body.auth || typeof body.auth !== "object") {
+    return c.json({ error: "MISSING_AUTH" }, 400);
+  }
+  if (!addressSchema.safeParse(body.auth.agent).success) {
+    return c.json({ error: "BAD_ADDRESS" }, 400);
+  }
+  const agent = getAddress(body.auth.agent);
+
+  // 1. Prove the caller holds the agent key (fresh, agent-signed challenge).
+  const authResult = await verifyAgentAuth(body.auth, {
+    expectedAgent: agent,
+    expectedAudience: body.audience,
+  });
+  if (!authResult.valid) {
+    return c.json(
+      { agent, valid: false, authenticated: false, reason: authResult.reason },
+      401,
+    );
+  }
+
+  // 2. The credential behind that agent must itself be valid right now.
+  const rec = await getAgentCredential(agent);
+  if (!rec) {
+    return c.json({ agent, valid: false, authenticated: true, reason: "not_found" }, 404);
+  }
+  if (rec.revokedAt) {
+    return c.json({ agent, valid: false, authenticated: true, reason: "revoked" });
+  }
+
+  try {
+    const credential = credentialFromWire(recordToWire(rec));
+    const onchainPromise = getAgentVaultStatus(agent).catch(() => null);
+    const attestationPromise = Promise.resolve(liveAttestationLookup(agent)).catch(
+      () => 0n,
+    );
+    let bondChecked = true;
+    const result = await verifyAgentId(credential, {
+      humanRootLookup: liveHumanRootLookup,
+      revocationLookup: liveRevocationLookup,
+      stakeLookup: async () => {
+        const vault = await onchainPromise;
+        if (!vault || !vault.vaultConfigured) {
+          bondChecked = false;
+          return { stake: 0n, minStake: 0n };
+        }
+        return { stake: BigInt(vault.stake), minStake: BigInt(vault.minStake) };
+      },
+    });
+    const provenAt = await attestationPromise;
+    return c.json({
+      agent,
+      authenticated: true,
+      ...verifyResultToWire(result),
+      agentProven: provenAt !== 0n || rec.agentProven,
+      ...(provenAt !== 0n ? { agentProvenAt: provenAt.toString() } : {}),
+      bondChecked,
+    });
+  } catch (error) {
+    console.error("verify-auth failed", agent, error);
     return c.json({ error: "VERIFY_ERROR" }, 502);
   }
 });

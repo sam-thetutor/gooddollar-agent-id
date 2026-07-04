@@ -23,6 +23,8 @@ import {
   messageToWire,
 } from "../lib/agentId.js";
 import {
+  AGENT_ATTESTATION_ADDRESS,
+  agentAttestationAbi,
   agentVaultAbi,
   erc20Abi,
   G_DOLLAR_ADDRESS,
@@ -99,6 +101,18 @@ export function IssueAgent() {
   });
   const minStake = (minStakeRead.data as bigint | undefined) ?? 0n;
 
+  // Agent-first gate: the agent must have attested key ownership on-chain
+  // before it can be registered (the API enforces the same rule).
+  const attestation = useReadContract({
+    address: AGENT_ATTESTATION_ADDRESS,
+    abi: agentAttestationAbi,
+    functionName: "provenAt",
+    args: agentAddr ? [agentAddr] : undefined,
+    query: { enabled: Boolean(agentAddr) },
+  });
+  const agentProven =
+    ((attestation.data as bigint | undefined) ?? 0n) !== 0n;
+
   const snapshot = useReadContract({
     address: VAULT_ADDRESS ?? undefined,
     abi: agentVaultAbi,
@@ -136,6 +150,7 @@ export function IssueAgent() {
     identity?.verified &&
     identity.root &&
     agentValid &&
+    agentProven &&
     meetsMin &&
     !busy;
 
@@ -326,6 +341,36 @@ export function IssueAgent() {
             </select>
           </label>
 
+          {/* The agent must have attested key ownership on-chain first */}
+          {agentValid && (
+            <div className="field">
+              <span>Agent key attestation (required)</span>
+              {agentProven ? (
+                <p className="ok small">
+                  ✓ This agent has proven on-chain that it controls its
+                  address.
+                </p>
+              ) : (
+                <>
+                  <p className="warn small">
+                    This agent hasn't attested yet. Point it to the{" "}
+                    <Link to="/for-agents">agent guide</Link> to prove it
+                    controls this address, then come back — this page updates
+                    automatically.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={attestation.isFetching}
+                    onClick={() => attestation.refetch()}
+                  >
+                    {attestation.isFetching ? "Checking…" : "Re-check"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Required refundable bond */}
           {agentValid && (
             <div className="field">
@@ -390,6 +435,11 @@ export function IssueAgent() {
             className="btn btn-primary"
             disabled={!canSubmit}
             onClick={handleIssue}
+            title={
+              agentValid && !agentProven
+                ? "The agent must attest key ownership on-chain first"
+                : undefined
+            }
           >
             {busy === "Issue"
               ? "Sign in your wallet…"

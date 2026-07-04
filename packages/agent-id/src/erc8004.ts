@@ -180,13 +180,23 @@ export async function verifyErc8004Registration(
 ): Promise<Erc8004VerifyResult> {
   const proof = extractGoodDollarProof(registration);
   if (!proof) {
-    return { valid: false, reason: "no_gooddollar_proof" };
+    return {
+      valid: false,
+      reason: "no_gooddollar_proof",
+      bondChecked: false,
+      revocationChecked: false,
+    };
   }
   let credential;
   try {
     credential = credentialFromWire(proof.credential);
   } catch {
-    return { valid: false, reason: "bad_credential" };
+    return {
+      valid: false,
+      reason: "bad_credential",
+      bondChecked: false,
+      revocationChecked: false,
+    };
   }
   const result = await verifyAgentId(credential, opts);
   return { ...result, agent: credential.fields.agent };

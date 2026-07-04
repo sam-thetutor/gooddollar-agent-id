@@ -1,6 +1,6 @@
 {
   "name": "@goodagent/agent-id",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "GoodDollar Agent ID — passport-free Proof-of-Human credentials for AI agents (EIP-712), with ERC-8004 interop. Verify that an agent is backed by a real, currently-verified GoodDollar human.",
   "keywords": [
     "gooddollar",

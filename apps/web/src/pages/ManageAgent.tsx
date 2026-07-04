@@ -11,6 +11,8 @@ import {
 import { Nav, ConnectButton } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import {
+  AGENT_REVOCATION_ADDRESS,
+  agentRevocationAbi,
   agentVaultAbi,
   erc20Abi,
   G_DOLLAR_ADDRESS,
@@ -147,6 +149,41 @@ export function ManageAgent() {
         args: [agent!, wei()],
       }),
     );
+
+  const revocation = useReadContract({
+    address: AGENT_REVOCATION_ADDRESS,
+    abi: agentRevocationAbi,
+    functionName: "isRevoked",
+    args: agent ? [agent] : undefined,
+    query: { enabled: Boolean(agent) },
+  });
+  const isRevokedOnChain = revocation.data === true;
+
+  // On-chain revocation: the operator-controlled kill switch every verifier
+  // reads live (not just the API). Costs gas but is honored network-wide.
+  const revokeOnChain = () =>
+    run("Revoke on-chain", async () => {
+      const hash = await writeContractAsync({
+        address: AGENT_REVOCATION_ADDRESS,
+        abi: agentRevocationAbi,
+        functionName: "revoke",
+        args: [agent!],
+      });
+      await revocation.refetch();
+      return hash;
+    });
+
+  const reinstateOnChain = () =>
+    run("Reinstate on-chain", async () => {
+      const hash = await writeContractAsync({
+        address: AGENT_REVOCATION_ADDRESS,
+        abi: agentRevocationAbi,
+        functionName: "reinstate",
+        args: [agent!],
+      });
+      await revocation.refetch();
+      return hash;
+    });
 
   // Identity revocation: a free EIP-712 signature (no on-chain tx) that tells
   // the registry to stop verifying this agent, independent of the bond.
@@ -322,17 +359,55 @@ export function ManageAgent() {
               <div className="revoke-block">
                 <h3 className="card-title">Revoke identity</h3>
                 <p className="muted hint">
-                  Revoking is a free signature (no gas) that stops this agent
-                  from verifying as human-backed, independent of the bond. You
-                  can still withdraw your bond separately.
+                  Two ways to un-vouch, independent of the bond (which you can
+                  still withdraw separately):
+                </p>
+                <p className="muted hint">
+                  <strong>On-chain revoke</strong> writes a kill switch to the
+                  AgentRevocation registry that <em>every</em> verifier reads
+                  live — including SDK/MCP callers that never touch our API.
+                  Costs gas. This is the durable, network-wide revocation.
+                  {isRevokedOnChain && (
+                    <span className="warn"> This agent is revoked on-chain.</span>
+                  )}
+                </p>
+                <div className="actions wrap">
+                  {!isRevokedOnChain ? (
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      disabled={Boolean(busy)}
+                      onClick={revokeOnChain}
+                    >
+                      {busy === "Revoke on-chain"
+                        ? "Confirm in wallet…"
+                        : "Revoke on-chain"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={Boolean(busy)}
+                      onClick={reinstateOnChain}
+                    >
+                      {busy === "Reinstate on-chain"
+                        ? "Confirm in wallet…"
+                        : "Reinstate on-chain"}
+                    </button>
+                  )}
+                </div>
+                <p className="muted hint" style={{ marginTop: "0.75rem" }}>
+                  <strong>Off-chain revoke</strong> is a free signature (no gas)
+                  that flags the agent in our registry only — fast, but SDK
+                  verifiers reading the chain directly won't see it.
                 </p>
                 <button
                   type="button"
-                  className="btn btn-danger"
+                  className="btn btn-ghost"
                   disabled={Boolean(busy)}
                   onClick={revoke}
                 >
-                  {busy === "Revoke" ? "Sign in your wallet…" : "Revoke Agent ID"}
+                  {busy === "Revoke" ? "Sign in your wallet…" : "Off-chain revoke"}
                 </button>
               </div>
             </section>

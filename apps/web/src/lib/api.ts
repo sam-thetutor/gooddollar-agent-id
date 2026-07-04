@@ -72,6 +72,10 @@ export interface VerifyResult {
   onchain?: OnchainStatus | null;
   /** False when the live bond couldn't be read (RPC issue) — verdict is partial. */
   bondChecked?: boolean;
+  /** Whether the on-chain revocation registry was consulted. */
+  revocationChecked?: boolean;
+  /** Whether the agent proved possession of its key at issue time. */
+  agentProven?: boolean;
   /** True when an unstake has been requested and the cooldown is counting down. */
   unstakePending?: boolean;
   /** Present only when the caller passed a verifier-chosen `minStake`. */

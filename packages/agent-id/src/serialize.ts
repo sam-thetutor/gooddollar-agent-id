@@ -30,6 +30,10 @@ export interface VerifyResultWire {
   expiresAt?: string;
   stake?: string;
   minStake?: string;
+  bondChecked: boolean;
+  revocationChecked: boolean;
+  agentProven?: boolean;
+  agentProvenAt?: string;
 }
 
 export function fieldsToWire(fields: AgentIdFields): AgentIdFieldsWire {
@@ -85,5 +89,9 @@ export function verifyResultToWire(result: VerifyResult): VerifyResultWire {
     expiresAt: result.expiresAt?.toString(),
     stake: result.stake?.toString(),
     minStake: result.minStake?.toString(),
+    bondChecked: result.bondChecked,
+    revocationChecked: result.revocationChecked,
+    agentProven: result.agentProven,
+    agentProvenAt: result.agentProvenAt?.toString(),
   };
 }

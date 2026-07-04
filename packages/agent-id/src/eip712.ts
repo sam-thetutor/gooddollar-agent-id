@@ -35,6 +35,31 @@ export const agentIdTypes = {
 
 export const AGENT_ID_PRIMARY_TYPE = "AgentID" as const;
 
+/**
+ * EIP-712 field definitions for the `AgentAuth` struct (order matters).
+ *
+ * An `AgentAuth` is signed by the **agent's own key** to prove *possession* of
+ * the agent address at request time. The identity credential (`AgentID`) says a
+ * human vouches for an agent address; it says nothing about who is presenting
+ * it. Because credentials are public, anyone could replay one and impersonate
+ * the agent. Requiring a fresh, agent-signed `AgentAuth` closes that: only the
+ * holder of the agent key can produce it.
+ *
+ * - `audience` binds the proof to a specific verifier/service so it can't be
+ *   replayed against a different one (use the service's name/origin; "" = any).
+ * - `issuedAt` + a max-age check gives freshness (a captured auth expires).
+ */
+export const agentAuthTypes = {
+  AgentAuth: [
+    { name: "agent", type: "address" },
+    { name: "audience", type: "string" },
+    { name: "nonce", type: "uint256" },
+    { name: "issuedAt", type: "uint64" },
+  ],
+} as const;
+
+export const AGENT_AUTH_PRIMARY_TYPE = "AgentAuth" as const;
+
 export interface DomainOptions {
   chainId?: number;
   verifyingContract?: Address;

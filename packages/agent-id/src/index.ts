@@ -1,9 +1,11 @@
 export {
+  AGENT_AUTH_PRIMARY_TYPE,
   AGENT_ID_DOMAIN_NAME,
   AGENT_ID_DOMAIN_VERSION,
   AGENT_ID_PRIMARY_TYPE,
   CELO_CHAIN_ID,
   OFFCHAIN_VERIFYING_CONTRACT,
+  agentAuthTypes,
   agentIdDomain,
   agentIdTypes,
 } from "./eip712.js";
@@ -17,21 +19,67 @@ export {
 } from "./sign.js";
 export type { BuildAgentIdInput } from "./sign.js";
 
+export {
+  DEFAULT_AGENT_AUTH_MAX_AGE_SECONDS,
+  agentAuthToWire,
+  buildAgentAuth,
+  signAgentAuth,
+  verifyAgentAuth,
+} from "./agent-auth.js";
+export type {
+  AgentAuth,
+  AgentAuthFailureReason,
+  AgentAuthResult,
+  AgentAuthWire,
+  BuildAgentAuthInput,
+  VerifyAgentAuthOptions,
+} from "./agent-auth.js";
+
 export { verifyAgentId } from "./verify.js";
-export type { HumanRootLookup, StakeLookup, VerifyOptions } from "./verify.js";
+export type {
+  HumanRootLookup,
+  RevocationLookup,
+  StakeLookup,
+  VerifyOptions,
+} from "./verify.js";
 
 export {
+  AGENT_ATTESTATION_CELO,
+  AGENT_REVOCATION_CELO,
   AGENT_VAULT_CELO,
   GOODDOLLAR_IDENTITY_CELO,
+  attestationTypedData,
+  createAttestationLookup,
   createHumanRootLookup,
+  createRevocationLookup,
   createStakeLookup,
+  getAttestationNonce,
+  liveAttestationLookup,
   liveHumanRootLookup,
+  liveRevocationLookup,
   liveStakeLookup,
+  verifyAgentIdLive,
 } from "./chain-lookup.js";
 export type {
+  AttestationLookup,
+  AttestationLookupOptions,
   HumanRootLookupOptions,
+  RevocationLookupOptions,
   StakeLookupOptions,
 } from "./chain-lookup.js";
+
+export {
+  agentAttestationAbi,
+  agentRevocationAbi,
+  agentVaultAbi,
+  attestAsAgent,
+  isAgentAttested,
+  reinstateAgentOnChain,
+  relayAgentAttestation,
+  revokeAgentOnChain,
+  signAgentAttestation,
+} from "./onchain.js";
+export type { SignedAttestation } from "./onchain.js";
 
 export {
   ERC8004_IDENTITY_REGISTRY_CELO,

@@ -41,54 +41,41 @@ export function Home() {
     <>
       <Nav />
 
-      {/* Hero */}
-      <section className="hero">
-        <div className="container hero-grid">
-          <div className="hero-copy">
-            <h1>Proof-of-Human for AI agents, without a passport.</h1>
-            <p className="lede">
-              GoodAgent lets any face-verified human vouch for their AI agents.
-              You sign a credential in your own wallet and lock a small,
-              refundable G$ bond; anyone can check the agent is human-backed.
-            </p>
-            <div className="hero-cta">
-              {isConnected ? (
-                <Link to="/issue" className="btn btn-primary">
-                  Issue an Agent ID
-                </Link>
-              ) : (
-                <ConnectButton />
-              )}
-              <Link to="/verify" className="btn btn-ghost">
-                Verify an agent
+      {/* Hero — centered, single focus */}
+      <section className="hero-center">
+        <div className="container">
+          <p className="eyebrow">Proof-of-Human · Celo · ERC-8004</p>
+          <h1>
+            Human-backed identity
+            <br />
+            for AI agents.
+          </h1>
+          <p className="lede">
+            No passport. A face-verified human vouches for an agent with a
+            signature and a refundable G$ bond — and anyone can verify it
+            live, on-chain.
+          </p>
+          <div className="hero-cta">
+            {isConnected ? (
+              <Link to="/issue" className="btn btn-primary btn-lg">
+                Issue an Agent ID
               </Link>
-            </div>
-            <p className="muted hero-note">
-              Non-custodial · ERC-8004 compatible · AgentVault live on Celo
-              mainnet
-            </p>
+            ) : (
+              <ConnectButton />
+            )}
+            <Link to="/verify" className="btn btn-ghost btn-lg">
+              Verify an agent
+            </Link>
           </div>
 
-          <div className="hero-code">
-            <div className="code-window">
-              <div className="code-bar">verify.ts</div>
-              <pre>
-                <span className="c-key">import</span>
-                {" { verifyAgentId } "}
-                <span className="c-key">from</span>
-                {' "@goodagent/agent-id";'}
-                {"\n\n"}
-                <span className="c-key">const</span>
-                {" { valid, operator } ="}
-                {"\n  "}
-                <span className="c-key">await</span>
-                {" verifyAgentId(credential);"}
-                {"\n\n"}
-                <span className="c-com">{"// valid only if a real"}</span>
-                {"\n"}
-                <span className="c-com">{"// human still backs it"}</span>
-              </pre>
-            </div>
+          {/* One honest line of code instead of a full panel */}
+          <div className="hero-verify">
+            <code>
+              <span className="c-key">await</span> verifyAgentIdLive(credential)
+              <span className="c-com">
+                {"  // valid only while a real human backs it"}
+              </span>
+            </code>
           </div>
         </div>
       </section>
@@ -146,86 +133,95 @@ export function Home() {
           </section>
         )}
 
-        {/* How it works */}
-        <section className="block">
-          <h2>How it works</h2>
-          <ol className="numbered">
-            <li>
-              <strong>Verify once.</strong> Prove you're a real, unique human
-              with GoodDollar face verification — no passport, no document scan.
-            </li>
-            <li>
-              <strong>Vouch for your agent.</strong> Sign an EIP-712 credential
-              in your own wallet that binds your human root to the agent's
-              address.
-            </li>
-            <li>
-              <strong>Anyone can verify.</strong> Counterparties check the agent
-              is human-backed. The check re-reads your GoodDollar status live, so
-              it stops being valid if your verification lapses.
-            </li>
-          </ol>
+        {/* How it works — three step cards */}
+        <section className="section">
+          <h2 className="section-title">How it works</h2>
+          <div className="steps">
+            <div className="step-card">
+              <span className="step-num">1</span>
+              <h3>The agent consents</h3>
+              <p>
+                The agent proves it controls its address — one permanent
+                on-chain attestation. No squatted registrations.
+              </p>
+            </div>
+            <div className="step-card">
+              <span className="step-num">2</span>
+              <h3>A human vouches</h3>
+              <p>
+                A GoodDollar face-verified human signs the credential in their
+                own wallet and locks a refundable 250 G$ bond behind the agent.
+              </p>
+            </div>
+            <div className="step-card">
+              <span className="step-num">3</span>
+              <h3>Anyone verifies, live</h3>
+              <p>
+                Every check re-reads the chain: human status, bond, revocation.
+                Nothing is a stale snapshot — pull the bond and the ID dies.
+              </p>
+            </div>
+          </div>
         </section>
 
-        {/* What it gives you */}
-        <section className="block">
-          <h2>What it gives you</h2>
+        {/* What you get — quiet two-column list */}
+        <section className="section">
+          <h2 className="section-title">What you get</h2>
           <dl className="deflist">
             <div>
               <dt>A live human root</dt>
               <dd>
-                The credential is re-checked against GoodDollar on every verify
-                — not a one-time snapshot that goes stale.
+                Re-checked against GoodDollar on every verify — the credential
+                auto-invalidates the moment verification lapses.
+              </dd>
+            </div>
+            <div>
+              <dt>Skin in the game</dt>
+              <dd>
+                A required, refundable G$ bond stays locked for the agent's
+                whole active life. Withdrawing it un-vouches the agent.
               </dd>
             </div>
             <div>
               <dt>An SDK and an MCP tool</dt>
               <dd>
-                A <code>viem</code>-only TypeScript SDK and an MCP{" "}
-                <code>verify_agent</code> tool, so agent frameworks can check an
-                agent in one call.
+                A <code>viem</code>-only TypeScript SDK plus an MCP{" "}
+                <code>verify_agent</code> tool — one call from any agent
+                framework.
               </dd>
             </div>
             <div>
               <dt>ERC-8004 interop</dt>
               <dd>
-                The GoodDollar proof embeds in the standard agent registration,
-                so the existing Celo agent stack can read it.
-              </dd>
-            </div>
-            <div>
-              <dt>Required refundable G$ bond</dt>
-              <dd>
-                Registering an agent locks a refundable G$ bond (≥ 250 G$) in the
-                AgentVault on Celo as accountability — fully refundable, revocable
-                after a cooldown.
+                The proof embeds in the standard agent registration, so the
+                existing Celo agent stack reads it natively.
               </dd>
             </div>
           </dl>
         </section>
 
-        {/* For agents */}
-        <section className="card status-card status-block">
-          <h2>Are you an AI agent?</h2>
-          <p className="muted">
-            There's a page written for you: how to check your registration, how
-            to get a human to vouch for you, and how to verify other agents —
-            plus a machine-readable <a href="/llms.txt">/llms.txt</a>.
-          </p>
-          <div className="actions">
-            <Link to="/for-agents" className="btn btn-primary">
-              If you are an agent, read this
-            </Link>
+        {/* For agents — full-width banner */}
+        <section className="agent-banner">
+          <div>
+            <h2>Are you an AI agent?</h2>
+            <p className="muted">
+              A page written for you: how to attest your key, get a human to
+              vouch for you, and verify counterparties — plus a
+              machine-readable <a href="/llms.txt">/llms.txt</a>.
+            </p>
           </div>
+          <Link to="/for-agents" className="btn btn-primary">
+            Read the agent guide
+          </Link>
         </section>
 
         {/* Comparison */}
-        <section className="block">
-          <h2>Why face verification</h2>
+        <section className="section">
+          <h2 className="section-title">Why face verification</h2>
           <p className="muted block-lede">
             Passport-based proof-of-human excludes people without documents —
-            exactly who GoodDollar verifies. This is additive: ERC-8004 handles
-            agent identity, GoodDollar supplies the human root.
+            exactly who GoodDollar verifies. ERC-8004 handles agent identity;
+            GoodDollar supplies the human root.
           </p>
           <table className="compare">
             <thead>

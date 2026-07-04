@@ -43,20 +43,31 @@ Operator (web + MetaMask) ──verify (GoodDollar face)──▶ humanRoot
 
 ## The rules
 
-Every Agent ID obeys four rules, all enforced by live on-chain reads — never a
+Every Agent ID obeys seven rules, all enforced by live on-chain reads — never a
 cached snapshot:
 
-1. **Human-rooted.** Only a currently-verified GoodDollar human can vouch for an
+1. **Agent-consented.** An address can only be registered after its key attests
+   in the on-chain `AgentAttestation` registry (or supplies a fresh agent-signed
+   proof at issue). The agent consents first, then the human vouches — squatted
+   registrations are rejected at the door with `AGENT_NOT_ATTESTED`.
+2. **Human-rooted.** Only a currently-verified GoodDollar human can vouch for an
    agent, signing an EIP-712 credential in their own wallet (free, non-custodial).
    If the human's verification lapses, the credential auto-invalidates.
-2. **Bond-backed for life.** Registering an agent requires locking a **refundable
+3. **Bond-backed for life.** Registering an agent requires locking a **refundable
    G$ bond ≥ 250 G$** in `AgentVault` — and it must stay locked while the agent is
    active. Every verification re-reads the vault: withdraw below the minimum and
    the agent fails with `insufficient_bond` until re-staked. **Withdrawing the
    bond is how an operator un-vouches an agent.**
-3. **Always refundable.** The bond only ever returns to the operator (3-day
+4. **Revocable on-chain.** The operator can flip a kill switch in the
+   `AgentRevocation` registry; every verifier reads it live and the agent fails
+   with `revoked` — no dependency on our API.
+5. **Always refundable.** The bond only ever returns to the operator (3-day
    cooldown, self-custodied in the vault) — it is a deposit, never a fee.
-4. **Capped fan-out.** One human can vouch for at most **10 active agents**.
+6. **Capped fan-out.** One human can vouch for at most **10 active agents**.
+7. **Not a bearer token.** A credential proves a human vouches for an agent
+   *address* — it does not prove the presenter controls it. Counterparties are
+   authenticated with a fresh, agent-signed `AgentAuth` challenge
+   (`POST /agent/verify-auth`, or `verifyAgentAuth` in the SDK).
 
 ## Status
 
@@ -69,6 +80,8 @@ interop are all in place (Phases A–F code-complete):
 - **E** ✅ `AgentVault` — required, refundable G$ bond with on-chain `minStake` (250 G$) **live on Celo mainnet** [`0x040904…7090`](https://celoscan.io/address/0x0409042B55e99Df8c0Feb7525A770838f3A47090)
 - **F** ✅ ERC-8004 interop (encode/verify registration; registry reads) + SDK + MCP on npm (`@goodagent/agent-id`, `@goodagent/mcp-server`) + example
 - **G** ✅ `GoodDollarHumanProofProvider` — a deployed ERC-8004 `IHumanProofProvider` reading the live GoodDollar whitelist **live on Celo mainnet** [`0x80c4…48c9`](https://celoscan.io/address/0x80c4de6872049cb20989156bca50134c781f48c9)
+- **H** ✅ `AgentRevocation` — on-chain operator kill switch read live by every verifier, **live on Celo mainnet** [`0xA86a…2137`](https://celoscan.io/address/0xA86a133626989115a6499b6cA67c3c8dA1662137); plus agent proof-of-possession (`AgentAuth`) so credentials can't be replayed by impersonators
+- **I** ✅ `AgentAttestation` — on-chain agent key proof-of-possession (direct `attest()` or gasless relayed `attestFor`), **live on Celo mainnet** [`0xe5EF…f6C2`](https://celoscan.io/address/0xe5EFd6755e8a2035c924f9BaCDecD067B3dcf6C2); surfaced as `agentProven` in every verify
 
 The credential is **identity-only** (the signed struct carries no money fields). To
 register an agent the operator must lock a **refundable G$ bond ≥ 250 G$** (enforced

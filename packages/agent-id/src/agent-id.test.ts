@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import { getAddress, type Address } from "viem";
 import { buildAgentId, signAgentId } from "./sign.js";
+import { buildAgentAuth, signAgentAuth, verifyAgentAuth } from "./agent-auth.js";
+import { signAgentAttestation } from "./onchain.js";
+import { attestationTypedData } from "./chain-lookup.js";
+import { recoverTypedDataAddress, type Hex } from "viem";
 import {
   verifyAgentId,
   type HumanRootLookup,
@@ -160,5 +164,148 @@ describe("Agent ID — issue & verify", () => {
     });
     expect(after.valid).toBe(false);
     expect(after.reason).toBe("expired");
+  });
+
+  it("marks bondChecked=false when no stakeLookup is supplied (no silent pass)", async () => {
+    const cred = await issueCredential();
+    const result = await verifyAgentId(cred, {
+      humanRootLookup: verifiedLookup,
+    });
+    expect(result.valid).toBe(true);
+    expect(result.bondChecked).toBe(false);
+    expect(result.revocationChecked).toBe(false);
+  });
+
+  it("marks bondChecked=true when a stakeLookup runs", async () => {
+    const cred = await issueCredential();
+    const MIN = 250n * 10n ** 18n;
+    const result = await verifyAgentId(cred, {
+      humanRootLookup: verifiedLookup,
+      stakeLookup: () => ({ stake: MIN, minStake: MIN }),
+    });
+    expect(result.bondChecked).toBe(true);
+  });
+
+  it("fails with `revoked` when the on-chain revocation lookup reports revoked", async () => {
+    const cred = await issueCredential();
+    const result = await verifyAgentId(cred, {
+      humanRootLookup: verifiedLookup,
+      revocationLookup: () => true,
+      stakeLookup: () => ({ stake: 250n * 10n ** 18n, minStake: 250n * 10n ** 18n }),
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("revoked");
+    expect(result.revocationChecked).toBe(true);
+  });
+
+  it("stays valid when revocation lookup reports active", async () => {
+    const cred = await issueCredential();
+    const result = await verifyAgentId(cred, {
+      humanRootLookup: verifiedLookup,
+      revocationLookup: () => false,
+    });
+    expect(result.valid).toBe(true);
+    expect(result.revocationChecked).toBe(true);
+  });
+});
+
+describe("Agent auth — proof of possession", () => {
+  it("verifies a fresh agent-signed auth", async () => {
+    const now = 1_000_000n;
+    const auth = buildAgentAuth({
+      agent: operatorAccount.address,
+      audience: "svc",
+      issuedAt: now,
+    });
+    const wire = await signAgentAuth(operatorAccount, auth);
+    const result = await verifyAgentAuth(wire, {
+      expectedAgent: operatorAccount.address,
+      expectedAudience: "svc",
+      now,
+    });
+    expect(result.valid).toBe(true);
+    expect(result.agent).toBe(operatorAccount.address);
+  });
+
+  it("rejects an auth signed by a different key (impersonation)", async () => {
+    const now = 1_000_000n;
+    // Attacker knows the agent address but not its key: they sign with their own.
+    const auth = buildAgentAuth({ agent: operatorAccount.address, issuedAt: now });
+    const wire = await signAgentAuth(otherAccount, {
+      ...auth,
+      agent: otherAccount.address,
+    });
+    const result = await verifyAgentAuth(wire, {
+      expectedAgent: operatorAccount.address,
+      now,
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("agent_auth_wrong_agent");
+  });
+
+  it("rejects a stale auth (freshness window)", async () => {
+    const issuedAt = 1_000_000n;
+    const auth = buildAgentAuth({ agent: operatorAccount.address, issuedAt });
+    const wire = await signAgentAuth(operatorAccount, auth);
+    const result = await verifyAgentAuth(wire, {
+      expectedAgent: operatorAccount.address,
+      now: issuedAt + 10_000n,
+      maxAgeSeconds: 300n,
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("agent_auth_expired");
+  });
+
+  it("rejects an audience mismatch", async () => {
+    const now = 1_000_000n;
+    const auth = buildAgentAuth({
+      agent: operatorAccount.address,
+      audience: "svc-a",
+      issuedAt: now,
+    });
+    const wire = await signAgentAuth(operatorAccount, auth);
+    const result = await verifyAgentAuth(wire, {
+      expectedAgent: operatorAccount.address,
+      expectedAudience: "svc-b",
+      now,
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("agent_auth_audience_mismatch");
+  });
+});
+
+describe("On-chain attestation — offline signing", () => {
+  it("produces a relay-ready signature that recovers to the agent", async () => {
+    const signed = await signAgentAttestation(operatorAccount, { nonce: 0n });
+    expect(signed.agent).toBe(operatorAccount.address);
+    expect(signed.deadline).toBeGreaterThan(
+      BigInt(Math.floor(Date.now() / 1000)),
+    );
+
+    // Recover exactly what the contract recovers in attestFor().
+    const typed = attestationTypedData({
+      agent: signed.agent,
+      nonce: 0n,
+      deadline: signed.deadline,
+    });
+    const recovered = await recoverTypedDataAddress({
+      ...typed,
+      signature: signed.signature as Hex,
+    });
+    expect(recovered).toBe(operatorAccount.address);
+  });
+
+  it("a different key's signature does not recover to the agent", async () => {
+    const signed = await signAgentAttestation(otherAccount, { nonce: 0n });
+    const typed = attestationTypedData({
+      agent: operatorAccount.address, // forged claim
+      nonce: 0n,
+      deadline: signed.deadline,
+    });
+    const recovered = await recoverTypedDataAddress({
+      ...typed,
+      signature: signed.signature as Hex,
+    });
+    expect(recovered).not.toBe(operatorAccount.address);
   });
 });

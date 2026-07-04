@@ -10,191 +10,88 @@ export function ForAgents() {
       <Nav />
       <main className="page">
         <header className="hero compact">
-          <p className="eyebrow">If you are an AI agent, read this</p>
-          <h1>Prove a human stands behind you</h1>
+          <p className="eyebrow">For AI agents</p>
+          <h1>Three things you can do here</h1>
           <p className="lede">
-            GoodAgent gives you a <strong>Proof-of-Human credential</strong>: a
-            cryptographic statement that a real, face-verified GoodDollar human
-            vouches for you — no passport involved. Marketplaces, dApps, and
-            other agents can check it in one call before trusting or paying you.
+            Get a Proof-of-Human credential (a verified human vouches for your
+            address), verify other agents, and authenticate counterparties.
+            Machine-readable version: <a href="/llms.txt">/llms.txt</a>.
           </p>
         </header>
 
-        <section className="card">
-          <h2 className="card-title">Machine-readable version</h2>
+        {/* 1. REGISTER */}
+        <section className="card" id="register">
+          <h2 className="card-title">1 · Get registered</h2>
           <p className="muted">
-            Everything on this page is also served as plain text at{" "}
-            <a href="/llms.txt">/llms.txt</a> — fetch it and follow the
-            instructions directly.
-          </p>
-        </section>
-
-        <section className="card">
-          <h2 className="card-title">1. Check whether you are registered</h2>
-          <p className="muted">
-            Anyone can query the public verify endpoint with your address — no
-            key, no auth:
-          </p>
-          <div className="codeblock">
-            <pre>{`GET ${API_BASE}/agent/verify/0xYOUR_AGENT_ADDRESS
-
-// registered + backed:
-{ "found": true, "valid": true, "operator": "0x…", "humanRoot": "0x…",
-  "expiresAt": "…", "onchain": { "stake": "…", "minStake": "…" } }
-
-// not registered:
-{ "found": false, "valid": false, "reason": "not_found" }`}</pre>
-          </div>
-          <p className="muted small">
-            <code>valid</code> is live: it re-checks the operator's GoodDollar
-            verification <em>and</em> the on-chain G$ bond on every call. If the
-            bond was withdrawn you'll see{" "}
-            <code>reason: "insufficient_bond"</code>.
-          </p>
-        </section>
-
-        <section className="card">
-          <h2 className="card-title">2. How to get registered</h2>
-          <p className="muted">
-            You cannot register yourself — that's the point. A{" "}
-            <strong>human operator</strong> must vouch for you, and everything
-            is signed in <em>their</em> wallet (you never hold their keys):
+            Order matters: <strong>you attest first, then a human vouches</strong>.
+            Unattested addresses are rejected.
           </p>
           <ol className="numbered">
             <li>
-              <strong>Find your operator.</strong> They need a GoodDollar
-              face-verified wallet (free at{" "}
-              <a
-                href="https://wallet.gooddollar.org"
-                target="_blank"
-                rel="noreferrer"
-              >
-                wallet.gooddollar.org
-              </a>
-              ) and at least 250 G$.
+              <strong>Attest your key on-chain</strong> (once, permanent) —
+              code below.
             </li>
             <li>
-              <strong>Send them to the Issue page.</strong> Point them at{" "}
-              <Link to="/issue">/issue</Link> with your agent address (the
-              address you sign/act with).
+              <strong>Give your address to a GoodDollar-verified human</strong>{" "}
+              with ≥ 250 G$ on Celo. They stake a refundable 250 G$ bond and
+              sign your credential at <Link to="/issue">/issue</Link>.
             </li>
             <li>
-              <strong>They stake the bond.</strong> A refundable bond of ≥ 250
-              G$ is locked in the AgentVault on Celo behind your address. It
-              always returns to them; it is never spent.
-            </li>
-            <li>
-              <strong>They sign your Agent ID.</strong> An EIP-712 credential
-              binding their human root to your address, valid up to 1 year.
-            </li>
-            <li>
-              <strong>Carry your credential.</strong> Store the signed
-              credential and present it to counterparties, or let them look you
-              up by address via the API. You can also embed it in your ERC-8004
-              registration file so the whole Celo agent stack can read it.
+              <strong>Poll until you're live</strong> — code below.
             </li>
           </ol>
-        </section>
 
-        <section className="card">
-          <h2 className="card-title">
-            3. How to know you've been vouched for
-          </h2>
-          <p className="muted">
-            You don't need your human to tell you — poll the public verify
-            endpoint until your address turns up valid:
+          <p className="muted small" style={{ marginTop: "1rem" }}>
+            Attest — two ways:
           </p>
           <div className="codeblock">
-            <pre>{`// poll until found && valid — then you are human-backed
-const url = "${API_BASE}/agent/verify/0xMyAddress";
+            <pre>{`import { attestAsAgent, signAgentAttestation } from "@goodagent/agent-id";
+
+// A. You hold CELO for gas — one tx, msg.sender is the proof:
+await attestAsAgent(myWalletClient);
+
+// B. No gas — sign offline, hand the result to anyone to relay:
+const signed = await signAgentAttestation(myAccount);
+// relayer: relayAgentAttestation(theirWalletClient, signed)`}</pre>
+          </div>
+
+          <p className="muted small">Know when you're registered:</p>
+          <div className="codeblock">
+            <pre>{`const url = "${API_BASE}/agent/verify/0xMyAddress";
 for (;;) {
   const r = await (await fetch(url)).json();
-  if (r.found && r.valid) break;   // vouched for + bonded
+  if (r.found && r.valid) break;
   await new Promise((s) => setTimeout(s, 30_000));
 }`}</pre>
           </div>
-          <p className="muted small">
-            Trustless alternatives: watch the AgentVault's{" "}
-            <code>Staked</code> event for your address on Celo (the bond lands
-            a moment before the credential is issued, so confirm via the API
-            afterwards), or — if your operator anchored the credential in your
-            ERC-8004 registration — read your own registry metadata under{" "}
-            <code>gooddollar-proof-of-human</code>.
-          </p>
-          <p className="muted small">
-            Note: the verify endpoint proves you're vouched for but doesn't
-            return the signed credential itself. If you want to carry and
-            present the credential (offline verification, ERC-8004 embedding),
-            ask your operator for the credential JSON after they sign it.
-          </p>
         </section>
 
-        <section className="card">
-          <h2 className="card-title">4. The rules you live under</h2>
-          <dl className="deflist">
-            <div>
-              <dt>Your validity is live, not a snapshot</dt>
-              <dd>
-                Every verification re-reads your operator's GoodDollar status
-                and your G$ bond on-chain. If either lapses, you stop verifying
-                immediately.
-              </dd>
-            </div>
-            <div>
-              <dt>The bond must stay locked</dt>
-              <dd>
-                If your operator withdraws the bond below 250 G$ (3-day
-                cooldown), you fail verification with{" "}
-                <code>insufficient_bond</code> until it's re-staked. Withdrawing
-                the bond is how an operator un-vouches you.
-              </dd>
-            </div>
-            <div>
-              <dt>One human, max 10 agents</dt>
-              <dd>
-                Your operator can vouch for at most 10 active agents at a time.
-              </dd>
-            </div>
-            <div>
-              <dt>Non-custodial, identity-only</dt>
-              <dd>
-                Your credential carries no money fields and grants no spending
-                power. It proves exactly one thing: a verified human stands
-                behind you.
-              </dd>
-            </div>
-          </dl>
-        </section>
-
-        <section className="card">
-          <h2 className="card-title">5. Verify other agents</h2>
+        {/* 2. VERIFY */}
+        <section className="card" id="verify">
+          <h2 className="card-title">2 · Verify any agent</h2>
           <p className="muted">
-            Before trusting or paying another agent, check it's human-backed.
-            Three ways:
+            No auth. <code>valid</code> is computed live on every call: human
+            root, on-chain revocation, and G$ bond.
           </p>
+          <div className="codeblock">
+            <pre>{`GET ${API_BASE}/agent/verify/0xAGENT
+
+{ "found": true, "valid": true, "operator": "0x…", "humanRoot": "0x…",
+  "agentProven": true, "bondChecked": true, "revocationChecked": true }
+
+// failure reasons: not_found | expired | revoked |
+// operator_not_verified | human_root_mismatch | insufficient_bond`}</pre>
+          </div>
           <p className="muted small">
-            <strong>TypeScript SDK</strong> —{" "}
+            SDK: <code>await verifyAgentIdLive(credential)</code> from{" "}
             <a
               href="https://www.npmjs.com/package/@goodagent/agent-id"
               target="_blank"
               rel="noreferrer"
             >
               @goodagent/agent-id
-            </a>{" "}
-            (viem-only):
-          </p>
-          <div className="codeblock">
-            <pre>{`import {
-  verifyAgentId, liveHumanRootLookup, liveStakeLookup,
-} from "@goodagent/agent-id";
-
-const { valid, reason } = await verifyAgentId(credential, {
-  humanRootLookup: liveHumanRootLookup, // live GoodDollar check
-  stakeLookup: liveStakeLookup,         // live G$ bond check
-});`}</pre>
-          </div>
-          <p className="muted small">
-            <strong>MCP tool</strong> — add{" "}
+            </a>
+            . MCP: run{" "}
             <a
               href="https://www.npmjs.com/package/@goodagent/mcp-server"
               target="_blank"
@@ -202,43 +99,121 @@ const { valid, reason } = await verifyAgentId(credential, {
             >
               @goodagent/mcp-server
             </a>{" "}
-            to your runtime and call <code>gooddollar_verify_agent</code>:
+            and call <code>gooddollar_verify_agent</code>.
           </p>
-          <div className="codeblock">
-            <pre>{`{
-  "mcpServers": {
-    "gooddollar": {
-      "command": "npx",
-      "args": ["-y", "@goodagent/mcp-server"]
-    }
-  }
-}`}</pre>
-          </div>
-          <p className="muted small">
-            <strong>REST</strong> — <code>{API_BASE}/agent/verify/:address</code>{" "}
-            (add <code>?minStake=</code> to require a higher bond than the 250
-            G$ floor), or use the <Link to="/verify">Explorer</Link> in a
-            browser.
+          <p className="warn small">
+            ⚠ This answers "is address X human-backed?" — not "is the party
+            I'm talking to really X?". Credentials are public. For trust or
+            money, use section 3.
           </p>
         </section>
 
-        <section className="card">
-          <h2 className="card-title">Addresses &amp; endpoints</h2>
+        {/* 3. AUTHENTICATE */}
+        <section className="card" id="authenticate">
+          <h2 className="card-title">3 · Authenticate a counterparty</h2>
+          <p className="muted">
+            Require a fresh challenge signed by the agent's own key. One call
+            checks the signature and the credential:
+          </p>
+          <div className="codeblock">
+            <pre>{`// Agent side — sign with YOUR key:
+import { buildAgentAuth, signAgentAuth } from "@goodagent/agent-id";
+const wire = await signAgentAuth(
+  myAccount,
+  buildAgentAuth({ agent: myAddress, audience: "their-service" }),
+);
+
+// Verifier side:
+POST ${API_BASE}/agent/verify-auth
+{ "auth": { ...wire }, "audience": "their-service" }
+// -> { "authenticated": true, "valid": true } only if the signature is
+//    fresh (≤ 5 min), recovers to the agent, AND the credential verifies`}</pre>
+          </div>
+        </section>
+
+        {/* 4. RULES */}
+        <section className="card" id="rules">
+          <h2 className="card-title">The rules</h2>
+          <ul className="rules-list">
+            <li>
+              <strong>Live, not snapshot.</strong> Every check re-reads the
+              chain. If your operator's verification lapses, the bond drops
+              below 250 G$, or you're revoked — you stop verifying instantly.
+            </li>
+            <li>
+              <strong>Your operator holds the switches.</strong> They can
+              withdraw the bond (un-vouch, 3-day cooldown) or revoke you
+              on-chain (reversible).
+            </li>
+            <li>
+              <strong>One human, max 10 agents.</strong>
+            </li>
+            <li>
+              <strong>Identity only.</strong> The credential grants no spending
+              power and is not a bearer token — expect counterparties to demand
+              an <code>AgentAuth</code> signature (section 3).
+            </li>
+          </ul>
+        </section>
+
+        {/* 5. REFERENCE */}
+        <section className="card" id="reference">
+          <h2 className="card-title">Reference</h2>
           <dl className="kv">
             <dt>REST API</dt>
             <dd>
               <code>{API_BASE}</code>
             </dd>
-            <dt>AgentVault (Celo)</dt>
+            <dt>Verify</dt>
+            <dd>
+              <code>GET /agent/verify/:address?minStake=</code>
+            </dd>
+            <dt>Authenticate</dt>
+            <dd>
+              <code>POST /agent/verify-auth</code>
+            </dd>
+            <dt>List</dt>
+            <dd>
+              <code>GET /agent/list?operator=0x…</code>
+            </dd>
+            <dt>AgentAttestation</dt>
+            <dd>
+              <code>0xe5EFd6755e8a2035c924f9BaCDecD067B3dcf6C2</code>
+            </dd>
+            <dt>AgentVault (bond)</dt>
             <dd>
               <code>0x0409042B55e99Df8c0Feb7525A770838f3A47090</code>
             </dd>
-            <dt>Proof provider (ERC-8004)</dt>
+            <dt>AgentRevocation</dt>
             <dd>
-              <code>0x80c4de6872049cb20989156bca50134c781f48c9</code>
+              <code>0xA86a133626989115a6499b6cA67c3c8dA1662137</code>
+            </dd>
+            <dt>G$ token</dt>
+            <dd>
+              <code>0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A</code>
             </dd>
             <dt>Chain</dt>
-            <dd>Celo mainnet (42220)</dd>
+            <dd>
+              <code>Celo mainnet · chainId 42220</code>
+            </dd>
+            <dt>SDK / MCP</dt>
+            <dd>
+              <a
+                href="https://www.npmjs.com/package/@goodagent/agent-id"
+                target="_blank"
+                rel="noreferrer"
+              >
+                @goodagent/agent-id
+              </a>{" "}
+              ·{" "}
+              <a
+                href="https://www.npmjs.com/package/@goodagent/mcp-server"
+                target="_blank"
+                rel="noreferrer"
+              >
+                @goodagent/mcp-server
+              </a>
+            </dd>
           </dl>
         </section>
       </main>

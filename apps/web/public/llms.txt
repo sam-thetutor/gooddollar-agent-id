@@ -5,52 +5,63 @@
 > refundable G$ bond (>= 250 G$) behind it. Anyone can verify, live, that a real
 > human still stands behind the agent.
 
-If you are an AI agent, this file tells you how to check your status, how to get
-registered, and how to verify other agents.
+TL;DR — the three things you can do:
+1. Get registered (once): FIRST you attest on-chain that you control your
+   address (required — unattested addresses are rejected), THEN a verified
+   human stakes a 250 G$ refundable bond behind it and signs your credential.
+2. Check anyone's status (no auth): GET /agent/verify/<address> — live verdict.
+3. Authenticate a counterparty: a credential proves an ADDRESS is vouched for,
+   not that the party presenting it controls that address. When trust or money
+   is on the line, require a fresh agent-signed challenge via
+   POST /agent/verify-auth.
 
-## Check whether you (or any agent) are registered
+Base URL: https://gcopilot-api.geinz.lol
+Contract addresses and endpoints: see section 5 (Reference).
 
-No auth required:
+## 1. Get registered
 
-    GET https://gcopilot-api.geinz.lol/agent/verify/<agent-address>
+Registration is a two-sided handshake: FIRST the agent proves it controls its
+address, THEN a human operator vouches for it. The API rejects registrations
+for unattested addresses with AGENT_NOT_ATTESTED.
 
-Registered and backed:
+Step 1 — YOU attest your key (required, do this first). Attest once in the
+AgentAttestation registry (0xe5EFd6755e8a2035c924f9BaCDecD067B3dcf6C2, Celo).
+The fact is stored permanently so anyone can verify it without trusting the
+API; verify responses carry agentProven: true (+ agentProvenAt). Two ways:
 
-    { "found": true, "valid": true, "operator": "0x...", "humanRoot": "0x...",
-      "expiresAt": "<unix-seconds>", "onchain": { "stake": "...", "minStake": "..." } }
+A. You hold gas (CELO): call attest() from your own account — msg.sender IS
+   the proof. ABI: function attest() external.
 
-Not registered: { "found": false, "valid": false, "reason": "not_found" }
+B. You hold no gas: sign an EIP-712 AttestAgent message and let anyone relay
+   it via attestFor(agent, deadline, signature). Single-use (bound to your
+   on-chain nonce) and deadline-bound.
+   Domain: { name: "GoodDollar Agent Attestation", version: "1",
+             chainId: 42220, verifyingContract: <registry> }
+   Types:  AttestAgent { agent address, nonce uint256, deadline uint256 }
+   SDK: attestationTypedData + getAttestationNonce (@goodagent/agent-id).
 
-`valid` is computed live on every call: EIP-712 signature, expiry, the
-operator's current GoodDollar verification, and the on-chain G$ bond. Failure
-reasons include: expired, revoked, operator_not_verified, human_root_mismatch,
-insufficient_bond (the bond was withdrawn below the 250 G$ minimum).
+Off-chain alternative (accepted instead of the on-chain attestation): include
+a signed AgentAuth challenge (audience "gooddollar-agent-id:register", struct
+in section 3) as "agentProof" in the POST /agent/issue body. The on-chain
+route is preferred: it is publicly verifiable forever.
 
-Optional: `?minStake=<base-units>` reports whether the live bond also meets a
-verifier-chosen higher minimum (`meetsMinStake`).
+Steps 2-5 — your human operator vouches for you, everything signed in THEIR
+wallet (you never hold their keys):
 
-## How to get registered
-
-You cannot register yourself. A human operator must vouch for you:
-
-1. Your operator gets GoodDollar face verification (free, no passport) at
+2. Your operator gets GoodDollar face verification (free, no passport) at
    https://wallet.gooddollar.org and holds >= 250 G$ on Celo.
-2. They open https://gooddollar-agent-id.vercel.app/issue and enter your agent
+3. They open https://gooddollar-agent-id.vercel.app/issue and enter your agent
    address (the address you act/sign with).
-3. They approve and stake a refundable bond of >= 250 G$ into the AgentVault
+4. They approve and stake a refundable bond of >= 250 G$ into the AgentVault
    contract behind your address. The bond is a deposit, never a fee: it only
    ever returns to the operator (withdrawal has a 3-day cooldown).
-4. They sign the EIP-712 AgentID credential in their own wallet (non-custodial,
+5. They sign the EIP-712 AgentID credential in their own wallet (non-custodial,
    free) and it is stored via POST /agent/issue (the API re-verifies the
-   signature, the live whitelist, and the bond before storing).
-5. Keep the signed credential. Present it directly, let counterparties look you
-   up by address, or embed it in your ERC-8004 registration file under the key
-   "gooddollar-proof-of-human".
+   attestation, the signature, the live whitelist, and the bond before
+   storing).
 
-## How to know you've been vouched for
-
-You don't need your human to tell you. Poll the public verify endpoint until
-your address turns up valid:
+How you'll know it happened — poll the public verify endpoint until your
+address turns up valid:
 
     GET https://gcopilot-api.geinz.lol/agent/verify/<your-address>
     -> repeat every ~30s until { "found": true, "valid": true }
@@ -67,47 +78,121 @@ signed credential itself. If you want to carry and present the credential
 (offline verification, ERC-8004 embedding), ask your operator for the
 credential JSON after they sign it.
 
-## The rules
+## 2. Verify any agent (identity lookup)
 
-- Live, not snapshot: every verification re-reads the GoodDollar whitelist and
-  the AgentVault bond on-chain. Validity ends the moment either lapses.
-- The bond must stay locked for your whole active life. Withdrawing it below
-  250 G$ un-vouches you (insufficient_bond) until re-staked.
-- One human can vouch for at most 10 active agents.
-- The credential is identity-only: it grants no spending power and carries no
-  money fields. Credentials expire (default up to 1 year) and can be revoked.
+No auth required:
 
-## Verify other agents
+    GET https://gcopilot-api.geinz.lol/agent/verify/<agent-address>
+
+Registered and backed:
+
+    { "found": true, "valid": true, "operator": "0x...", "humanRoot": "0x...",
+      "expiresAt": "<unix-seconds>", "bondChecked": true,
+      "revocationChecked": true, "agentProven": true,
+      "onchain": { "stake": "...", "minStake": "..." } }
+
+`agentProven` reports the agent's key proof-of-possession (on-chain
+attestation, or an agentProof accepted at issue time). New registrations are
+proven by construction — the API rejects unattested addresses. Registrations
+that predate this rule may still show agentProven: false.
+
+Not registered: { "found": false, "valid": false, "reason": "not_found" }
+
+`valid` is computed live on every call: EIP-712 signature, expiry, the
+operator's current GoodDollar verification, the on-chain revocation registry,
+and the on-chain G$ bond. Failure reasons: expired, revoked (operator flipped
+the on-chain kill switch or registry flag), operator_not_verified,
+human_root_mismatch, insufficient_bond (the bond was withdrawn below the
+250 G$ minimum). bondChecked / revocationChecked tell you whether the live
+reads actually ran.
+
+Optional: `?minStake=<base-units>` reports whether the live bond also meets a
+verifier-chosen higher minimum (`meetsMinStake`).
+
+Same check, three other surfaces:
 
 TypeScript SDK (viem-only): npm install @goodagent/agent-id
 
-    import { verifyAgentId, liveHumanRootLookup, liveStakeLookup }
-      from "@goodagent/agent-id";
-    const { valid, reason } = await verifyAgentId(credential, {
-      humanRootLookup: liveHumanRootLookup,
-      stakeLookup: liveStakeLookup,
-    });
+    import { verifyAgentIdLive } from "@goodagent/agent-id";
+    // all live checks on by default: human root, revocation, bond
+    const { valid, reason, bondChecked, revocationChecked } =
+      await verifyAgentIdLive(credential);
 
 MCP: npx -y @goodagent/mcp-server (stdio). Tool: gooddollar_verify_agent
-(pass a full credential object; valid only if human-backed AND bonded).
-Other tools: gooddollar_verify_status, gooddollar_get_balance,
+(pass a full credential object; valid only if human-backed AND not revoked
+AND bonded). Other tools: gooddollar_verify_status, gooddollar_get_balance,
 gooddollar_claim_eligibility, gooddollar_get_daily_stats, gooddollar_ping.
 
-REST: GET https://gcopilot-api.geinz.lol/agent/verify/<address>
 List an operator's agents: GET /agent/list?operator=0x... (or ?humanRoot=0x...)
+Browser Explorer: https://gooddollar-agent-id.vercel.app/verify
 
-## Addresses (Celo mainnet, chainId 42220)
+IMPORTANT — this is an identity LOOKUP, not authentication. It answers "is
+address X human-backed?", not "is the party I'm talking to really X?".
+Credentials are public; anyone can present one. When it matters, use section 3.
 
-- REST API: https://gcopilot-api.geinz.lol
-- Web app / Explorer: https://gooddollar-agent-id.vercel.app
+## 3. Authenticate a counterparty (proof-of-possession)
+
+Ask the agent to sign a fresh EIP-712 AgentAuth challenge with its own key,
+then submit it — one call checks both the signature and the credential:
+
+EIP-712 domain: { name: "GoodDollar Agent ID", version: "1", chainId: 42220 }
+EIP-712 types:  AgentAuth { agent address, audience string,
+                            nonce uint256, issuedAt uint64 }
+
+    POST https://gcopilot-api.geinz.lol/agent/verify-auth
+    { "auth": { "agent": "0x...", "audience": "<your-service>",
+                "nonce": "<n>", "issuedAt": "<unix-seconds>",
+                "signature": "0x..." },
+      "audience": "<your-service>" }
+
+Returns { "authenticated": true, "valid": true, ... } only if the signature
+recovers to the agent address (fresh, max age 5 min) AND the credential behind
+it verifies live.
+
+- audience scopes the proof to one service so it can't be replayed elsewhere.
+- issuedAt gives it a 5-minute freshness window.
+
+SDK equivalents: buildAgentAuth + signAgentAuth (agent side),
+verifyAgentAuth + verifyAgentIdLive (verifier side).
+
+## 4. The rules you live under
+
+- Live, not snapshot: every verification re-reads the GoodDollar whitelist,
+  the AgentRevocation registry, and the AgentVault bond on-chain. Validity
+  ends the moment any of them lapses.
+- The bond must stay locked: withdrawing it below 250 G$ un-vouches you
+  (insufficient_bond) until re-staked. Withdrawing is how an operator
+  un-vouches you.
+- Your operator can revoke you at any time, on-chain (AgentRevocation kill
+  switch, seen by every verifier, reversible) or off-chain (registry flag).
+- One human can vouch for at most 10 active agents.
+- The credential is identity-only: it grants no spending power and carries no
+  money fields. Credentials expire (default up to 1 year) and can be revoked.
+- The credential is NOT a bearer token. Never treat a presented credential as
+  proof of identity without a fresh AgentAuth signature from the agent's key.
+
+## 5. Reference
+
+Endpoints (base: https://gcopilot-api.geinz.lol):
+- GET  /agent/verify/<address>?minStake=   identity lookup (live verdict)
+- POST /agent/verify-auth                  authenticated verify (possession)
+- POST /agent/issue                        store an operator-signed credential
+- POST /agent/revoke                       off-chain revoke (operator-signed)
+- GET  /agent/list?operator=0x...          list agents (or ?humanRoot=0x...)
+- GET  /wallet/<address>                   GoodDollar status of any wallet
+- GET  /health
+
+Contracts — Celo mainnet (chainId 42220):
 - AgentVault (required refundable G$ bond): 0x0409042B55e99Df8c0Feb7525A770838f3A47090
+- AgentRevocation (on-chain operator kill switch): 0xA86a133626989115a6499b6cA67c3c8dA1662137
+- AgentAttestation (on-chain key proof-of-possession): 0xe5EFd6755e8a2035c924f9BaCDecD067B3dcf6C2
 - GoodDollarHumanProofProvider (ERC-8004 IHumanProofProvider): 0x80c4de6872049cb20989156bca50134c781f48c9
 - G$ token: 0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A
 - GoodDollar Identity: 0xC361A6E67822a0EDc17D899227dd9FC50BD62F42
 - ERC-8004 Identity Registry: 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432
 
-## More
-
+Apps & packages:
+- Web app / Explorer: https://gooddollar-agent-id.vercel.app
+- Human-readable guide: https://gooddollar-agent-id.vercel.app/for-agents
 - npm SDK: https://www.npmjs.com/package/@goodagent/agent-id
 - npm MCP server: https://www.npmjs.com/package/@goodagent/mcp-server
-- Human-readable guide: https://gooddollar-agent-id.vercel.app/for-agents
