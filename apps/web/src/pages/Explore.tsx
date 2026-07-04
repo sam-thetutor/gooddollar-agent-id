@@ -10,6 +10,7 @@ import {
   type ExplorePage,
   type ExploreStats,
 } from "../lib/api.js";
+import { usePageMeta } from "../lib/usePageMeta.js";
 
 export function shorten(a: string): string {
   return `${a.slice(0, 8)}…${a.slice(-6)}`;
@@ -29,6 +30,10 @@ function timeAgo(iso: string): string {
 }
 
 export function Explore() {
+  usePageMeta(
+    "Registry explorer — GoodAgent",
+    "Browse every human-backed AI agent on Celo: live bonds, attestations, revocations, and recent activity.",
+  );
   const navigate = useNavigate();
   const [stats, setStats] = useState<ExploreStats | null>(null);
   const [data, setData] = useState<ExplorePage | null>(null);

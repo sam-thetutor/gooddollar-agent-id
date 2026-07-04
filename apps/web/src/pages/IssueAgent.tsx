@@ -33,6 +33,7 @@ import {
   VAULT_ADDRESS,
 } from "../lib/vault.js";
 import { getWalletOverview, issueAgent } from "../lib/api.js";
+import { usePageMeta } from "../lib/usePageMeta.js";
 
 const TTL_OPTIONS = [7, 30, 90, 365];
 
@@ -40,6 +41,10 @@ type Identity = { verified: boolean; root: string | null };
 type AgentSnapshot = readonly [`0x${string}`, bigint, bigint];
 
 export function IssueAgent() {
+  usePageMeta(
+    "Issue an Agent ID — GoodAgent",
+    "Vouch for your AI agent as a verified GoodDollar human: the agent attests its key, you stake a refundable G$ bond and sign.",
+  );
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { writeContractAsync } = useWriteContract();

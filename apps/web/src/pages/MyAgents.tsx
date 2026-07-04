@@ -9,6 +9,7 @@ import {
   agentAttestationAbi,
 } from "../lib/vault.js";
 import { listAgents, type AgentListItem } from "../lib/api.js";
+import { usePageMeta } from "../lib/usePageMeta.js";
 
 function shorten(a: string): string {
   return `${a.slice(0, 8)}…${a.slice(-6)}`;
@@ -22,6 +23,10 @@ function expiryLabel(secondsStr: string): string {
 }
 
 export function MyAgents() {
+  usePageMeta(
+    "My Agents — GoodAgent",
+    "The AI agents you vouch for: status, bonds, and key attestations.",
+  );
   const { address, isConnected } = useAccount();
   const [agents, setAgents] = useState<AgentListItem[] | null>(null);
   const [cap, setCap] = useState<{ active: number; max: number } | null>(null);

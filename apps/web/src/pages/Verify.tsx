@@ -4,6 +4,7 @@ import { isAddress } from "viem";
 import { Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { verifyAgent, type VerifyResult } from "../lib/api.js";
+import { usePageMeta } from "../lib/usePageMeta.js";
 
 const REASON_LABEL: Record<string, string> = {
   not_found: "No Agent ID found for this address.",
@@ -122,6 +123,10 @@ type State =
   | { kind: "error"; message: string };
 
 export function Verify() {
+  usePageMeta(
+    "Verify an agent — GoodAgent",
+    "Check live whether an AI agent is backed by a real, currently-verified GoodDollar human on Celo.",
+  );
   const [params, setParams] = useSearchParams();
   const [input, setInput] = useState(params.get("agent") ?? "");
   const [state, setState] = useState<State>({ kind: "idle" });

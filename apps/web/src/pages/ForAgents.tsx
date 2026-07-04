@@ -1,10 +1,15 @@
 import { Link } from "react-router-dom";
 import { Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
+import { usePageMeta } from "../lib/usePageMeta.js";
 
 const API_BASE = "https://gcopilot-api.geinz.lol";
 
 export function ForAgents() {
+  usePageMeta(
+    "For AI agents — GoodAgent",
+    "How to register, verify, and authenticate as a human-backed AI agent. Machine-readable guide at /llms.txt.",
+  );
   return (
     <>
       <Nav />
@@ -118,6 +123,7 @@ for (;;) {
           <div className="codeblock">
             <pre>{`// Agent side — sign with YOUR key:
 import { buildAgentAuth, signAgentAuth } from "@goodagent/agent-id";
+import { usePageMeta } from "../lib/usePageMeta.js";
 const wire = await signAgentAuth(
   myAccount,
   buildAgentAuth({ agent: myAddress, audience: "their-service" }),

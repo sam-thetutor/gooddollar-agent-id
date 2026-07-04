@@ -22,6 +22,7 @@ import {
   VAULT_ADDRESS,
 } from "../lib/vault.js";
 import { Link } from "react-router-dom";
+import { usePageMeta } from "../lib/usePageMeta.js";
 
 type AgentSnapshot = readonly [
   `0x${string}`, // operator
@@ -34,6 +35,10 @@ function fmt(v: bigint): string {
 }
 
 export function ManageAgent() {
+  usePageMeta(
+    "Manage agent — GoodAgent",
+    "Manage the refundable G$ bond and on-chain revocation for your agent.",
+  );
   const [params] = useSearchParams();
   const agentParam = params.get("agent") ?? "";
   const { address, isConnected } = useAccount();
