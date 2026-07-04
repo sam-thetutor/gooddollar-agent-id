@@ -5,7 +5,6 @@ import {
   useAccount,
   usePublicClient,
   useReadContract,
-  useSignTypedData,
   useWriteContract,
 } from "wagmi";
 import { Nav, ConnectButton } from "../components/Nav.js";
@@ -23,8 +22,6 @@ import {
   VAULT_ADDRESS,
 } from "../lib/vault.js";
 import { Link } from "react-router-dom";
-import { agentIdDomain, buildRevokeMessage, revokeTypes } from "../lib/agentId.js";
-import { revokeAgent } from "../lib/api.js";
 
 type AgentSnapshot = readonly [
   `0x${string}`, // operator
@@ -201,36 +198,6 @@ export function ManageAgent() {
       return hash;
     });
 
-  // Identity revocation: a free EIP-712 signature (no on-chain tx) that tells
-  // the registry to stop verifying this agent, independent of the bond.
-  async function revoke() {
-    if (!agent || !address) return;
-    setError(null);
-    setNotice(null);
-    setBusy("Revoke");
-    try {
-      const operator = getAddress(address) as `0x${string}`;
-      const message = buildRevokeMessage(agent, operator);
-      const signature = await signTypedDataAsync({
-        domain: agentIdDomain,
-        types: revokeTypes,
-        primaryType: "RevokeAgentID",
-        message,
-      });
-      await revokeAgent({
-        agent,
-        operator,
-        nonce: message.nonce.toString(),
-        signature,
-      });
-      setNotice("Agent ID revoked — it no longer verifies as human-backed.");
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
   return (
     <>
       <Nav />
@@ -238,11 +205,8 @@ export function ManageAgent() {
       <header className="hero compact">
         <h1>Manage stake</h1>
         <p className="lede">
-          Manage the refundable G$ bond behind your agent. A bond of at least
-          the vault minimum is required to keep an agent registered. You can
-          withdraw it after a short cooldown (it always returns to you), but
-          withdrawing below the minimum invalidates the Agent ID until you
-          re-stake — verifiers check the live bond on every verification.
+          The refundable G$ bond behind your agent. Withdrawing below the
+          minimum un-vouches it until re-staked.
         </p>
       </header>
 
@@ -306,12 +270,8 @@ export function ManageAgent() {
             <section className="card warn">
               <h2 className="card-title">Key not attested</h2>
               <p className="muted">
-                This agent was registered before attestation became required
-                and has never proven on-chain that it controls its address.
-                Verifiers see it as <code>agentProven: false</code>. The agent
-                can fix this itself any time — see{" "}
-                <Link to="/for-agents#register">the agent guide</Link> — and
-                this page will pick it up automatically.
+                The agent hasn't proven it controls this address — point it to{" "}
+                <Link to="/for-agents#register">the agent guide</Link>.
               </p>
               <div className="actions">
                 <button
@@ -347,11 +307,7 @@ export function ManageAgent() {
                 />
               </label>
 
-              <p className="muted hint">
-                Approve once (unlimited) — the vault can then pull G$ for any
-                future stake without re-approving.{" "}
-                {approved && <span className="ok">G$ approved ✓</span>}
-              </p>
+              {approved && <p className="ok small">G$ approved ✓</p>}
 
               {error && <p className="error">{error}</p>}
               {notice && <p className="ok">{notice}</p>}
@@ -407,16 +363,9 @@ export function ManageAgent() {
               <div className="revoke-block">
                 <h3 className="card-title">Revoke identity</h3>
                 <p className="muted hint">
-                  Two ways to un-vouch, independent of the bond (which you can
-                  still withdraw separately):
-                </p>
-                <p className="muted hint">
-                  <strong>On-chain revoke</strong> writes a kill switch to the
-                  AgentRevocation registry that <em>every</em> verifier reads
-                  live — including SDK/MCP callers that never touch our API.
-                  Costs gas. This is the durable, network-wide revocation.
+                  On-chain kill switch, read by every verifier. Reversible.
                   {isRevokedOnChain && (
-                    <span className="warn"> This agent is revoked on-chain.</span>
+                    <span className="warn"> Currently revoked.</span>
                   )}
                 </p>
                 <div className="actions wrap">
@@ -429,7 +378,7 @@ export function ManageAgent() {
                     >
                       {busy === "Revoke on-chain"
                         ? "Confirm in wallet…"
-                        : "Revoke on-chain"}
+                        : "Revoke agent"}
                     </button>
                   ) : (
                     <button
@@ -440,23 +389,10 @@ export function ManageAgent() {
                     >
                       {busy === "Reinstate on-chain"
                         ? "Confirm in wallet…"
-                        : "Reinstate on-chain"}
+                        : "Reinstate agent"}
                     </button>
                   )}
                 </div>
-                <p className="muted hint" style={{ marginTop: "0.75rem" }}>
-                  <strong>Off-chain revoke</strong> is a free signature (no gas)
-                  that flags the agent in our registry only — fast, but SDK
-                  verifiers reading the chain directly won't see it.
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={Boolean(busy)}
-                  onClick={revoke}
-                >
-                  {busy === "Revoke" ? "Sign in your wallet…" : "Off-chain revoke"}
-                </button>
               </div>
             </section>
           )}

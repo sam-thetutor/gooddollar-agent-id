@@ -353,10 +353,8 @@ export function IssueAgent() {
               ) : (
                 <>
                   <p className="warn small">
-                    This agent hasn't attested yet. Point it to the{" "}
-                    <Link to="/for-agents">agent guide</Link> to prove it
-                    controls this address, then come back — this page updates
-                    automatically.
+                    Not attested yet — point the agent to the{" "}
+                    <Link to="/for-agents">agent guide</Link>, then re-check.
                   </p>
                   <button
                     type="button"
@@ -389,11 +387,6 @@ export function IssueAgent() {
                 </p>
               ) : (
                 <>
-                  <p className="muted hint">
-                    Registering an agent requires locking a refundable{" "}
-                    {minLabel} G$ bond in the AgentVault (you can withdraw it
-                    later after a short cooldown). Approve once, then stake.
-                  </p>
                   <div className="actions wrap">
                     <button
                       type="button"
@@ -422,11 +415,6 @@ export function IssueAgent() {
               )}
             </div>
           )}
-
-          <p className="muted hint">
-            Signing the credential is free and non-custodial. The G$ bond is the
-            only required, on-chain step — and it stays yours (refundable).
-          </p>
 
           {error && <p className="error">{error}</p>}
 
