@@ -33,6 +33,14 @@ export const AGENT_VAULT_ADDRESS = {
 } as const;
 
 /**
+ * AgentAttestation registry on Celo mainnet (packages/contracts): agents prove
+ * key possession once via attest()/attestFor(); provenAt() is read live.
+ */
+export const AGENT_ATTESTATION_ADDRESS = {
+  [CELO_CHAIN_ID]: "0xe5EFd6755e8a2035c924f9BaCDecD067B3dcf6C2" as const,
+} as const;
+
+/**
  * GoodDollarHumanProofProvider on Celo mainnet (packages/contracts): a standard
  * ERC-8004 `IHumanProofProvider` backed by the GoodDollar on-chain identity
  * whitelist. Deployed 2026-06-30. Lets any `IERC8004ProofOfHuman` registry

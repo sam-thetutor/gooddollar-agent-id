@@ -80,6 +80,24 @@ vi.mock("@goodagent/chain", () => ({
     claimAmount: "0",
     claimAmountFormatted: "0",
   }),
+  getAgentAttestations: async (agents: string[]) => {
+    const proven: Record<string, boolean> = {};
+    for (const a of agents) {
+      proven[a.toLowerCase()] =
+        (state.provenAt.get(a.toLowerCase()) ?? 0n) !== 0n;
+    }
+    return proven;
+  },
+  getAgentStakes: async (agents: string[]) => {
+    const stakes: Record<string, string> = {};
+    let total = 0n;
+    for (const a of agents) {
+      const s = state.vaults.get(a.toLowerCase())?.stake ?? 0n;
+      stakes[a.toLowerCase()] = s.toString();
+      total += s;
+    }
+    return { stakes, totalStaked: total.toString() };
+  },
   getAgentVaultStatus: async (agent: string) => {
     const entry = state.vaults.get(agent.toLowerCase());
     const stake = entry?.stake ?? 0n;
@@ -177,6 +195,34 @@ vi.mock("@goodagent/db", () => {
       [...state.db.values()].filter(
         (r) => (r as DbRecord).humanRoot.toLowerCase() === humanRoot.toLowerCase(),
       ),
+    getAgentCredentialStats: async () => {
+      const rows = [...state.db.values()];
+      const active = rows.filter((r) => r.revokedAt === null);
+      return {
+        total: rows.length,
+        active: active.length,
+        revoked: rows.length - active.length,
+        attested: active.filter((r) => r.agentProven).length,
+        humans: new Set(active.map((r) => r.humanRoot.toLowerCase())).size,
+      };
+    },
+    listAgentCredentialsPaged: async (opts: {
+      query?: string;
+      page: number;
+      pageSize: number;
+    }) => {
+      const q = opts.query?.toLowerCase();
+      const all = [...state.db.values()]
+        .filter(
+          (r) =>
+            !q ||
+            r.agent.toLowerCase().includes(q) ||
+            r.operator.toLowerCase().includes(q),
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      const start = (opts.page - 1) * opts.pageSize;
+      return { rows: all.slice(start, start + opts.pageSize), total: all.length };
+    },
   };
 });
 
@@ -628,6 +674,59 @@ describe("POST /agent/revoke", () => {
     });
     expect(res.status).toBe(400);
     expect((await json(res)).error).toBe("SIGNATURE_MISMATCH");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /explore — public directory
+// ---------------------------------------------------------------------------
+
+describe("GET /explore", () => {
+  async function register(nonce = 1n) {
+    const agent = newAgent();
+    prepare(agent.address);
+    const wire = await makeCredentialWire({ agent: agent.address, nonce });
+    expect((await postJson("/agent/issue", wire)).status).toBe(201);
+    return agent;
+  }
+
+  it("reports stats including total bonded G$", async () => {
+    await register();
+    await register();
+    const res = await app.request("/explore/stats");
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.total).toBe(2);
+    expect(body.active).toBe(2);
+    expect(body.attested).toBe(2);
+    expect(body.humans).toBe(1);
+    expect(BigInt(body.totalStaked)).toBe(2n * MIN_STAKE);
+  });
+
+  it("lists agents newest-first with live stake, and filters by address", async () => {
+    const a = await register();
+    const b = await register();
+    const res = await app.request("/explore/agents");
+    const body = await json(res);
+    expect(body.total).toBe(2);
+    expect(body.agents).toHaveLength(2);
+    expect(body.agents[0].stake).toBe(MIN_STAKE.toString());
+    expect(body.agents[0].agentProven).toBe(true);
+
+    const filtered = await app.request(
+      `/explore/agents?query=${a.address.slice(2, 12)}`,
+    );
+    const fb = await json(filtered);
+    expect(fb.total).toBe(1);
+    expect(fb.agents[0].agent.toLowerCase()).toBe(a.address.toLowerCase());
+    expect(
+      fb.agents[0].agent.toLowerCase() === b.address.toLowerCase(),
+    ).toBe(false);
+  });
+
+  it("rejects a non-hex search query", async () => {
+    const res = await app.request("/explore/agents?query=%3Cscript%3E");
+    expect(res.status).toBe(400);
   });
 });
 

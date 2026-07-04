@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { WagmiProvider } from "wagmi";
 import { config } from "./lib/wagmi.js";
+import { Explore } from "./pages/Explore.js";
 import { ForAgents } from "./pages/ForAgents.js";
 import { Home } from "./pages/Home.js";
 import { IssueAgent } from "./pages/IssueAgent.js";
@@ -22,6 +23,7 @@ export function App() {
             <Route path="/agents" element={<MyAgents />} />
             <Route path="/manage" element={<ManageAgent />} />
             <Route path="/verify" element={<Verify />} />
+            <Route path="/explore" element={<Explore />} />
             <Route path="/for-agents" element={<ForAgents />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

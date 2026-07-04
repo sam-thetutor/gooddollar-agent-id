@@ -167,6 +167,59 @@ export async function listAgents(operator: string): Promise<AgentListResult> {
   return (await res.json()) as AgentListResult;
 }
 
+// ---------------------------------------------------------------------------
+// Explorer — public registry directory
+// ---------------------------------------------------------------------------
+
+export interface ExploreStats {
+  total: number;
+  active: number;
+  revoked: number;
+  attested: number;
+  humans: number;
+  totalStaked: string;
+  totalStakedFormatted: string;
+}
+
+export async function getExploreStats(): Promise<ExploreStats> {
+  const res = await fetch(`${API_BASE}/explore/stats`);
+  if (!res.ok) throw new Error(`Stats failed (${res.status})`);
+  return (await res.json()) as ExploreStats;
+}
+
+export interface ExploreAgent {
+  agent: string;
+  operator: string;
+  revoked: boolean;
+  agentProven: boolean;
+  createdAt: string;
+  expiresAt: string;
+  /** Live G$ bond in base units, or null if unreadable. */
+  stake: string | null;
+}
+
+export interface ExplorePage {
+  page: number;
+  pageSize: number;
+  total: number;
+  agents: ExploreAgent[];
+}
+
+export async function exploreAgents(opts: {
+  query?: string;
+  page?: number;
+}): Promise<ExplorePage> {
+  const params = new URLSearchParams();
+  if (opts.query) params.set("query", opts.query);
+  if (opts.page) params.set("page", String(opts.page));
+  const res = await fetch(`${API_BASE}/explore/agents?${params}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Explore failed (${res.status})`);
+  }
+  return (await res.json()) as ExplorePage;
+}
+
 /** List every agent a GoodDollar human (root) has vouched for. */
 export async function listAgentsByHumanRoot(
   humanRoot: string,

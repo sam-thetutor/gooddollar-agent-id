@@ -141,6 +141,69 @@ export function countActiveAgentsByHumanRoot(
   });
 }
 
+/** Registry-wide counts for the public explorer. */
+export interface AgentCredentialStats {
+  total: number;
+  active: number;
+  revoked: number;
+  attested: number;
+  /** Distinct GoodDollar humans vouching for at least one active agent. */
+  humans: number;
+}
+
+export async function getAgentCredentialStats(): Promise<AgentCredentialStats> {
+  const [total, active, attested, humanGroups] = await Promise.all([
+    prisma.agentCredential.count(),
+    prisma.agentCredential.count({ where: { revokedAt: null } }),
+    prisma.agentCredential.count({ where: { agentProven: true, revokedAt: null } }),
+    prisma.agentCredential.groupBy({
+      by: ["humanRoot"],
+      where: { revokedAt: null },
+    }),
+  ]);
+  return {
+    total,
+    active,
+    revoked: total - active,
+    attested,
+    humans: humanGroups.length,
+  };
+}
+
+export interface AgentCredentialPage {
+  rows: AgentCredential[];
+  total: number;
+}
+
+/**
+ * Paginated public listing for the explorer, newest first. `query` filters by
+ * agent or operator address substring (case-insensitive).
+ */
+export async function listAgentCredentialsPaged(opts: {
+  query?: string;
+  page: number;
+  pageSize: number;
+}): Promise<AgentCredentialPage> {
+  const where = opts.query
+    ? {
+        OR: [
+          { agent: { contains: opts.query, mode: "insensitive" as const } },
+          { operator: { contains: opts.query, mode: "insensitive" as const } },
+        ],
+      }
+    : undefined;
+  const [rows, total] = await Promise.all([
+    prisma.agentCredential.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (opts.page - 1) * opts.pageSize,
+      take: opts.pageSize,
+    }),
+    prisma.agentCredential.count({ where }),
+  ]);
+  return { rows, total };
+}
+
 export function revokeAgentCredential(agent: string): Promise<AgentCredential> {
   return prisma.agentCredential.update({
     where: { agent },

@@ -13,6 +13,8 @@ export {
 } from "./addresses.js";
 export { createCeloPublicClient, getChainId, pingChain } from "./client.js";
 export {
+  getAgentAttestations,
+  getAgentStakes,
   getAgentVaultStatus,
   getClaimEligibility,
   getDailyStats,

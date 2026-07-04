@@ -13,6 +13,7 @@ import {
   ubiSchemeAbi,
 } from "./abis.js";
 import {
+  AGENT_ATTESTATION_ADDRESS,
   ERC8004_IDENTITY_REGISTRY,
   G_DOLLAR_ADDRESS,
   GOODDOLLAR_PROOF_METADATA_KEY,
@@ -269,6 +270,75 @@ export async function getAgentVaultStatus(
       ErrorCodes.RPC_ERROR,
     );
   }
+}
+
+/**
+ * Batch-read the live G$ bond behind each agent (one multicall). Returns a
+ * lowercase-address → stake map plus the sum, for explorer stats.
+ */
+export async function getAgentStakes(
+  agents: string[],
+): Promise<{ stakes: Record<string, string>; totalStaked: string }> {
+  const vault = getAgentVaultAddress();
+  if (!vault || agents.length === 0) {
+    return { stakes: {}, totalStaked: "0" };
+  }
+  const client = createCeloPublicClient();
+  const results = await client.multicall({
+    contracts: agents.map((a) => ({
+      address: vault,
+      abi: agentVaultAbi,
+      functionName: "stakeOf" as const,
+      args: [normalizeAddress(a)] as const,
+    })),
+    allowFailure: true,
+  });
+  const stakes: Record<string, string> = {};
+  let total = 0n;
+  results.forEach((r, i) => {
+    const stake = r.status === "success" ? (r.result as bigint) : 0n;
+    stakes[agents[i].toLowerCase()] = stake.toString();
+    total += stake;
+  });
+  return { stakes, totalStaked: total.toString() };
+}
+
+const attestationProvenAtAbi = [
+  {
+    type: "function",
+    name: "provenAt",
+    stateMutability: "view",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+/**
+ * Batch-read live key attestations (one multicall). Returns a lowercase
+ * address → proven map, so the explorer reflects agents that attested after
+ * they were registered.
+ */
+export async function getAgentAttestations(
+  agents: string[],
+): Promise<Record<string, boolean>> {
+  if (agents.length === 0) return {};
+  const client = createCeloPublicClient();
+  const registry = AGENT_ATTESTATION_ADDRESS[CELO_CHAIN_ID];
+  const results = await client.multicall({
+    contracts: agents.map((a) => ({
+      address: registry,
+      abi: attestationProvenAtAbi,
+      functionName: "provenAt" as const,
+      args: [normalizeAddress(a)] as const,
+    })),
+    allowFailure: true,
+  });
+  const proven: Record<string, boolean> = {};
+  results.forEach((r, i) => {
+    proven[agents[i].toLowerCase()] =
+      r.status === "success" && (r.result as bigint) !== 0n;
+  });
+  return proven;
 }
 
 export interface Erc8004AgentResult {

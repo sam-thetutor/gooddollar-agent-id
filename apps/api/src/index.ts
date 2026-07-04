@@ -10,6 +10,8 @@ loadEnv({ path: existsSync(rootEnv) ? rootEnv : undefined });
 
 import { serve } from "@hono/node-server";
 import {
+  getAgentAttestations,
+  getAgentStakes,
   getAgentVaultStatus,
   getClaimEligibility,
   getGBalance,
@@ -19,9 +21,11 @@ import {
 import {
   MAX_AGENTS_PER_HUMAN,
   getAgentCredential,
+  getAgentCredentialStats,
   issueAgentCredential,
   listAgentCredentialsByHumanRoot,
   listAgentCredentialsByOperator,
+  listAgentCredentialsPaged,
   revokeAgentCredential,
   writeAudit,
 } from "@goodagent/db";
@@ -109,6 +113,8 @@ app.get("/", (c) =>
       "GET /agent/verify/:address?minStake=",
       "POST /agent/verify-auth",
       "GET /agent/list?operator=  (or ?humanRoot=)",
+      "GET /explore/stats",
+      "GET /explore/agents?query=&page=&pageSize=",
     ],
   }),
 );
@@ -605,6 +611,86 @@ app.post("/agent/verify-auth", async (c) => {
     console.error("verify-auth failed", agent, error);
     return c.json({ error: "VERIFY_ERROR" }, 502);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Public explorer — browse the registry without knowing an address up front
+// ---------------------------------------------------------------------------
+
+// Registry-wide stats. The DB counts are cheap; the total bonded G$ needs one
+// multicall over every active agent, so the whole payload is cached for 60s.
+const STATS_CACHE_TTL_MS = 60_000;
+let statsCache: { at: number; body: unknown } | null = null;
+
+app.get("/explore/stats", async (c) => {
+  if (statsCache && Date.now() - statsCache.at < STATS_CACHE_TTL_MS) {
+    return c.json(statsCache.body as Record<string, unknown>);
+  }
+  const stats = await getAgentCredentialStats();
+  // Live reads over the active set (bounded: the per-human cap keeps it small).
+  const { rows } = await listAgentCredentialsPaged({ page: 1, pageSize: 1000 });
+  const activeAgents = rows.filter((r) => !r.revokedAt).map((r) => r.agent);
+  const [{ totalStaked }, provenMap] = await Promise.all([
+    getAgentStakes(activeAgents).catch(() => ({
+      stakes: {},
+      totalStaked: "0",
+    })),
+    getAgentAttestations(activeAgents).catch(
+      () => ({}) as Record<string, boolean>,
+    ),
+  ]);
+  // The DB flag only captures attestation at issue time; the registry is the
+  // source of truth for agents that attested later.
+  const attested = activeAgents.filter((a) => provenMap[a.toLowerCase()]).length;
+  const body = {
+    ...stats,
+    attested: Math.max(stats.attested, attested),
+    totalStaked,
+    totalStakedFormatted: (BigInt(totalStaked) / 10n ** 18n).toString(),
+  };
+  statsCache = { at: Date.now(), body };
+  return c.json(body);
+});
+
+// Paginated agent directory with optional address search. Enriches the page
+// with each agent's live bond (one multicall for up to `pageSize` reads).
+app.get("/explore/agents", async (c) => {
+  const query = c.req.query("query")?.trim() || undefined;
+  if (query && !/^(0x)?[0-9a-fA-F]{0,40}$/.test(query)) {
+    return c.json({ error: "BAD_QUERY" }, 400);
+  }
+  const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);
+  const pageSize = Math.min(
+    50,
+    Math.max(1, Number(c.req.query("pageSize") ?? 20) || 20),
+  );
+
+  const { rows, total } = await listAgentCredentialsPaged({ query, page, pageSize });
+  const pageAgents = rows.map((r) => r.agent);
+  const [{ stakes }, provenMap] = await Promise.all([
+    getAgentStakes(pageAgents).catch(() => ({
+      stakes: {} as Record<string, string>,
+      totalStaked: "0",
+    })),
+    getAgentAttestations(pageAgents).catch(
+      () => ({}) as Record<string, boolean>,
+    ),
+  ]);
+
+  return c.json({
+    page,
+    pageSize,
+    total,
+    agents: rows.map((r) => ({
+      agent: r.agent,
+      operator: r.operator,
+      revoked: Boolean(r.revokedAt),
+      agentProven: r.agentProven || Boolean(provenMap[r.agent.toLowerCase()]),
+      createdAt: r.createdAt,
+      expiresAt: r.expiresAt,
+      stake: stakes[r.agent.toLowerCase()] ?? null,
+    })),
+  });
 });
 
 // List the agents a human has vouched for. Query by `operator` (the wallet that

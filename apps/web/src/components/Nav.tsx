@@ -47,6 +47,9 @@ export function Nav() {
           <NavLink to="/verify" className="nav-link">
             Verify
           </NavLink>
+          <NavLink to="/explore" className="nav-link">
+            Explore
+          </NavLink>
           <NavLink to="/for-agents" className="nav-link">
             For Agents
           </NavLink>
