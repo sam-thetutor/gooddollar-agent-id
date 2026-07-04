@@ -1,6 +1,6 @@
 {
   "name": "@goodagent/mcp-server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Model Context Protocol server for verifying GoodDollar Agent IDs and reading GoodDollar state on Celo. Read-only, non-custodial.",
   "license": "MIT",
   "type": "module",

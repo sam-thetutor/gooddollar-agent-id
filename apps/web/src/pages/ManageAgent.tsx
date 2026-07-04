@@ -11,6 +11,8 @@ import {
 import { Nav, ConnectButton } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import {
+  AGENT_ATTESTATION_ADDRESS,
+  agentAttestationAbi,
   AGENT_REVOCATION_ADDRESS,
   agentRevocationAbi,
   agentVaultAbi,
@@ -20,6 +22,7 @@ import {
   isVaultConfigured,
   VAULT_ADDRESS,
 } from "../lib/vault.js";
+import { Link } from "react-router-dom";
 import { agentIdDomain, buildRevokeMessage, revokeTypes } from "../lib/agentId.js";
 import { revokeAgent } from "../lib/api.js";
 
@@ -159,6 +162,19 @@ export function ManageAgent() {
   });
   const isRevokedOnChain = revocation.data === true;
 
+  // Key attestation status — registrations that predate the attest-first rule
+  // may still be unproven; surface it and point the agent at the fix.
+  const attestation = useReadContract({
+    address: AGENT_ATTESTATION_ADDRESS,
+    abi: agentAttestationAbi,
+    functionName: "provenAt",
+    args: agent ? [agent] : undefined,
+    query: { enabled: Boolean(agent) },
+  });
+  const attestationLoaded = attestation.data !== undefined;
+  const agentProven =
+    ((attestation.data as bigint | undefined) ?? 0n) !== 0n;
+
   // On-chain revocation: the operator-controlled kill switch every verifier
   // reads live (not just the API). Costs gas but is honored network-wide.
   const revokeOnChain = () =>
@@ -274,9 +290,41 @@ export function ManageAgent() {
                       ? "ready to withdraw"
                       : `unlocks ${new Date(unlockAt * 1000).toLocaleString()}`}
                 </dd>
+                <dt>Key attestation</dt>
+                <dd>
+                  {!attestationLoaded
+                    ? "…"
+                    : agentProven
+                      ? "✓ proven on-chain"
+                      : "not attested"}
+                </dd>
               </dl>
             )}
           </section>
+
+          {attestationLoaded && !agentProven && (
+            <section className="card warn">
+              <h2 className="card-title">Key not attested</h2>
+              <p className="muted">
+                This agent was registered before attestation became required
+                and has never proven on-chain that it controls its address.
+                Verifiers see it as <code>agentProven: false</code>. The agent
+                can fix this itself any time — see{" "}
+                <Link to="/for-agents#register">the agent guide</Link> — and
+                this page will pick it up automatically.
+              </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={attestation.isFetching}
+                  onClick={() => attestation.refetch()}
+                >
+                  {attestation.isFetching ? "Checking…" : "Re-check"}
+                </button>
+              </div>
+            </section>
+          )}
 
           {!isOperator && data && (
             <section className="card">

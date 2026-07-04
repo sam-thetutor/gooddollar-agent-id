@@ -44,7 +44,6 @@ export function Home() {
       {/* Hero — centered, single focus */}
       <section className="hero-center">
         <div className="container">
-          <p className="eyebrow">Proof-of-Human · Celo · ERC-8004</p>
           <h1>
             Human-backed identity
             <br />

@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContracts } from "wagmi";
+import { getAddress } from "viem";
 import { Nav, ConnectButton } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
+import {
+  AGENT_ATTESTATION_ADDRESS,
+  agentAttestationAbi,
+} from "../lib/vault.js";
 import { listAgents, type AgentListItem } from "../lib/api.js";
 
 function shorten(a: string): string {
@@ -21,6 +26,23 @@ export function MyAgents() {
   const [agents, setAgents] = useState<AgentListItem[] | null>(null);
   const [cap, setCap] = useState<{ active: number; max: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Batch-read each agent's on-chain key attestation so pre-gate
+  // registrations that never attested are visibly flagged.
+  const attestations = useReadContracts({
+    contracts: (agents ?? []).map((a) => ({
+      address: AGENT_ATTESTATION_ADDRESS,
+      abi: agentAttestationAbi,
+      functionName: "provenAt" as const,
+      args: [getAddress(a.agent)] as const,
+    })),
+    query: { enabled: Boolean(agents && agents.length > 0) },
+  });
+  const provenByIndex = (i: number): boolean | undefined => {
+    const r = attestations.data?.[i];
+    if (!r || r.status !== "success") return undefined;
+    return (r.result as bigint) !== 0n;
+  };
 
   useEffect(() => {
     if (!isConnected || !address) {
@@ -84,10 +106,13 @@ export function MyAgents() {
 
       {isConnected && agents && agents.length > 0 && (
         <section className="list">
-          {agents.map((a) => (
+          {agents.map((a, i) => (
             <div key={a.agent} className="card row">
               <div>
                 <p className="row-title">{shorten(a.agent)}</p>
+                {provenByIndex(i) === false && (
+                  <span className="warn small">key not attested</span>
+                )}
               </div>
               <div className="row-meta">
                 <span className={a.revoked ? "warn" : "ok"}>

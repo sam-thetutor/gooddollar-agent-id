@@ -12,5 +12,7 @@ remappings = ["forge-std/=lib/forge-std/src/"]
 celo = "${CELO_RPC_URL}"
 alfajores = "${ALFAJORES_RPC_URL}"
 
-[etherscan]
-celo = { key = "${CELOSCAN_API_KEY}", url = "https://api.celoscan.io/api" }
+# Etherscan API v2 (multichain). Set ETHERSCAN_API_KEY to verify on Celoscan;
+# Sourcify (keyless) also works: forge verify-contract ... --verifier sourcify
+# [etherscan]
+# celo = { key = "${ETHERSCAN_API_KEY}", url = "https://api.etherscan.io/v2/api?chainid=42220" }
