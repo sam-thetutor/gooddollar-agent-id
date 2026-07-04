@@ -49,6 +49,8 @@ const state = vi.hoisted(() => ({
   vaults: new Map<string, { operator: string | null; stake: bigint; unstakeUnlockAt: string | null }>(),
   /** lowercase agent -> stored credential row. */
   db: new Map<string, DbRecord>(),
+  /** Append-only audit events, newest last. */
+  audit: [] as { eventType: string; metadata: unknown; createdAt: Date }[],
   reset() {
     this.humanRoots.clear();
     this.provenAt.clear();
@@ -56,6 +58,7 @@ const state = vi.hoisted(() => ({
     this.revokedOnChain.clear();
     this.vaults.clear();
     this.db.clear();
+    this.audit = [];
   },
 }));
 
@@ -143,7 +146,16 @@ vi.mock("@goodagent/db", () => {
   const MAX_AGENTS_PER_HUMAN = 10;
   return {
     MAX_AGENTS_PER_HUMAN,
-    writeAudit: async () => undefined,
+    writeAudit: async (eventType: string, metadata?: unknown) => {
+      state.audit.push({ eventType, metadata, createdAt: new Date() });
+    },
+    listRecentAuditEvents: async (limit = 25) =>
+      state.audit
+        .filter((e) =>
+          ["agent_id_issued", "agent_id_revoked"].includes(e.eventType),
+        )
+        .slice(-limit)
+        .reverse(),
     getAgentCredential: async (agent: string) =>
       (state.db.get(agent.toLowerCase()) as DbRecord | undefined) ?? null,
     issueAgentCredential: async (
@@ -727,6 +739,34 @@ describe("GET /explore", () => {
   it("rejects a non-hex search query", async () => {
     const res = await app.request("/explore/agents?query=%3Cscript%3E");
     expect(res.status).toBe(400);
+  });
+
+  it("serves a full public agent profile", async () => {
+    const a = await register();
+    const res = await app.request(`/explore/agent/${a.address}`);
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.found).toBe(true);
+    expect(body.registration.operator.toLowerCase()).toBe(
+      operator.address.toLowerCase(),
+    );
+    expect(body.onchain.agentProven).toBe(true);
+    expect(body.onchain.revokedOnChain).toBe(false);
+    expect(body.verdict.valid).toBe(true);
+  });
+
+  it("404s an unknown agent profile", async () => {
+    const res = await app.request(`/explore/agent/${newAgent().address}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("surfaces registrations in the activity feed", async () => {
+    const a = await register();
+    const res = await app.request("/explore/activity");
+    const body = await json(res);
+    expect(body.events.length).toBeGreaterThan(0);
+    expect(body.events[0].type).toBe("agent_id_issued");
+    expect(body.events[0].agent.toLowerCase()).toBe(a.address.toLowerCase());
   });
 });
 

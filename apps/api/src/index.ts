@@ -26,6 +26,7 @@ import {
   listAgentCredentialsByHumanRoot,
   listAgentCredentialsByOperator,
   listAgentCredentialsPaged,
+  listRecentAuditEvents,
   revokeAgentCredential,
   writeAudit,
 } from "@goodagent/db";
@@ -115,6 +116,8 @@ app.get("/", (c) =>
       "GET /agent/list?operator=  (or ?humanRoot=)",
       "GET /explore/stats",
       "GET /explore/agents?query=&page=&pageSize=",
+      "GET /explore/agent/:address",
+      "GET /explore/activity",
     ],
   }),
 );
@@ -690,6 +693,85 @@ app.get("/explore/agents", async (c) => {
       expiresAt: r.expiresAt,
       stake: stakes[r.agent.toLowerCase()] ?? null,
     })),
+  });
+});
+
+// Recent registry activity (registrations + revocations) for the explorer feed.
+app.get("/explore/activity", async (c) => {
+  const events = await listRecentAuditEvents(25);
+  return c.json({
+    events: events.map((e) => ({
+      type: e.eventType,
+      agent: (e.metadata as { agent?: string } | null)?.agent ?? null,
+      operator: (e.metadata as { operator?: string } | null)?.operator ?? null,
+      at: e.createdAt,
+    })),
+  });
+});
+
+// Full public profile for one agent: the stored registration plus every live
+// on-chain fact (bond, attestation, revocation) and the current verdict.
+app.get("/explore/agent/:address", async (c) => {
+  const raw = c.req.param("address");
+  if (!addressSchema.safeParse(raw).success) {
+    return c.json({ error: "BAD_ADDRESS" }, 400);
+  }
+  const agent = getAddress(raw);
+  const rec = await getAgentCredential(agent);
+  if (!rec) return c.json({ found: false, agent }, 404);
+
+  const [vault, provenAt, revokedOnChain] = await Promise.all([
+    getAgentVaultStatus(agent).catch(() => null),
+    Promise.resolve(liveAttestationLookup(agent)).catch(() => null),
+    Promise.resolve(liveRevocationLookup(agent)).catch(() => null),
+  ]);
+
+  // Reuse the public verify logic for the verdict itself.
+  let verdict: unknown = null;
+  try {
+    const credential = credentialFromWire(recordToWire(rec));
+    let bondChecked = true;
+    const result = await verifyAgentId(credential, {
+      humanRootLookup: liveHumanRootLookup,
+      revocationLookup: liveRevocationLookup,
+      stakeLookup: async () => {
+        if (!vault || !vault.vaultConfigured) {
+          bondChecked = false;
+          return { stake: 0n, minStake: 0n };
+        }
+        return { stake: BigInt(vault.stake), minStake: BigInt(vault.minStake) };
+      },
+    });
+    verdict = {
+      ...verifyResultToWire(result),
+      ...(rec.revokedAt ? { valid: false, reason: "revoked" } : {}),
+      bondChecked,
+    };
+  } catch {
+    verdict = null;
+  }
+
+  return c.json({
+    found: true,
+    agent,
+    registration: {
+      operator: rec.operator,
+      humanRoot: rec.humanRoot,
+      nonce: rec.nonce,
+      issuedAt: rec.issuedAt,
+      expiresAt: rec.expiresAt,
+      createdAt: rec.createdAt,
+      updatedAt: rec.updatedAt,
+      revokedAt: rec.revokedAt,
+    },
+    onchain: {
+      vault,
+      agentProven: provenAt !== null && provenAt !== 0n,
+      agentProvenAt:
+        provenAt !== null && provenAt !== 0n ? provenAt.toString() : null,
+      revokedOnChain,
+    },
+    verdict,
   });
 });
 

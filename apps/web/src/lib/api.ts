@@ -220,6 +220,52 @@ export async function exploreAgents(opts: {
   return (await res.json()) as ExplorePage;
 }
 
+export interface ActivityEvent {
+  type: "agent_id_issued" | "agent_id_revoked" | string;
+  agent: string | null;
+  operator: string | null;
+  at: string;
+}
+
+export async function getActivity(): Promise<ActivityEvent[]> {
+  const res = await fetch(`${API_BASE}/explore/activity`);
+  if (!res.ok) throw new Error(`Activity failed (${res.status})`);
+  const body = (await res.json()) as { events: ActivityEvent[] };
+  return body.events;
+}
+
+export interface AgentProfile {
+  found: boolean;
+  agent: string;
+  registration: {
+    operator: string;
+    humanRoot: string;
+    nonce: string;
+    issuedAt: string;
+    expiresAt: string;
+    createdAt: string;
+    updatedAt: string;
+    revokedAt: string | null;
+  };
+  onchain: {
+    vault: OnchainStatus | null;
+    agentProven: boolean;
+    agentProvenAt: string | null;
+    revokedOnChain: boolean | null;
+  };
+  verdict: VerifyResult | null;
+}
+
+export async function getAgentProfile(address: string): Promise<AgentProfile> {
+  const res = await fetch(`${API_BASE}/explore/agent/${address}`);
+  if (res.status === 404) {
+    const body = (await res.json()) as AgentProfile;
+    return { ...body, found: false };
+  }
+  if (!res.ok) throw new Error(`Profile failed (${res.status})`);
+  return (await res.json()) as AgentProfile;
+}
+
 /** List every agent a GoodDollar human (root) has vouched for. */
 export async function listAgentsByHumanRoot(
   humanRoot: string,

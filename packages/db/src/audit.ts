@@ -10,3 +10,23 @@ export function writeAudit(
     data: { eventType, metadata },
   });
 }
+
+export interface AuditEvent {
+  eventType: string;
+  metadata: unknown;
+  createdAt: Date;
+}
+
+/** Most recent audit events (registrations, revocations) for the explorer feed. */
+export async function listRecentAuditEvents(limit = 25): Promise<AuditEvent[]> {
+  const rows = await prisma.auditLog.findMany({
+    where: { eventType: { in: ["agent_id_issued", "agent_id_revoked"] } },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+  return rows.map((r) => ({
+    eventType: r.eventType,
+    metadata: r.metadata,
+    createdAt: r.createdAt,
+  }));
+}
