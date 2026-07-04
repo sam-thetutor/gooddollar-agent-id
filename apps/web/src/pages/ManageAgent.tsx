@@ -39,7 +39,6 @@ export function ManageAgent() {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
-  const { signTypedDataAsync } = useSignTypedData();
 
   const [amount, setAmount] = useState("250");
   const [busy, setBusy] = useState<string | null>(null);
