@@ -651,9 +651,12 @@ app.get("/agent/list", async (c) => {
   });
 });
 
-const port = Number(process.env.API_PORT ?? 3001);
-console.log(`API listening on http://localhost:${port}`);
-
-serve({ fetch: app.fetch, port });
+// Don't bind a port when imported by the test runner — tests drive the app
+// through `app.request()` directly.
+if (!process.env.VITEST) {
+  const port = Number(process.env.API_PORT ?? 3001);
+  console.log(`API listening on http://localhost:${port}`);
+  serve({ fetch: app.fetch, port });
+}
 
 export default app;

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build, type-check & test (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Build first (packages depend on each other's dist), then type-check
+      # every workspace. `lint` is `tsc --noEmit` in each package — this is the
+      # check that catches stray identifiers Vite's build silently ships.
+      - name: Build all packages
+        run: pnpm turbo build
+
+      - name: Type-check all packages
+        run: pnpm turbo lint
+
+      - name: SDK unit tests (@goodagent/agent-id)
+        run: pnpm --filter @goodagent/agent-id test
+
+      - name: API tests (@goodagent/api)
+        run: pnpm --filter @goodagent/api test
+
+  contracts:
+    name: Forge contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Forge build
+        run: forge build
+        working-directory: packages/contracts
+
+      - name: Forge tests
+        run: forge test -vv
+        working-directory: packages/contracts

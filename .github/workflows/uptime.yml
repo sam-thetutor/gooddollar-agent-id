@@ -1,0 +1,28 @@
+name: Uptime check
+
+# Probes the production API and web app every 15 minutes. A failing run makes
+# the workflow red and GitHub emails the repo owner — a zero-dependency uptime
+# monitor. (Schedules can lag a few minutes on busy GitHub runners; fine here.)
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: API /health
+        run: |
+          body=$(curl -sS --max-time 15 --fail https://gcopilot-api.geinz.lol/health)
+          echo "$body"
+          echo "$body" | grep -q '"ok":true' || { echo "API unhealthy"; exit 1; }
+
+      - name: Web app
+        run: curl -sS --max-time 15 --fail -o /dev/null https://gooddollar-agent-id.vercel.app/
+
+      - name: Verify endpoint end-to-end
+        run: |
+          body=$(curl -sS --max-time 20 --fail "https://gcopilot-api.geinz.lol/agent/verify/0x0000000000000000000000000000000000000001")
+          echo "$body"
+          echo "$body" | grep -q '"found"' || { echo "verify endpoint broken"; exit 1; }
