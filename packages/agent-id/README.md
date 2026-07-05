@@ -113,7 +113,14 @@ const id = await verifyAgentIdLive(credential);
 const trusted = pop.valid && id.valid; // human-backed AND actually them
 ```
 
-The hosted registry exposes the same check as `POST /agent/verify-auth`.
+`verifyAgentAuth` is stateless: to make each auth single-use, also track seen
+nonces per agent+audience and reject repeats within your freshness window (the
+default nonce from `buildAgentAuth` is 128 random bits, so legit auths never
+collide).
+
+The hosted registry exposes the same check as `POST /agent/verify-auth`; there
+the `audience` field is **required** and each nonce is single-use (max age 2
+minutes).
 
 ## Attest key ownership on-chain (required before registration)
 

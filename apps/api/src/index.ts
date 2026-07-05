@@ -27,11 +27,9 @@ import {
   listAgentCredentialsByOperator,
   listAgentCredentialsPaged,
   listRecentAuditEvents,
-  revokeAgentCredential,
   writeAudit,
 } from "@goodagent/db";
 import {
-  agentIdDomain,
   credentialFromWire,
   liveAttestationLookup,
   liveHumanRootLookup,
@@ -47,7 +45,7 @@ import {
   healthResponseSchema,
   issueAgentRequestSchema,
 } from "@goodagent/shared";
-import { getAddress, isAddressEqual, recoverTypedDataAddress } from "viem";
+import { getAddress, isAddressEqual } from "viem";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
@@ -58,16 +56,21 @@ app.use("*", cors({ origin: "*" }));
 // --- basic in-memory rate limiting -----------------------------------------
 // The verify/wallet endpoints each fan out to several Celo RPC reads, so an
 // unthrottled caller can exhaust our RPC quota. A fixed-window per-IP counter
-// is enough for a single-process deployment (behind nginx, the real client IP
-// arrives in x-forwarded-for). Not a substitute for an edge WAF at scale.
+// is enough for a single-process deployment. Not a substitute for an edge WAF
+// at scale.
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 120;
 const rateHits = new Map<string, { count: number; reset: number }>();
 
 app.use("*", async (c, next) => {
+  // Only trust proxy-set values. x-real-ip is set by our nginx from the socket
+  // address; the RIGHTMOST x-forwarded-for entry is the one nginx appended.
+  // The leftmost entries are client-controlled and trivially spoofable, which
+  // would let one caller rotate fake IPs to bypass the limiter entirely.
+  const xff = c.req.header("x-forwarded-for");
   const ip =
-    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
     c.req.header("x-real-ip") ||
+    (xff ? xff.split(",").at(-1)?.trim() : undefined) ||
     "unknown";
   const now = Date.now();
   const rec = rateHits.get(ip);
@@ -92,6 +95,31 @@ app.use("*", async (c, next) => {
 const VERIFY_CACHE_TTL_MS = 15_000;
 const verifyCache = new Map<string, { at: number; body: unknown }>();
 
+// --- AgentAuth replay guard -------------------------------------------------
+// An AgentAuth proves the agent's key signed a fresh challenge, but the SDK's
+// signature check alone is stateless: within the freshness window the same
+// signed payload could be replayed to another verifier (or twice to us) to
+// impersonate the agent. We reject any (agent, audience, nonce) triple we've
+// already accepted, keeping each single-use for its whole validity window.
+const AUTH_SEEN_TTL_MS = 20 * 60_000; // safely exceeds the longest max-age we use
+const seenAuthNonces = new Map<string, number>();
+
+/**
+ * Returns true (and records it) the first time a nonce is seen; false if it is
+ * a replay. Bound per agent+audience so distinct verifiers don't collide.
+ */
+function claimAuthNonce(agent: string, audience: string, nonce: string): boolean {
+  const now = Date.now();
+  if (seenAuthNonces.size > 50_000) {
+    for (const [k, exp] of seenAuthNonces) if (now > exp) seenAuthNonces.delete(k);
+  }
+  const key = `${agent.toLowerCase()}|${audience}|${nonce}`;
+  const existing = seenAuthNonces.get(key);
+  if (existing && now < existing) return false;
+  seenAuthNonces.set(key, now + AUTH_SEEN_TTL_MS);
+  return true;
+}
+
 app.get("/health", async (c) => {
   const chainOk = await pingChain();
   const body = healthResponseSchema.parse({
@@ -110,7 +138,6 @@ app.get("/", (c) =>
       "GET /health",
       "GET /wallet/:address",
       "POST /agent/issue",
-      "POST /agent/revoke",
       "GET /agent/verify/:address?minStake=",
       "POST /agent/verify-auth",
       "GET /agent/list?operator=  (or ?humanRoot=)",
@@ -219,13 +246,18 @@ app.post("/agent/issue", async (c) => {
   if (provenAt !== 0n) {
     agentProven = true;
   } else if (rawBody?.agentProof) {
+    const audience = "gooddollar-agent-id:register";
     const proof = await verifyAgentAuth(rawBody.agentProof, {
       expectedAgent: agentAddr,
-      expectedAudience: "gooddollar-agent-id:register",
+      expectedAudience: audience,
       maxAgeSeconds: 900n,
     });
     if (!proof.valid) {
       return c.json({ error: "BAD_AGENT_PROOF", reason: proof.reason }, 400);
+    }
+    // Single-use: a captured register-proof can't be replayed within its window.
+    if (!claimAuthNonce(agentAddr, audience, rawBody.agentProof.nonce)) {
+      return c.json({ error: "BAD_AGENT_PROOF", reason: "replayed" }, 400);
     }
     agentProven = true;
   } else {
@@ -368,72 +400,21 @@ app.post("/agent/issue", async (c) => {
   );
 });
 
-// EIP-712 revocation: the operator proves control of their wallet by signing
-// this struct. Free and non-custodial — no on-chain tx. Withdrawing the bond
-// is the *economic* un-vouch; this is the *identity* one.
-const revokeTypes = {
-  RevokeAgentID: [
-    { name: "agent", type: "address" },
-    { name: "operator", type: "address" },
-    { name: "nonce", type: "uint256" },
-  ],
-} as const;
-
-// Revoke a stored credential. Only the wallet that issued it (its stored
-// operator) can revoke, proven by an EIP-712 signature.
-app.post("/agent/revoke", async (c) => {
-  const body = (await c.req.json().catch(() => null)) as {
-    agent?: string;
-    operator?: string;
-    nonce?: string;
-    signature?: string;
-  } | null;
-
-  if (
-    !body ||
-    !addressSchema.safeParse(body.agent).success ||
-    !addressSchema.safeParse(body.operator).success ||
-    typeof body.nonce !== "string" ||
-    !/^\d+$/.test(body.nonce) ||
-    typeof body.signature !== "string" ||
-    !/^0x[0-9a-fA-F]+$/.test(body.signature)
-  ) {
-    return c.json({ error: "BAD_INPUT" }, 400);
-  }
-
-  const agent = getAddress(body.agent as string);
-  const operator = getAddress(body.operator as string);
-
-  let recovered: `0x${string}`;
-  try {
-    recovered = await recoverTypedDataAddress({
-      domain: agentIdDomain(),
-      types: revokeTypes,
-      primaryType: "RevokeAgentID",
-      message: { agent, operator, nonce: BigInt(body.nonce) },
-      signature: body.signature as `0x${string}`,
-    });
-  } catch {
-    return c.json({ error: "BAD_SIGNATURE" }, 400);
-  }
-  if (!isAddressEqual(recovered, operator)) {
-    return c.json({ error: "SIGNATURE_MISMATCH" }, 400);
-  }
-
-  const rec = await getAgentCredential(agent);
-  if (!rec) return c.json({ error: "NOT_FOUND" }, 404);
-  if (!isAddressEqual(getAddress(rec.operator), operator)) {
-    return c.json({ error: "NOT_OPERATOR" }, 403);
-  }
-  if (rec.revokedAt) {
-    return c.json({ ok: true, agent, alreadyRevoked: true });
-  }
-
-  await revokeAgentCredential(agent);
-  await writeAudit("agent_id_revoked", { agent, operator });
-  verifyCache.delete(agent.toLowerCase());
-  return c.json({ ok: true, agent });
-});
+// Off-chain revocation is retired. The signed RevokeAgentID payload had no
+// server-side nonce tracking, so a captured signature could be replayed to
+// re-revoke a reinstated agent. Revocation now lives solely on-chain in the
+// AgentRevocation registry (operator-controlled, replay-proof by construction)
+// and verify reads it live. Kept as 410 so old clients get a clear pointer.
+app.post("/agent/revoke", (c) =>
+  c.json(
+    {
+      error: "GONE",
+      message:
+        "Off-chain revocation was removed. Call revoke(agent) on the AgentRevocation contract from the operator wallet, or use the Manage page.",
+    },
+    410,
+  ),
+);
 
 // Public verify: anyone can check whether an agent is human-backed right now.
 app.get("/agent/verify/:address", async (c) => {
@@ -559,16 +540,37 @@ app.post("/agent/verify-auth", async (c) => {
   if (!addressSchema.safeParse(body.auth.agent).success) {
     return c.json({ error: "BAD_ADDRESS" }, 400);
   }
+  // Audience is mandatory: it binds the proof to *this* verifier so an auth
+  // captured elsewhere can't be replayed here. Without it, the anti-replay
+  // guarantee is opt-in — which defeats the point of AgentAuth.
+  if (typeof body.audience !== "string" || body.audience.length === 0) {
+    return c.json(
+      {
+        error: "MISSING_AUDIENCE",
+        message:
+          "Pass a non-empty 'audience' identifying your service; the agent must sign an AgentAuth with the same audience.",
+      },
+      400,
+    );
+  }
   const agent = getAddress(body.auth.agent);
 
   // 1. Prove the caller holds the agent key (fresh, agent-signed challenge).
+  //    Short window + single-use nonce make a captured auth non-replayable.
   const authResult = await verifyAgentAuth(body.auth, {
     expectedAgent: agent,
     expectedAudience: body.audience,
+    maxAgeSeconds: 120n,
   });
   if (!authResult.valid) {
     return c.json(
       { agent, valid: false, authenticated: false, reason: authResult.reason },
+      401,
+    );
+  }
+  if (!claimAuthNonce(agent, body.audience, body.auth.nonce)) {
+    return c.json(
+      { agent, valid: false, authenticated: false, reason: "agent_auth_replayed" },
       401,
     );
   }

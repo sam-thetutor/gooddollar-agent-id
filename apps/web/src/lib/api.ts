@@ -115,31 +115,6 @@ export async function verifyAgent(address: string): Promise<VerifyResult> {
   return (await res.json()) as VerifyResult;
 }
 
-export interface RevokeBody {
-  agent: string;
-  operator: string;
-  nonce: string;
-  signature: string;
-}
-
-/** Revoke a credential with an operator-signed EIP-712 revocation. */
-export async function revokeAgent(body: RevokeBody): Promise<{ ok: boolean }> {
-  const res = await fetch(`${API_BASE}/agent/revoke`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) {
-    throw new Error(
-      (data.message as string) ??
-        (data.error as string) ??
-        `Revoke failed (${res.status})`,
-    );
-  }
-  return data as { ok: boolean };
-}
-
 export interface AgentListItem {
   agent: string;
   operator: string;

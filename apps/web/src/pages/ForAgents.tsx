@@ -123,17 +123,17 @@ for (;;) {
           <div className="codeblock">
             <pre>{`// Agent side — sign with YOUR key:
 import { buildAgentAuth, signAgentAuth } from "@goodagent/agent-id";
-import { usePageMeta } from "../lib/usePageMeta.js";
 const wire = await signAgentAuth(
   myAccount,
   buildAgentAuth({ agent: myAddress, audience: "their-service" }),
 );
 
-// Verifier side:
+// Verifier side (audience is REQUIRED and must match what the agent signed):
 POST ${API_BASE}/agent/verify-auth
 { "auth": { ...wire }, "audience": "their-service" }
 // -> { "authenticated": true, "valid": true } only if the signature is
-//    fresh (≤ 5 min), recovers to the agent, AND the credential verifies`}</pre>
+//    fresh (≤ 2 min), single-use (nonces can't be replayed), recovers to
+//    the agent, AND the credential verifies`}</pre>
           </div>
         </section>
 

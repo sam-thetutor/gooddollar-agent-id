@@ -55,13 +55,27 @@ function nowSeconds(): bigint {
   return BigInt(Math.floor(Date.now() / 1000));
 }
 
+/**
+ * 128 bits of CSPRNG randomness. Verifiers treat each nonce as single-use, so
+ * the default must never collide — deriving it from the timestamp (as older
+ * versions did) makes two auths in the same second indistinguishable from a
+ * replay.
+ */
+function randomNonce(): bigint {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  let out = 0n;
+  for (const b of bytes) out = (out << 8n) | BigInt(b);
+  return out;
+}
+
 export interface BuildAgentAuthInput {
   agent: Address;
   /** Verifier/service scope. Defaults to "" (any). */
   audience?: string;
   /** Defaults to now (seconds). */
   issuedAt?: bigint;
-  /** Random-ish replay nonce. Defaults to `issuedAt`. */
+  /** Single-use replay nonce. Defaults to 128 random bits. */
   nonce?: bigint;
 }
 
@@ -71,7 +85,7 @@ export function buildAgentAuth(input: BuildAgentAuthInput): AgentAuth {
   return {
     agent: input.agent,
     audience: input.audience ?? "",
-    nonce: input.nonce ?? issuedAt,
+    nonce: input.nonce ?? randomNonce(),
     issuedAt,
   };
 }

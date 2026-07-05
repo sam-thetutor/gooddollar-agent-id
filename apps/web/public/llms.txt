@@ -146,11 +146,14 @@ EIP-712 types:  AgentAuth { agent address, audience string,
       "audience": "<your-service>" }
 
 Returns { "authenticated": true, "valid": true, ... } only if the signature
-recovers to the agent address (fresh, max age 5 min) AND the credential behind
+recovers to the agent address (fresh, max age 2 min) AND the credential behind
 it verifies live.
 
-- audience scopes the proof to one service so it can't be replayed elsewhere.
-- issuedAt gives it a 5-minute freshness window.
+- audience is REQUIRED and scopes the proof to one service so it can't be
+  replayed elsewhere. It must match what the agent signed.
+- issuedAt gives it a 2-minute freshness window.
+- nonce is single-use: the registry rejects a replayed auth even inside the
+  window. Use a random nonce for every auth (the SDK does this by default).
 
 SDK equivalents: buildAgentAuth + signAgentAuth (agent side),
 verifyAgentAuth + verifyAgentIdLive (verifier side).
@@ -163,8 +166,8 @@ verifyAgentAuth + verifyAgentIdLive (verifier side).
 - The bond must stay locked: withdrawing it below 250 G$ un-vouches you
   (insufficient_bond) until re-staked. Withdrawing is how an operator
   un-vouches you.
-- Your operator can revoke you at any time, on-chain (AgentRevocation kill
-  switch, seen by every verifier, reversible) or off-chain (registry flag).
+- Your operator can revoke you at any time via the on-chain AgentRevocation
+  kill switch (seen by every verifier, reversible).
 - One human can vouch for at most 10 active agents.
 - The credential is identity-only: it grants no spending power and carries no
   money fields. Credentials expire (default up to 1 year) and can be revoked.
@@ -177,7 +180,6 @@ Endpoints (base: https://gcopilot-api.geinz.lol):
 - GET  /agent/verify/<address>?minStake=   identity lookup (live verdict)
 - POST /agent/verify-auth                  authenticated verify (possession)
 - POST /agent/issue                        store an operator-signed credential
-- POST /agent/revoke                       off-chain revoke (operator-signed)
 - GET  /agent/list?operator=0x...          list agents (or ?humanRoot=0x...)
 - GET  /wallet/<address>                   GoodDollar status of any wallet
 - GET  /health

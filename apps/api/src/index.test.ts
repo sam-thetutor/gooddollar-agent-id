@@ -409,6 +409,31 @@ describe("POST /agent/issue — attest-first gate", () => {
     expect(res.status).toBe(400);
     expect((await json(res)).error).toBe("BAD_AGENT_PROOF");
   });
+
+  it("rejects a replayed register proof (single-use nonce)", async () => {
+    const agent = newAgent();
+    state.vaults.set(agent.address.toLowerCase(), {
+      operator: operator.address,
+      stake: MIN_STAKE,
+      unstakeUnlockAt: null,
+    });
+    const wire = await makeCredentialWire({ agent: agent.address });
+    const agentProof = await signAgentAuth(
+      agent,
+      buildAgentAuth({
+        agent: agent.address,
+        audience: "gooddollar-agent-id:register",
+      }),
+    );
+    expect((await postJson("/agent/issue", { ...wire, agentProof })).status).toBe(201);
+
+    // Captured proof replayed with a new credential attempt.
+    const res = await postJson("/agent/issue", { ...wire, agentProof });
+    expect(res.status).toBe(400);
+    const body = await json(res);
+    expect(body.error).toBe("BAD_AGENT_PROOF");
+    expect(body.reason).toBe("replayed");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -604,88 +629,19 @@ describe("GET /agent/verify/:address", () => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /agent/revoke (off-chain, operator-signed)
+// POST /agent/revoke — retired (revocation is on-chain only)
 // ---------------------------------------------------------------------------
 
 describe("POST /agent/revoke", () => {
-  it("revokes with a valid operator signature; verify then reports revoked", async () => {
-    const agent = newAgent();
-    prepare(agent.address);
-    const wire = await makeCredentialWire({ agent: agent.address });
-    expect((await postJson("/agent/issue", wire)).status).toBe(201);
-
-    const signature = await operator.signTypedData({
-      domain: {
-        name: "GoodDollar Agent ID",
-        version: "1",
-        chainId: 42220,
-        verifyingContract: "0x0000000000000000000000000000000000000000",
-      },
-      types: {
-        RevokeAgentID: [
-          { name: "agent", type: "address" },
-          { name: "operator", type: "address" },
-          { name: "nonce", type: "uint256" },
-        ],
-      },
-      primaryType: "RevokeAgentID",
-      message: {
-        agent: getAddress(agent.address),
-        operator: operator.address,
-        nonce: 1n,
-      },
-    });
+  it("is gone: replayable off-chain revoke was retired in favor of on-chain", async () => {
     const res = await postJson("/agent/revoke", {
-      agent: agent.address,
+      agent: newAgent().address,
       operator: operator.address,
       nonce: "1",
-      signature,
+      signature: "0xdead",
     });
-    expect(res.status).toBe(200);
-    expect((await json(res)).ok).toBe(true);
-
-    const verify = await app.request(`/agent/verify/${agent.address}`);
-    const body = await json(verify);
-    expect(body.valid).toBe(false);
-    expect(body.reason).toBe("revoked");
-  });
-
-  it("rejects a revoke signed by a non-operator", async () => {
-    const agent = newAgent();
-    prepare(agent.address);
-    const wire = await makeCredentialWire({ agent: agent.address });
-    expect((await postJson("/agent/issue", wire)).status).toBe(201);
-
-    // otherOperator signs, claiming to be the operator.
-    const signature = await otherOperator.signTypedData({
-      domain: {
-        name: "GoodDollar Agent ID",
-        version: "1",
-        chainId: 42220,
-        verifyingContract: "0x0000000000000000000000000000000000000000",
-      },
-      types: {
-        RevokeAgentID: [
-          { name: "agent", type: "address" },
-          { name: "operator", type: "address" },
-          { name: "nonce", type: "uint256" },
-        ],
-      },
-      primaryType: "RevokeAgentID",
-      message: {
-        agent: getAddress(agent.address),
-        operator: operator.address,
-        nonce: 1n,
-      },
-    });
-    const res = await postJson("/agent/revoke", {
-      agent: agent.address,
-      operator: operator.address,
-      nonce: "1",
-      signature,
-    });
-    expect(res.status).toBe(400);
-    expect((await json(res)).error).toBe("SIGNATURE_MISMATCH");
+    expect(res.status).toBe(410);
+    expect((await json(res)).error).toBe("GONE");
   });
 });
 
@@ -775,9 +731,22 @@ describe("GET /explore", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /agent/verify-auth", () => {
+  const AUD = "test-verifier";
+
   it("rejects a request without an auth payload", async () => {
     const res = await postJson("/agent/verify-auth", {});
     expect(res.status).toBe(400);
+  });
+
+  it("rejects a request without an audience (replay scoping is mandatory)", async () => {
+    const agent = newAgent();
+    const auth = await signAgentAuth(
+      agent,
+      buildAgentAuth({ agent: agent.address }),
+    );
+    const res = await postJson("/agent/verify-auth", { auth });
+    expect(res.status).toBe(400);
+    expect((await json(res)).error).toBe("MISSING_AUDIENCE");
   });
 
   it("401 when the auth is signed by a different key (stolen credential)", async () => {
@@ -789,10 +758,10 @@ describe("POST /agent/verify-auth", () => {
 
     const forged = await signAgentAuth(
       impostor,
-      buildAgentAuth({ agent: impostor.address }),
+      buildAgentAuth({ agent: impostor.address, audience: AUD }),
     );
     forged.agent = agent.address;
-    const res = await postJson("/agent/verify-auth", { auth: forged });
+    const res = await postJson("/agent/verify-auth", { auth: forged, audience: AUD });
     expect(res.status).toBe(401);
     const body = await json(res);
     expect(body.authenticated).toBe(false);
@@ -805,13 +774,56 @@ describe("POST /agent/verify-auth", () => {
     const wire = await makeCredentialWire({ agent: agent.address });
     expect((await postJson("/agent/issue", wire)).status).toBe(201);
 
-    const auth = await signAgentAuth(agent, buildAgentAuth({ agent: agent.address }));
-    const res = await postJson("/agent/verify-auth", { auth });
+    const auth = await signAgentAuth(
+      agent,
+      buildAgentAuth({ agent: agent.address, audience: AUD }),
+    );
+    const res = await postJson("/agent/verify-auth", { auth, audience: AUD });
     expect(res.status).toBe(200);
     const body = await json(res);
     expect(body.authenticated).toBe(true);
     expect(body.valid).toBe(true);
     expect(body.agentProven).toBe(true);
     expect(body.bondChecked).toBe(true);
+  });
+
+  it("rejects a replayed auth even inside the freshness window", async () => {
+    const agent = newAgent();
+    prepare(agent.address);
+    const wire = await makeCredentialWire({ agent: agent.address });
+    expect((await postJson("/agent/issue", wire)).status).toBe(201);
+
+    const auth = await signAgentAuth(
+      agent,
+      buildAgentAuth({ agent: agent.address, audience: AUD }),
+    );
+    const first = await postJson("/agent/verify-auth", { auth, audience: AUD });
+    expect(first.status).toBe(200);
+
+    // Same signed payload again — an eavesdropper replaying the capture.
+    const replay = await postJson("/agent/verify-auth", { auth, audience: AUD });
+    expect(replay.status).toBe(401);
+    const body = await json(replay);
+    expect(body.authenticated).toBe(false);
+    expect(body.reason).toBe("agent_auth_replayed");
+  });
+
+  it("two fresh auths from the same agent both pass (nonces are unique)", async () => {
+    const agent = newAgent();
+    prepare(agent.address);
+    const wire = await makeCredentialWire({ agent: agent.address });
+    expect((await postJson("/agent/issue", wire)).status).toBe(201);
+
+    const a1 = await signAgentAuth(
+      agent,
+      buildAgentAuth({ agent: agent.address, audience: AUD }),
+    );
+    const a2 = await signAgentAuth(
+      agent,
+      buildAgentAuth({ agent: agent.address, audience: AUD }),
+    );
+    expect(a1.nonce).not.toBe(a2.nonce);
+    expect((await postJson("/agent/verify-auth", { auth: a1, audience: AUD })).status).toBe(200);
+    expect((await postJson("/agent/verify-auth", { auth: a2, audience: AUD })).status).toBe(200);
   });
 });
