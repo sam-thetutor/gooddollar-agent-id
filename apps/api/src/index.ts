@@ -53,6 +53,23 @@ const app = new Hono();
 
 app.use("*", cors({ origin: "*" }));
 
+app.onError((err, c) => {
+  const code = (err as { code?: string }).code;
+  const message = err instanceof Error ? err.message : String(err);
+  if (code === "P1001" || message.includes("Can't reach database server")) {
+    return c.json(
+      {
+        error: "DATABASE_UNAVAILABLE",
+        message:
+          "Database is unreachable. For local dev, set VITE_API_BASE_URL to the production API.",
+      },
+      503,
+    );
+  }
+  console.error(err);
+  return c.json({ error: "INTERNAL_ERROR" }, 500);
+});
+
 // --- basic in-memory rate limiting -----------------------------------------
 // The verify/wallet endpoints each fan out to several Celo RPC reads, so an
 // unthrottled caller can exhaust our RPC quota. A fixed-window per-IP counter

@@ -1,7 +1,11 @@
 // Default to same-origin "/api" (Vite proxy in dev). Override with an absolute
 // URL via VITE_API_BASE_URL when the API is hosted separately.
-const API_BASE =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL as string | undefined
+)?.trim() ||
+  (import.meta.env.DEV
+    ? "https://gcopilot-api.geinz.lol"
+    : "/api");
 
 // ---------------------------------------------------------------------------
 // Wallet overview — GoodDollar identity status for a Celo address.
@@ -136,8 +140,13 @@ export interface AgentListResult {
 export async function listAgents(operator: string): Promise<AgentListResult> {
   const res = await fetch(`${API_BASE}/agent/list?operator=${operator}`);
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `List failed (${res.status})`);
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      message?: string;
+    };
+    throw new Error(
+      body.message ?? body.error ?? `List failed (${res.status})`,
+    );
   }
   return (await res.json()) as AgentListResult;
 }

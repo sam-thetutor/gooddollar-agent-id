@@ -137,7 +137,7 @@ function GamearenaFields({
       </label>
 
       <label className="field">
-        <span>Max matches per run</span>
+        <span>Max matches per day</span>
         <input
           value={config.MAX_MATCHES ?? "10"}
           onChange={(e) => onChange("MAX_MATCHES", e.target.value)}
@@ -223,7 +223,7 @@ function ActionorderFields({
       </label>
 
       <label className="field">
-        <span>Max matches per run</span>
+        <span>Max matches per day</span>
         <input
           value={config.MAX_MATCHES ?? "5"}
           onChange={(e) => onChange("MAX_MATCHES", e.target.value)}

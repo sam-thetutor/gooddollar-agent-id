@@ -1,7 +1,12 @@
 /** Host supervisor API (autonomous deploy). */
-export const HOST_BASE =
-  (import.meta.env.VITE_HOST_BASE_URL as string | undefined) ??
-  "/host";
+const HOST_BASE =
+  (import.meta.env.VITE_HOST_BASE_URL as string | undefined)?.trim() ||
+  (import.meta.env.DEV ? "http://localhost:3002" : "/host");
+
+/** Deploy list reads DB — use production in local dev when Postgres isn't reachable. */
+const HOST_LIST_BASE =
+  (import.meta.env.VITE_HOST_LIST_BASE_URL as string | undefined)?.trim() ||
+  (import.meta.env.DEV ? "https://gcopilot-api.geinz.lol/host" : HOST_BASE);
 
 export interface DeployAgent {
   id: string;
@@ -98,8 +103,12 @@ export function getDeploy(deployId: string) {
 
 export type SkillConfiguration = Record<string, string>;
 
-async function hostFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${HOST_BASE}${path}`, {
+async function hostFetch<T>(
+  path: string,
+  init?: RequestInit,
+  base: string = HOST_BASE,
+): Promise<T> {
+  const res = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
@@ -157,6 +166,8 @@ export function getDeployStatus(deployId: string) {
 export function listDeploysByOwner(ownerWallet: string) {
   return hostFetch<{ agents: DeployAgent[] }>(
     `/deploy?ownerWallet=${encodeURIComponent(ownerWallet)}`,
+    undefined,
+    HOST_LIST_BASE,
   );
 }
 

@@ -45,6 +45,23 @@ const runningPipelines = new Set<string>();
 
 app.use("*", cors({ origin: "*" }));
 
+app.onError((err, c) => {
+  const code = (err as { code?: string }).code;
+  const message = err instanceof Error ? err.message : String(err);
+  if (code === "P1001" || message.includes("Can't reach database server")) {
+    return c.json(
+      {
+        error: "DATABASE_UNAVAILABLE",
+        message:
+          "Database is unreachable from this host. List deploys via the production host API in local dev.",
+      },
+      503,
+    );
+  }
+  console.error(err);
+  return c.json({ error: "INTERNAL_ERROR" }, 500);
+});
+
 function internalAuth(c: { req: { header: (name: string) => string | undefined } }): boolean {
   if (!HOST_INTERNAL_SECRET) return false;
   const bearer = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");

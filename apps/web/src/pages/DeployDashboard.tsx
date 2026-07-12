@@ -700,7 +700,7 @@ export function DeployDashboard() {
                       </dd>
                     </div>
                     <div>
-                      <dt>Max matches</dt>
+                      <dt>Max matches/day</dt>
                       <dd className="tabular">{config.MAX_MATCHES ?? "—"}</dd>
                     </div>
                     <div>
