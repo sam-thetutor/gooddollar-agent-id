@@ -2,7 +2,8 @@ export type DeployControlAction =
   | "pause"
   | "resume"
   | "baseline"
-  | "run-pipeline";
+  | "run-pipeline"
+  | "confirm-vouch";
 
 export interface DeployControlAuth {
   ownerWallet: string;

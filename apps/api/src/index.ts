@@ -11,6 +11,7 @@ loadEnv({ path: existsSync(rootEnv) ? rootEnv : undefined });
 import { serve } from "@hono/node-server";
 import {
   getAgentAttestations,
+  getAgentRevocations,
   getAgentStakes,
   getAgentVaultStatus,
   getClaimEligibility,
@@ -344,6 +345,17 @@ app.post("/agent/issue", async (c) => {
   // overwriting an existing registration, and requires a strictly increasing
   // nonce so an old signed credential can't be replayed to overwrite or
   // un-revoke a newer one — all inside one serializable transaction.
+  const capRows = await listAgentCredentialsByHumanRoot(humanRoot);
+  const capCandidates = capRows.filter(
+    (r) => !r.revokedAt && r.agent.toLowerCase() !== agentAddr.toLowerCase(),
+  );
+  const revokedOnChain = await getAgentRevocations(
+    capCandidates.map((r) => r.agent),
+  ).catch(() => ({} as Record<string, boolean>));
+  const excludeFromCap = capCandidates
+    .filter((r) => revokedOnChain[r.agent.toLowerCase()])
+    .map((r) => r.agent);
+
   const outcome = await issueAgentCredential(
     {
       agent: agentAddr,
@@ -358,6 +370,7 @@ app.post("/agent/issue", async (c) => {
       agentProven,
     },
     MAX_AGENTS_PER_HUMAN,
+    { excludeFromCap },
   );
 
   if (!outcome.ok) {
@@ -689,12 +702,15 @@ app.get("/explore/agents", async (c) => {
 
   const { rows, total } = await listAgentCredentialsPaged({ query, page, pageSize });
   const pageAgents = rows.map((r) => r.agent);
-  const [{ stakes }, provenMap] = await Promise.all([
+  const [{ stakes }, provenMap, revokedOnChain] = await Promise.all([
     getAgentStakes(pageAgents).catch(() => ({
       stakes: {} as Record<string, string>,
       totalStaked: "0",
     })),
     getAgentAttestations(pageAgents).catch(
+      () => ({}) as Record<string, boolean>,
+    ),
+    getAgentRevocations(pageAgents).catch(
       () => ({}) as Record<string, boolean>,
     ),
   ]);
@@ -706,7 +722,8 @@ app.get("/explore/agents", async (c) => {
     agents: rows.map((r) => ({
       agent: r.agent,
       operator: r.operator,
-      revoked: Boolean(r.revokedAt),
+      revoked:
+        Boolean(r.revokedAt) || Boolean(revokedOnChain[r.agent.toLowerCase()]),
       agentProven: r.agentProven || Boolean(provenMap[r.agent.toLowerCase()]),
       createdAt: r.createdAt,
       expiresAt: r.expiresAt,
@@ -828,13 +845,20 @@ app.get("/agent/list", async (c) => {
     revoked: Boolean(r.revokedAt),
     createdAt: r.createdAt,
   }));
-  const activeCount = agents.filter((a) => !a.revoked).length;
+  const revokedOnChain = await getAgentRevocations(agents.map((a) => a.agent)).catch(
+    () => ({} as Record<string, boolean>),
+  );
+  const enriched = agents.map((a) => ({
+    ...a,
+    revoked: a.revoked || Boolean(revokedOnChain[a.agent.toLowerCase()]),
+  }));
+  const activeCount = enriched.filter((a) => !a.revoked).length;
   return c.json({
     ...key,
-    count: agents.length,
+    count: enriched.length,
     activeCount,
     maxPerHuman: MAX_AGENTS_PER_HUMAN,
-    agents,
+    agents: enriched,
   });
 });
 

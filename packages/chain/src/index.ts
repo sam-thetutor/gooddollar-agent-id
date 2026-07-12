@@ -14,6 +14,7 @@ export {
 export { createCeloPublicClient, getChainId, pingChain } from "./client.js";
 export {
   getAgentAttestations,
+  getAgentRevocations,
   getAgentStakes,
   getAgentVaultStatus,
   getClaimEligibility,

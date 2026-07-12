@@ -101,6 +101,13 @@ vi.mock("@goodagent/chain", () => ({
     }
     return { stakes, totalStaked: total.toString() };
   },
+  getAgentRevocations: async (agents: string[]) => {
+    const revoked: Record<string, boolean> = {};
+    for (const a of agents) {
+      revoked[a.toLowerCase()] = state.revokedOnChain.has(a.toLowerCase());
+    }
+    return revoked;
+  },
   getAgentVaultStatus: async (agent: string) => {
     const entry = state.vaults.get(agent.toLowerCase());
     const stake = entry?.stake ?? 0n;
@@ -161,6 +168,7 @@ vi.mock("@goodagent/db", () => {
     issueAgentCredential: async (
       data: Omit<DbRecord, "revokedAt" | "createdAt">,
       maxPerHuman: number,
+      opts?: { excludeFromCap?: string[] },
     ) => {
       const key = data.agent.toLowerCase();
       const existing = state.db.get(key) as DbRecord | undefined;
@@ -176,11 +184,15 @@ vi.mock("@goodagent/db", () => {
           return { ok: false, error: "STALE_NONCE", storedNonce: existing.nonce };
         }
       }
+      const capExcluded = new Set(
+        (opts?.excludeFromCap ?? []).map((a) => a.toLowerCase()),
+      );
       const active = [...state.db.values()].filter(
         (r) =>
           (r as DbRecord).humanRoot.toLowerCase() === data.humanRoot.toLowerCase() &&
           (r as DbRecord).revokedAt === null &&
-          (r as DbRecord).agent.toLowerCase() !== key,
+          (r as DbRecord).agent.toLowerCase() !== key &&
+          !capExcluded.has((r as DbRecord).agent.toLowerCase()),
       ).length;
       if (active >= maxPerHuman) {
         return { ok: false, error: "AGENT_CAP_REACHED", active, max: maxPerHuman };

@@ -1,14 +1,7 @@
-import { useAppKit, useAppKitWallets } from "@reown/appkit/react";
+import { useAppKit } from "@reown/appkit/react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAccount } from "wagmi";
-import {
-  hasWalletConnectProjectId,
-  isIOS,
-  METAMASK_WALLET_ID,
-  openInMetaMaskBrowser,
-  shouldUseWalletConnect,
-} from "../lib/wallet-mobile.js";
 import { Logo } from "./Logo.js";
 import { NavDropdown } from "./NavDropdown.js";
 
@@ -19,37 +12,10 @@ function shorten(address: string): string {
 export function ConnectButton({ className }: { className?: string }) {
   const { open } = useAppKit();
   const { address, isConnected } = useAccount();
-  const { wallets, connect, getWcUri, isFetchingWcUri, isInitialized } =
-    useAppKitWallets();
-  const [connecting, setConnecting] = useState(false);
 
   const handleConnect = useCallback(async () => {
-    if (shouldUseWalletConnect()) {
-      if (!hasWalletConnectProjectId()) {
-        openInMetaMaskBrowser();
-        return;
-      }
-
-      if (isInitialized) {
-        const metamask = wallets.find((w) => w.id === METAMASK_WALLET_ID);
-        if (metamask) {
-          setConnecting(true);
-          try {
-            if (isIOS()) {
-              await getWcUri();
-            }
-            await connect(metamask);
-            return;
-          } catch {
-            // Fall through to the modal if the deep link fails.
-          } finally {
-            setConnecting(false);
-          }
-        }
-      }
-    }
-    await open();
-  }, [connect, getWcUri, isInitialized, open, wallets]);
+    await open({ view: "Connect" });
+  }, [open]);
 
   const btnClass = className
     ? `btn btn-wallet ${className}`
@@ -67,16 +33,13 @@ export function ConnectButton({ className }: { className?: string }) {
     );
   }
 
-  const busy = connecting || isFetchingWcUri;
-
   return (
     <button
       type="button"
       className={btnClass}
-      disabled={busy}
       onClick={() => void handleConnect()}
     >
-      {busy ? "Opening…" : "Connect Wallet"}
+      Connect Wallet
     </button>
   );
 }

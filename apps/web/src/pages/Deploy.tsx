@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useSignMessage } from "wagmi";
 import { ConnectButton, Nav } from "../components/Nav.js";
@@ -8,10 +8,12 @@ import {
   createDeploy,
   getDeployStatus,
   runDeployPipeline,
+  startDeploy,
   type DeployStatusResponse,
   type SkillConfiguration,
 } from "../lib/host.js";
 import { signDeployControl } from "../lib/deploy-control.js";
+import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 const REGISTRY_URL =
@@ -44,19 +46,22 @@ async function fetchRegistry(): Promise<Registry> {
 
 const STEPS = [
   { id: "create", label: "Create job" },
-  { id: "wallet", label: "Fund & verify" },
+  { id: "fund", label: "Fund wallet" },
   { id: "install", label: "Install skill" },
-  { id: "start", label: "Go live" },
+  { id: "vouch", label: "You vouch" },
+  { id: "live", label: "Go live" },
 ] as const;
 
 function stepIndex(status: string, pipelineRunning: boolean): number {
-  if (status === "pending_payment") return 0;
-  if (status === "provisioning" || pipelineRunning) return 1;
-  if (status === "installing") return 2;
-  if (status === "starting") return 3;
-  if (status === "running") return 4;
+  // Step i is active when current === i + 1; done when current > i + 1.
+  if (status === "pending_payment") return 1;
+  if (status === "provisioning" || pipelineRunning) return 2;
+  if (status === "installing") return 3;
+  if (status === "awaiting_vouch") return 4;
+  if (status === "starting") return 5;
+  if (status === "running") return 6;
   if (status === "failed") return -1;
-  return 0;
+  return 1;
 }
 
 function defaultConfigForSkill(skillId: string): SkillConfiguration {
@@ -291,14 +296,23 @@ function DeployPipeline({
   status,
   deployId,
   onRetry,
+  onStartAfterVouch,
+  startBusy,
 }: {
   status: DeployStatusResponse;
   deployId: string;
   onRetry: () => void;
+  onStartAfterVouch: () => void;
+  startBusy: boolean;
 }) {
   const current = stepIndex(status.status, status.pipelineRunning);
   const failed = status.status === "failed";
   const done = status.status === "running";
+  const needsVouch = deployNeedsUserVouch(status);
+  const vouched = status.verify?.valid === true;
+  const issueHref = status.agentAddress
+    ? issueAgentHref(status.agentAddress, deployId)
+    : null;
 
   return (
     <section className="card deploy-status-card">
@@ -351,11 +365,50 @@ function DeployPipeline({
 
       {status.lastError && <p className="error">{status.lastError}</p>}
 
+      {needsVouch && issueHref && (
+        <section className="deploy-vouch-card" aria-label="Vouch required">
+          <h3 className="card-title">Next: vouch for this agent</h3>
+          <p className="muted hint">
+            The play wallet is funded and the skill is installed. Issue an Agent
+            ID from your verified wallet — this is separate from My Agents until
+            you complete /issue.
+          </p>
+          <p className="muted hint">
+            Agent <code>{status.agentAddress}</code>
+          </p>
+          <div className="actions">
+            <Link className="btn btn-primary" to={issueHref}>
+              Vouch at /issue
+            </Link>
+            <Link className="btn btn-ghost" to="/deployments">
+              View in deployments
+            </Link>
+          </div>
+        </section>
+      )}
+
       <div className="actions">
         {done && (
           <Link className="btn btn-primary" to={`/dashboard/${deployId}`}>
             Open dashboard
           </Link>
+        )}
+        {needsVouch && issueHref && (
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={!vouched || startBusy}
+              onClick={onStartAfterVouch}
+              title={
+                vouched
+                  ? "Start the agent process on the host"
+                  : "Complete /issue with your wallet first"
+              }
+            >
+              {startBusy ? "Starting…" : "Start agent"}
+            </button>
+          </>
         )}
         {failed && (
           <button type="button" className="btn btn-primary" onClick={onRetry}>
@@ -365,9 +418,9 @@ function DeployPipeline({
         {status.pipelineRunning && (
           <span className="muted hint">Running pipeline…</span>
         )}
-        {!done && (
+        {!done && !needsVouch && !failed && !status.pipelineRunning && (
           <span className="muted hint">
-            Funding play wallet, attesting key, and locking 250 G$ vault bond
+            Provisioning wallet, funding play balance, and installing skill
           </span>
         )}
       </div>
@@ -383,6 +436,7 @@ export function Deploy() {
 
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: registry, isLoading: registryLoading } = useQuery({
     queryKey: ["skills-registry"],
     queryFn: fetchRegistry,
@@ -400,20 +454,19 @@ export function Deploy() {
     defaultConfigForSkill(DEFAULT_SKILL_ID),
   );
   const [busy, setBusy] = useState(false);
+  const [startBusy, setStartBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deployId, setDeployId] = useState<string | null>(null);
+  const [deployId, setDeployId] = useState<string | null>(
+    () => searchParams.get("job"),
+  );
   const [status, setStatus] = useState<DeployStatusResponse | null>(null);
 
   const selectedSkill = deployableSkills.find((s) => s.skill_id === skillId);
 
   useEffect(() => {
-    setConfig(defaultConfigForSkill(skillId));
-    if (skillId === "gaming/wagering/gamearena_1v1") {
-      setName("My GameArena Agent");
-    } else if (skillId === "gaming/card-fighter/actionorder_vshouse") {
-      setName("My ACTION-ORDER Agent");
-    }
-  }, [skillId]);
+    const job = searchParams.get("job");
+    if (job && job !== deployId) setDeployId(job);
+  }, [searchParams, deployId]);
 
   const poll = useCallback(async (id: string) => {
     const s = await getDeployStatus(id);
@@ -423,11 +476,21 @@ export function Deploy() {
 
   useEffect(() => {
     if (!deployId) return;
+    void poll(deployId);
     const t = setInterval(() => {
       void poll(deployId);
     }, 4000);
     return () => clearInterval(t);
   }, [deployId, poll]);
+
+  useEffect(() => {
+    setConfig(defaultConfigForSkill(skillId));
+    if (skillId === "gaming/wagering/gamearena_1v1") {
+      setName("My GameArena Agent");
+    } else if (skillId === "gaming/card-fighter/actionorder_vshouse") {
+      setName("My ACTION-ORDER Agent");
+    }
+  }, [skillId]);
 
   function updateConfig(key: string, value: string) {
     setConfig((prev) => ({ ...prev, [key]: value }));
@@ -471,8 +534,8 @@ export function Deploy() {
           <p className="eyebrow">Autonomous deploy</p>
           <h1>Deploy a gaming agent</h1>
           <p className="lede">
-            We provision a wallet, fund it with 200 G$ + gas, lock your 250 G$
-            refundable vault bond, and keep your agent running 24/7.
+            We provision a wallet, fund it with 200 G$ + gas, install your
+            skill, and keep the agent running 24/7 after you vouch at /issue.
           </p>
         </header>
 
@@ -543,8 +606,9 @@ export function Deploy() {
                   {selectedSkill?.spends_tokens ? (
                     <p className="muted hint deploy-section-hint">
                       We fund your agent play wallet with 200 G$ + 1 CELO for
-                      gas. You lock a refundable 250 G$ bond in AgentVault
-                      before it can wager. Set conservative limits below.
+                      gas. You vouch at /issue and lock a refundable 250 G$
+                      bond in AgentVault before it can wager. Set conservative
+                      limits below.
                     </p>
                   ) : (
                     <p className="muted hint deploy-section-hint">
@@ -580,6 +644,28 @@ export function Deploy() {
               <DeployPipeline
                 status={status}
                 deployId={deployId}
+                startBusy={startBusy}
+                onStartAfterVouch={() => {
+                  if (!address || !deployId) return;
+                  void (async () => {
+                    setStartBusy(true);
+                    setError(null);
+                    try {
+                      const auth = await signDeployControl(
+                        "resume",
+                        deployId,
+                        address,
+                        (args) => signMessageAsync(args),
+                      );
+                      await startDeploy(deployId, auth);
+                      await poll(deployId);
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setStartBusy(false);
+                    }
+                  })();
+                }}
                 onRetry={() => {
                   if (!address || !deployId) return;
                   void (async () => {

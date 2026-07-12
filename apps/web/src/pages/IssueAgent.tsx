@@ -51,6 +51,7 @@ export function IssueAgent() {
   const publicClient = usePublicClient();
 
   const [searchParams] = useSearchParams();
+  const deployReturnId = searchParams.get("deploy");
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [identityError, setIdentityError] = useState(false);
   const [agent, setAgent] = useState(() => searchParams.get("agent") ?? "");
@@ -318,6 +319,19 @@ export function IssueAgent() {
         </section>
       )}
 
+      {isConnected && identity?.verified && deployReturnId && !issued && (
+        <section className="card deploy-vouch-card">
+          <p className="muted hint">
+            You're vouching for a{" "}
+            <strong>hosted deploy</strong>. After issuing, return to the deploy
+            dashboard and click <strong>Start agent</strong> to go live.
+          </p>
+          <Link className="btn btn-ghost btn-sm" to={`/deploy?job=${deployReturnId}`}>
+            Back to deploy status
+          </Link>
+        </section>
+      )}
+
       {isConnected && identity?.verified && !issued && (
         <section className="card form">
           <label className="field">
@@ -453,6 +467,14 @@ export function IssueAgent() {
             <Link to={`/verify?agent=${issued}`} className="btn btn-primary">
               View public verification
             </Link>
+            {deployReturnId ? (
+              <Link
+                to={`/dashboard/${deployReturnId}`}
+                className="btn btn-primary"
+              >
+                Start hosted agent
+              </Link>
+            ) : null}
             <Link to="/agents" className="btn btn-ghost">
               My Agents
             </Link>

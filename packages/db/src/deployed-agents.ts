@@ -5,6 +5,7 @@ export type DeployStatus =
   | "pending_payment"
   | "provisioning"
   | "installing"
+  | "awaiting_vouch"
   | "starting"
   | "running"
   | "paused"

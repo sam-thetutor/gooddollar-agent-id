@@ -19,3 +19,4 @@ docs/
 # (github.com/sam-thetutor/goodremind-bot), kept out of this one
 apps/telegram-bot/
 apps/bot-site/
+.env*

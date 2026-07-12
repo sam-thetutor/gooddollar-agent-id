@@ -9,16 +9,18 @@ import {
   type DeployAgent,
   type DeployStatusResponse,
 } from "../lib/host.js";
+import { deployAgentNeedsVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 type FilterTab = "all" | "live" | "failed" | "setup";
 
-type RowHealth = "live" | "paused" | "stopped" | "failed" | "deploying" | "unknown";
+type RowHealth = "live" | "paused" | "stopped" | "failed" | "deploying" | "awaiting_vouch" | "unknown";
 
 function processHealth(s: DeployStatusResponse): RowHealth {
   if (s.pipelineRunning) return "deploying";
   if (s.status === "failed") return "failed";
   if (s.status === "paused") return "paused";
+  if (s.status === "awaiting_vouch") return "awaiting_vouch";
   if (s.pm2?.online) return "live";
   if (s.pm2) return "stopped";
   if (["provisioning", "installing", "starting"].includes(s.status)) {
@@ -33,6 +35,7 @@ const HEALTH_LABEL: Record<RowHealth, string> = {
   stopped: "Stopped",
   failed: "Failed",
   deploying: "Setting up",
+  awaiting_vouch: "Awaiting vouch",
   unknown: "Unknown",
 };
 
@@ -107,6 +110,7 @@ function dbStatusHealth(agent: DeployAgent): RowHealth {
   if (agent.status === "running") return "live";
   if (agent.status === "paused") return "paused";
   if (agent.status === "failed") return "failed";
+  if (agent.status === "awaiting_vouch") return "awaiting_vouch";
   if (["provisioning", "installing", "starting"].includes(agent.status)) {
     return "deploying";
   }
@@ -181,7 +185,8 @@ export function MyDeployments() {
       if (filter === "live") return health === "live";
       if (filter === "failed")
         return health === "failed" || health === "stopped";
-      if (filter === "setup") return health === "deploying";
+      if (filter === "setup")
+        return health === "deploying" || health === "awaiting_vouch";
       return true;
     });
   }, [enriched, filter, hideTests]);
@@ -196,7 +201,9 @@ export function MyDeployments() {
       failed: visible.filter(
         ({ health }) => health === "failed" || health === "stopped",
       ).length,
-      setup: visible.filter(({ health }) => health === "deploying").length,
+      setup: visible.filter(
+        ({ health }) => health === "deploying" || health === "awaiting_vouch",
+      ).length,
     };
   }, [enriched, hideTests]);
 
@@ -394,13 +401,31 @@ export function MyDeployments() {
                             {lastActiveLabel(agent, status ?? undefined)}
                           </td>
                           <td>
-                            <Link
-                              className="deployments-open"
-                              to={`/dashboard/${agent.id}`}
-                              aria-label={`Open ${agent.displayName} dashboard`}
-                            >
-                              →
-                            </Link>
+                            <div className="deployments-row-actions">
+                              {deployAgentNeedsVouch(agent) &&
+                                agent.agentAddress && (
+                                  <Link
+                                    className="btn btn-primary btn-sm deployments-vouch-btn"
+                                    to={issueAgentHref(
+                                      agent.agentAddress,
+                                      agent.id,
+                                    )}
+                                  >
+                                    Vouch
+                                  </Link>
+                                )}
+                              <Link
+                                className="deployments-open"
+                                to={
+                                  deployAgentNeedsVouch(agent)
+                                    ? `/deploy?job=${agent.id}`
+                                    : `/dashboard/${agent.id}`
+                                }
+                                aria-label={`Open ${agent.displayName}`}
+                              >
+                                →
+                              </Link>
+                            </div>
                           </td>
                         </tr>
                       );

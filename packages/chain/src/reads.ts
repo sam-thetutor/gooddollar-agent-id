@@ -14,6 +14,7 @@ import {
 } from "./abis.js";
 import {
   AGENT_ATTESTATION_ADDRESS,
+  AGENT_REVOCATION_ADDRESS,
   ERC8004_IDENTITY_REGISTRY,
   G_DOLLAR_ADDRESS,
   GOODDOLLAR_PROOF_METADATA_KEY,
@@ -391,6 +392,43 @@ export async function getAgentAttestations(
       r.status === "success" && (r.result as bigint) !== 0n;
   });
   return proven;
+}
+
+const agentRevocationAbi = [
+  {
+    type: "function",
+    name: "isRevoked",
+    stateMutability: "view",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+/**
+ * Batch-read live on-chain revocations (one multicall). Returns a lowercase
+ * address → revoked map so list endpoints match the Manage page kill switch.
+ */
+export async function getAgentRevocations(
+  agents: string[],
+): Promise<Record<string, boolean>> {
+  if (agents.length === 0) return {};
+  const client = createCeloPublicClient();
+  const registry = AGENT_REVOCATION_ADDRESS[CELO_CHAIN_ID];
+  const results = await client.multicall({
+    contracts: agents.map((a) => ({
+      address: registry,
+      abi: agentRevocationAbi,
+      functionName: "isRevoked" as const,
+      args: [normalizeAddress(a)] as const,
+    })),
+    allowFailure: true,
+  });
+  const revoked: Record<string, boolean> = {};
+  results.forEach((r, i) => {
+    revoked[agents[i].toLowerCase()] =
+      r.status === "success" && (r.result as boolean) === true;
+  });
+  return revoked;
 }
 
 export interface Erc8004AgentResult {

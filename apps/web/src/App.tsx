@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { WagmiProvider } from "wagmi";
 import { config } from "./lib/wagmi.js";
+import { shouldUseWalletConnect } from "./lib/wallet-mobile.js";
 import { AgentProfile } from "./pages/AgentProfile.js";
 import { Explore } from "./pages/Explore.js";
 import { ForAgents } from "./pages/ForAgents.js";
@@ -19,7 +20,7 @@ const queryClient = new QueryClient();
 
 export function App() {
   return (
-    <WagmiProvider config={config}>
+    <WagmiProvider config={config} reconnectOnMount={!shouldUseWalletConnect()}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <Routes>

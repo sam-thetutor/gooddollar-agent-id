@@ -2,17 +2,14 @@ import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { celo } from "@reown/appkit/networks";
 import { createAppKit } from "@reown/appkit/react";
 import { http } from "wagmi";
-import { METAMASK_WALLET_ID } from "./wallet-mobile.js";
+import {
+  METAMASK_WALLET_ID,
+  shouldUseWalletConnect,
+  WALLETCONNECT_PROJECT_ID,
+} from "./wallet-mobile.js";
 
-const projectId =
-  (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined) ?? "";
+const projectId = WALLETCONNECT_PROJECT_ID;
 const rpcUrl = import.meta.env.VITE_CELO_RPC_URL as string | undefined;
-
-if (!projectId && import.meta.env.PROD) {
-  console.error(
-    "VITE_WALLETCONNECT_PROJECT_ID is required for mobile wallet connections",
-  );
-}
 
 const siteOrigin =
   typeof window !== "undefined"
@@ -39,6 +36,11 @@ createAppKit({
   projectId,
   featuredWalletIds: [METAMASK_WALLET_ID],
   enableMobileFullScreen: true,
+  // Prefer metamask:// deep links over universal links that open the in-app browser.
+  experimental_preferUniversalLinks: false,
+  // WC reconnect on refresh opens "Approve in wallet" but cannot deep-link to
+  // MetaMask without a user tap — disable on mobile browsers without injection.
+  enableReconnect: !shouldUseWalletConnect(),
   metadata: {
     name: "GoodAgent",
     description: "The passport-free Proof-of-Human layer for AI agents.",
@@ -49,7 +51,6 @@ createAppKit({
     analytics: false,
     email: false,
     socials: [],
-    headless: true,
   },
 });
 

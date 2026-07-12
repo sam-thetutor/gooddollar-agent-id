@@ -52,6 +52,7 @@ export type IssueOutcome =
 export function issueAgentCredential(
   data: AgentCredentialInput,
   maxPerHuman: number,
+  opts?: { excludeFromCap?: string[] },
 ): Promise<IssueOutcome> {
   return prisma.$transaction(
     async (tx): Promise<IssueOutcome> => {
@@ -76,13 +77,20 @@ export function issueAgentCredential(
         }
       }
 
-      const active = await tx.agentCredential.count({
+      const capExcluded = new Set(
+        (opts?.excludeFromCap ?? []).map((a) => a.toLowerCase()),
+      );
+      const activeRows = await tx.agentCredential.findMany({
         where: {
           humanRoot: data.humanRoot,
           revokedAt: null,
           agent: { not: data.agent },
         },
+        select: { agent: true },
       });
+      const active = activeRows.filter(
+        (r) => !capExcluded.has(r.agent.toLowerCase()),
+      ).length;
       if (active >= maxPerHuman) {
         return { ok: false, error: "AGENT_CAP_REACHED", active, max: maxPerHuman };
       }

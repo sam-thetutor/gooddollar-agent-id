@@ -4,7 +4,7 @@ import type { DeployControlAuth } from "@goodagent/shared";
 /** Ignore localhost URLs from .env — use production host in dev, same-origin /host in prod. */
 function resolveHostBase(): string {
   const configured = import.meta.env.VITE_HOST_BASE_URL?.trim();
-  if (configured && !/localhost|127\.0\.0\.1/.test(configured)) {
+  if (configured) {
     return configured;
   }
   if (import.meta.env.DEV) {

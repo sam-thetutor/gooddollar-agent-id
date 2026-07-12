@@ -13,9 +13,10 @@ import {
   type DeployStatusResponse,
 } from "../lib/host.js";
 import { isDeployOwner, signDeployControl } from "../lib/deploy-control.js";
+import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
-type HealthState = "live" | "paused" | "stopped" | "failed" | "deploying" | "unknown";
+type HealthState = "live" | "paused" | "stopped" | "failed" | "deploying" | "awaiting_vouch" | "unknown";
 
 const REFRESH_MS = 8000;
 const MATCHES_PAGE_SIZE = 10;
@@ -24,6 +25,7 @@ function processHealth(s: DeployStatusResponse): HealthState {
   if (s.pipelineRunning) return "deploying";
   if (s.status === "failed") return "failed";
   if (s.status === "paused") return "paused";
+  if (s.status === "awaiting_vouch") return "awaiting_vouch";
   if (s.pm2?.online) return "live";
   if (s.pm2) {
     if (s.pm2.status === "stopped" || s.pm2.status === "errored") return "stopped";
@@ -41,6 +43,7 @@ const HEALTH_LABEL: Record<HealthState, string> = {
   stopped: "Stopped",
   failed: "Failed",
   deploying: "Deploying",
+  awaiting_vouch: "Awaiting vouch",
   unknown: "Unknown",
 };
 
@@ -338,6 +341,37 @@ export function DeployDashboard() {
                 >
                   Pause
                 </button>
+              ) : canControl && health === "awaiting_vouch" ? (
+                <>
+                  {status.agentAddress && (
+                    <Link
+                      className="btn btn-ghost btn-sm"
+                      to={issueAgentHref(status.agentAddress, id!)}
+                    >
+                      Vouch
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={
+                      busy || !status.pm2Name || !isConnected || !status.verify?.valid
+                    }
+                    onClick={() => {
+                      setBusy(true);
+                      void signControl("resume")
+                        .then((auth) => startDeploy(id!, auth))
+                        .then(() => setError(null))
+                        .then(() => refresh())
+                        .catch((e) =>
+                          setError(e instanceof Error ? e.message : String(e)),
+                        )
+                        .finally(() => setBusy(false));
+                    }}
+                  >
+                    Start
+                  </button>
+                </>
               ) : canControl ? (
                 <button
                   type="button"
@@ -461,6 +495,27 @@ export function DeployDashboard() {
                 )}
               </div>
             </header>
+
+            {status && deployNeedsUserVouch(status) && status.agentAddress && id && (
+              <section className="deploy-vouch-card deploy-console-vouch" aria-label="Vouch required">
+                <h2 className="card-title">Vouch required before play</h2>
+                <p className="muted hint">
+                  Wallet funded and skill installed. Issue an Agent ID with your
+                  verified wallet, then return here to start the agent.
+                </p>
+                <div className="actions">
+                  <Link
+                    className="btn btn-primary"
+                    to={issueAgentHref(status.agentAddress, id)}
+                  >
+                    Vouch at /issue
+                  </Link>
+                  <Link className="btn btn-ghost" to={`/deploy?job=${id}`}>
+                    Deploy status
+                  </Link>
+                </div>
+              </section>
+            )}
 
             {lowBalance && health === "live" && (
               <p className="deploy-console-banner">

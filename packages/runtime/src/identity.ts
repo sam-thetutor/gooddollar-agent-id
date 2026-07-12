@@ -206,6 +206,48 @@ export async function fundAgentGDollar(
   return hash;
 }
 
+/**
+ * Deployed agents must be vouched by the owner wallet (not the platform operator).
+ * Checks live Agent ID validity, operator match, attestation, and vault bond.
+ */
+export async function assertOwnerVouchedForAgent(
+  config: RuntimeConfig,
+  agentAddress: Address,
+  ownerWallet: Address,
+): Promise<void> {
+  const res = await fetch(`${config.apiBase}/agent/verify/${agentAddress}`);
+  if (!res.ok) {
+    throw new Error(
+      "Agent has no Agent ID yet — vouch with your verified wallet at /issue before going live.",
+    );
+  }
+
+  const body = (await res.json()) as {
+    valid?: boolean;
+    reason?: string;
+    operator?: string;
+  };
+
+  if (!body.valid) {
+    const hint =
+      body.reason === "not_found"
+        ? "Vouch for this agent at /issue using your GoodDollar-verified wallet."
+        : `Agent ID is not valid (${body.reason ?? "unknown"}). Complete /issue with your wallet.`;
+    throw new Error(hint);
+  }
+
+  if (
+    !body.operator ||
+    body.operator.toLowerCase() !== ownerWallet.toLowerCase()
+  ) {
+    throw new Error(
+      "The Agent ID must be issued from your owner wallet — reconnect with the same wallet you used to deploy and vouch at /issue.",
+    );
+  }
+
+  await assertAgentPlayReady(config, agentAddress);
+}
+
 /** Agent must be attested and carry the full AgentVault bond before wagering. */
 export async function assertAgentPlayReady(
   config: RuntimeConfig,
@@ -310,6 +352,68 @@ export interface IssueResult {
   verifyUrl: string;
 }
 
+interface AgentListResponse {
+  activeCount?: number;
+  maxPerHuman?: number;
+  agents?: Array<{ agent: string; revoked: boolean }>;
+}
+
+function formatIssueApiError(status: number, body: Record<string, unknown>): string {
+  const code = typeof body.error === "string" ? body.error : "ISSUE_FAILED";
+  const message = typeof body.message === "string" ? body.message : null;
+
+  if (code === "AGENT_CAP_REACHED") {
+    const active = body.active ?? "?";
+    const max = body.max ?? 10;
+    return (
+      `Agent cap reached (${active}/${max} active agents for this operator). ` +
+      "Withdraw a bond on an existing agent at goodagentids.xyz/agents, then retry."
+    );
+  }
+  if (code === "STALE_NONCE") {
+    return (
+      message ??
+      "Credential nonce is stale — wait a moment and retry the deploy."
+    );
+  }
+  if (message) return message;
+  return `issue failed: ${status} (${code})`;
+}
+
+/** Fail fast before funding if the operator cannot register another agent. */
+export async function assertOperatorCanIssueAgent(
+  config: RuntimeConfig,
+  agentAddress: Address,
+): Promise<void> {
+  if (!config.operatorPrivateKey) return;
+
+  const operator = privateKeyToAccount(config.operatorPrivateKey).address;
+  const verifyRes = await fetch(`${config.apiBase}/agent/verify/${agentAddress}`);
+  if (verifyRes.ok) {
+    const verifyBody = (await verifyRes.json()) as { valid?: boolean };
+    if (verifyBody.valid) return;
+  }
+
+  const listRes = await fetch(
+    `${config.apiBase}/agent/list?operator=${operator}`,
+  );
+  if (!listRes.ok) return;
+
+  const list = (await listRes.json()) as AgentListResponse;
+  const active = list.activeCount ?? 0;
+  const max = list.maxPerHuman ?? 10;
+  const alreadyRegistered = list.agents?.some(
+    (row) =>
+      row.agent.toLowerCase() === agentAddress.toLowerCase() && !row.revoked,
+  );
+  if (alreadyRegistered || active < max) return;
+
+  throw new Error(
+    `Agent cap reached (${active}/${max} active agents for operator ${operator}). ` +
+      "Withdraw a bond on an existing agent at goodagentids.xyz/agents, then retry.",
+  );
+}
+
 export async function issueAgentCredential(
   config: RuntimeConfig,
   agentAddress: Address,
@@ -327,6 +431,19 @@ export async function issueAgentCredential(
   }
 
   const operator = privateKeyToAccount(config.operatorPrivateKey);
+  const verifyUrl = `${config.apiBase.replace(/\/$/, "")}/agent/verify/${agentAddress}`;
+
+  const existingVerify = await fetch(verifyUrl);
+  if (existingVerify.ok) {
+    const existingBody = (await existingVerify.json()) as { valid?: boolean };
+    if (existingBody.valid) {
+      console.log(`[issue] ${agentAddress} already has a valid Agent ID — skip`);
+      return { issued: true, verifyUrl };
+    }
+  }
+
+  await assertOperatorCanIssueAgent(config, agentAddress);
+
   const { pub } = clients(config);
   const wallet = createWalletClient({
     account: operator,
@@ -395,7 +512,7 @@ export async function issueAgentCredential(
     operator: operator.address,
     humanRoot,
     ttlSeconds: BigInt(365 * 24 * 60 * 60),
-    nonce: BigInt(Math.floor(Date.now() / 1000)),
+    nonce: BigInt(Date.now()),
   });
 
   const domain = agentIdDomain();
@@ -424,10 +541,10 @@ export async function issueAgentCredential(
     }),
   });
 
-  const body = await issueRes.json();
+  const body = (await issueRes.json()) as Record<string, unknown>;
   console.log(`[issue] ${issueRes.status}`, JSON.stringify(body));
   if (issueRes.status !== 201) {
-    throw new Error(`issue failed: ${issueRes.status}`);
+    throw new Error(formatIssueApiError(issueRes.status, body));
   }
 
   const verifyRes = await fetch(`${config.apiBase}/agent/verify/${agentAddress}`);

@@ -1,14 +1,35 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAccount } from "wagmi";
 import { Nav, ConnectButton } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { SITE_ORIGIN } from "../lib/site.js";
-import { getWalletOverview, type WalletOverview } from "../lib/api.js";
 
-const GOODDOLLAR_VERIFY_URL = "https://wallet.gooddollar.org";
+/** Placeholder — swap for your walkthrough (e.g. 2FiboECrgEk from GoodAgent demo). */
+const AGENT_VERIFY_DEMO_VIDEO_ID = "M7lc1UVf-VE";
 
 const AGENT_PROMPT = `Read ${SITE_ORIGIN}/llms.txt and follow it to become a human-backed agent: attest your wallet key on Celo, then ask your human operator to vouch for you at ${SITE_ORIGIN}/issue`;
+
+function AgentVerifyDemoVideo() {
+  return (
+    <section className="card demo-video-card">
+      <h2>Watch: verify your agent</h2>
+      <p className="muted demo-video-lede">
+        Face verification, bond staking, and issuing an Agent ID — start to
+        finish.
+      </p>
+      <div className="video-embed">
+        <iframe
+          src={`https://www.youtube.com/embed/${AGENT_VERIFY_DEMO_VIDEO_ID}`}
+          title="GoodAgent — how to verify your agent"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          referrerPolicy="strict-origin-when-cross-origin"
+          allowFullScreen
+        />
+      </div>
+    </section>
+  );
+}
 
 function AgentPromptBlock() {
   const [copied, setCopied] = useState(false);
@@ -43,35 +64,8 @@ function AgentPromptBlock() {
   );
 }
 
-type State =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "ready"; data: WalletOverview }
-  | { kind: "error"; message: string };
-
 export function Home() {
-  const { address, isConnected } = useAccount();
-  const [state, setState] = useState<State>({ kind: "idle" });
-
-  useEffect(() => {
-    if (!isConnected || !address) {
-      setState({ kind: "idle" });
-      return;
-    }
-    let cancelled = false;
-    setState({ kind: "loading" });
-    getWalletOverview(address)
-      .then((data) => !cancelled && setState({ kind: "ready", data }))
-      .catch(
-        (err: Error) =>
-          !cancelled && setState({ kind: "error", message: err.message }),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [isConnected, address]);
-
-  const verified = state.kind === "ready" && state.data.verify.isWhitelisted;
+  const { isConnected } = useAccount();
 
   return (
     <>
@@ -109,57 +103,7 @@ export function Home() {
       </section>
 
       <main className="container">
-        {/* Connected wallet status */}
-        {isConnected && (
-          <section className="card status-card status-block">
-            <h2>Your status</h2>
-            {state.kind === "loading" && (
-              <p className="muted">Reading your GoodDollar identity on Celo…</p>
-            )}
-            {state.kind === "error" && (
-              <p className="error">Couldn't load: {state.message}</p>
-            )}
-            {state.kind === "ready" && (
-              <>
-                <div className="status-row">
-                  <span>Identity</span>
-                  <span className={verified ? "ok" : "warn"}>
-                    {verified ? "Verified human" : "Not verified"}
-                  </span>
-                </div>
-                <div className="status-row">
-                  <span>G$ balance</span>
-                  <span>{state.data.balance.balanceFormatted} G$</span>
-                </div>
-                {verified ? (
-                  <div className="actions">
-                    <Link to="/issue" className="btn btn-primary">
-                      Issue an Agent ID
-                    </Link>
-                    <Link to="/agents" className="btn btn-ghost">
-                      My Agents
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="actions">
-                    <a
-                      className="btn btn-primary"
-                      href={GOODDOLLAR_VERIFY_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Verify with GoodDollar
-                    </a>
-                    <p className="muted hint">
-                      Complete face verification in the GoodDollar wallet, then
-                      return here to issue an Agent ID.
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-          </section>
-        )}
+        <AgentVerifyDemoVideo />
 
         {/* How it works — three step cards */}
         <section className="section">
@@ -236,37 +180,39 @@ export function Home() {
             exactly who GoodDollar verifies. ERC-8004 handles agent identity;
             GoodDollar supplies the human root.
           </p>
-          <table className="compare">
-            <thead>
-              <tr>
-                <th></th>
-                <th>Passport-based</th>
-                <th>GoodAgent</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Proof</td>
-                <td>Passport / Aadhaar scan</td>
-                <td className="col-us">Face — no document</td>
-              </tr>
-              <tr>
-                <td>Reaches</td>
-                <td>Document-holders</td>
-                <td className="col-us">The document-less too</td>
-              </tr>
-              <tr>
-                <td>Freshness</td>
-                <td>One-time snapshot</td>
-                <td className="col-us">Re-checked on every verify</td>
-              </tr>
-              <tr>
-                <td>Token role</td>
-                <td>—</td>
-                <td className="col-us">Required refundable G$ bond</td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="compare">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Passport-based</th>
+                  <th>GoodAgent</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Proof</td>
+                  <td>Passport / Aadhaar scan</td>
+                  <td className="col-us">Face — no document</td>
+                </tr>
+                <tr>
+                  <td>Reaches</td>
+                  <td>Document-holders</td>
+                  <td className="col-us">The document-less too</td>
+                </tr>
+                <tr>
+                  <td>Freshness</td>
+                  <td>One-time snapshot</td>
+                  <td className="col-us">Re-checked on every verify</td>
+                </tr>
+                <tr>
+                  <td>Token role</td>
+                  <td>—</td>
+                  <td className="col-us">Required refundable G$ bond</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
       </main>
 

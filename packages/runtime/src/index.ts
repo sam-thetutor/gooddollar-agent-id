@@ -17,6 +17,7 @@ export {
   relayAttestation,
   issueAgentCredential,
   assertAgentPlayReady,
+  assertOwnerVouchedForAgent,
 } from "./identity.js";
 export type { IssueResult } from "./identity.js";
 

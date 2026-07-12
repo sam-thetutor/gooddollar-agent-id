@@ -9,6 +9,8 @@ import {
   agentAttestationAbi,
 } from "../lib/vault.js";
 import { listAgents, type AgentListItem } from "../lib/api.js";
+import { listDeploysByOwner, type DeployAgent } from "../lib/host.js";
+import { deployAgentNeedsVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 function shorten(a: string): string {
@@ -29,11 +31,12 @@ export function MyAgents() {
   );
   const { address, isConnected } = useAccount();
   const [agents, setAgents] = useState<AgentListItem[] | null>(null);
+  const [pendingDeploys, setPendingDeploys] = useState<DeployAgent[] | null>(
+    null,
+  );
   const [cap, setCap] = useState<{ active: number; max: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Batch-read each agent's on-chain key attestation so pre-gate
-  // registrations that never attested are visibly flagged.
   const attestations = useReadContracts({
     contracts: (agents ?? []).map((a) => ({
       address: AGENT_ATTESTATION_ADDRESS,
@@ -52,20 +55,28 @@ export function MyAgents() {
   useEffect(() => {
     if (!isConnected || !address) {
       setAgents(null);
+      setPendingDeploys(null);
       return;
     }
     let cancelled = false;
-    listAgents(address)
-      .then((r) => {
+    Promise.all([listAgents(address), listDeploysByOwner(address)])
+      .then(([issued, deploys]) => {
         if (cancelled) return;
-        setAgents(r.agents);
-        setCap({ active: r.activeCount, max: r.maxPerHuman });
+        setAgents(issued.agents);
+        setCap({ active: issued.activeCount, max: issued.maxPerHuman });
+        setPendingDeploys(
+          deploys.agents.filter((d) => deployAgentNeedsVouch(d)),
+        );
+        setError(null);
       })
       .catch((err: Error) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
     };
   }, [isConnected, address]);
+
+  const hasIssued = agents && agents.length > 0;
+  const hasPending = pendingDeploys && pendingDeploys.length > 0;
 
   return (
     <>
@@ -74,7 +85,7 @@ export function MyAgents() {
       <header className="hero compact">
         <h1>My Agents</h1>
         <p className="lede">
-          Agent IDs you've issued.
+          Agent IDs you've issued after vouching at /issue.
           {cap && (
             <>
               {" "}
@@ -100,16 +111,57 @@ export function MyAgents() {
         </section>
       )}
 
-      {isConnected && agents && agents.length === 0 && (
-        <section className="card">
-          <p className="muted">No agents yet.</p>
-          <Link to="/issue" className="btn btn-primary">
-            Issue your first Agent ID
-          </Link>
+      {isConnected && hasPending && (
+        <section className="card deploy-vouch-card">
+          <h2 className="card-title">Awaiting your vouch</h2>
+          <p className="muted hint">
+            These hosted agents are provisioned but not in My Agents until you
+            complete /issue. They appear under{" "}
+            <Link to="/deployments">Deployments</Link> too.
+          </p>
+          <ul className="deploy-pending-vouch-list">
+            {pendingDeploys.map((d) => (
+              <li key={d.id}>
+                <div>
+                  <strong>{d.displayName}</strong>
+                  {d.agentAddress && (
+                    <code className="deploy-pending-agent">{d.agentAddress}</code>
+                  )}
+                </div>
+                <div className="actions">
+                  {d.agentAddress && (
+                    <Link
+                      className="btn btn-primary btn-sm"
+                      to={issueAgentHref(d.agentAddress, d.id)}
+                    >
+                      Vouch at /issue
+                    </Link>
+                  )}
+                  <Link className="btn btn-ghost btn-sm" to={`/deploy?job=${d.id}`}>
+                    Deploy status
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
-      {isConnected && agents && agents.length > 0 && (
+      {isConnected && agents && !hasIssued && !hasPending && (
+        <section className="card">
+          <p className="muted">No Agent IDs yet.</p>
+          <div className="actions">
+            <Link to="/issue" className="btn btn-primary">
+              Issue an Agent ID
+            </Link>
+            <Link to="/deploy" className="btn btn-ghost">
+              Deploy a hosted agent
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {isConnected && hasIssued && (
         <section className="agent-grid">
           {agents.map((a, i) => (
             <div key={a.agent} className="card agent-card">

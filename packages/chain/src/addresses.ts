@@ -40,6 +40,11 @@ export const AGENT_ATTESTATION_ADDRESS = {
   [CELO_CHAIN_ID]: "0xe5EFd6755e8a2035c924f9BaCDecD067B3dcf6C2" as const,
 } as const;
 
+/** AgentRevocation registry on Celo mainnet: operator-controlled kill switch. */
+export const AGENT_REVOCATION_ADDRESS = {
+  [CELO_CHAIN_ID]: "0xA86a133626989115a6499b6cA67c3c8dA1662137" as const,
+} as const;
+
 /**
  * GoodDollarHumanProofProvider on Celo mainnet (packages/contracts): a standard
  * ERC-8004 `IHumanProofProvider` backed by the GoodDollar on-chain identity

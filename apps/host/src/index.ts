@@ -26,7 +26,7 @@ import {
   startDeployedAgent,
   stopDeployedAgent,
   setDeployBaselineBalance,
-  assertAgentPlayReady,
+  assertOwnerVouchedForAgent,
   type PipelineStatus,
 } from "@goodagent/runtime";
 import { Hono } from "hono";
@@ -85,6 +85,10 @@ async function scheduleDeployPipeline(
     throw new Error("NO_SKILLS");
   }
 
+  if (!agent.ownerWallet) {
+    throw new Error("OWNER_NOT_SET");
+  }
+
   runningPipelines.add(id);
   try {
     loadRuntimeEnv();
@@ -95,6 +99,7 @@ async function scheduleDeployPipeline(
       {
         deployId: id,
         displayName: agent.displayName,
+        ownerWallet: agent.ownerWallet as `0x${string}`,
         template: agent.template,
         skillId: primarySkill.skillId,
         skillConfiguration: parseDeployConfiguration(agent),
@@ -327,17 +332,13 @@ app.post("/deploy/:id/run-pipeline", async (c) => {
       {
         error: "SKIP_IDENTITY_DISABLED",
         message:
-          "Agent ID verification is required. Lock the 250 G$ vault bond before play.",
+          "Agent ID verification is required. Vouch at /issue with your wallet before play.",
       },
       400,
     );
   }
 
-  const runnable: DeployStatus[] = ["provisioning", "failed"];
-  if (agent.status === "provisioning" && !runningPipelines.has(id)) {
-    // Allow retry when a prior run died before updating status.
-    runnable.push("provisioning");
-  }
+  const runnable: DeployStatus[] = ["provisioning", "failed", "awaiting_vouch"];
   if (!runnable.includes(agent.status as DeployStatus)) {
     return c.json({ error: "INVALID_STATUS", status: agent.status }, 409);
   }
@@ -423,13 +424,18 @@ app.post("/deploy/:id/start", async (c) => {
   }
 
   try {
-    if (agent.agentAddress) {
-      await assertAgentPlayReady(config, agent.agentAddress as `0x${string}`);
+    if (agent.agentAddress && agent.ownerWallet) {
+      await assertOwnerVouchedForAgent(
+        config,
+        agent.agentAddress as `0x${string}`,
+        agent.ownerWallet as `0x${string}`,
+      );
     }
     startDeployedAgent(config, id);
     const updated = await updateDeployedAgent(id, {
       status: "running",
       lastError: null,
+      deployedAt: agent.deployedAt ?? new Date(),
     });
     return c.json({ agent: updated });
   } catch (err) {
@@ -439,7 +445,10 @@ app.post("/deploy/:id/start", async (c) => {
       const notVerified =
         message.includes("not attested") ||
         message.includes("bond insufficient") ||
-        message.includes("verification is required");
+        message.includes("verification is required") ||
+        message.includes("Agent ID") ||
+        message.includes("/issue") ||
+        message.includes("operator");
       return c.json(
         { error: notVerified ? "AGENT_NOT_VERIFIED" : "PM2_START_FAILED", message },
         notVerified ? 403 : 500,

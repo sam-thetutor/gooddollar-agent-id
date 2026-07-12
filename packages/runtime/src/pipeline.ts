@@ -1,10 +1,14 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { privateKeyToAccount } from "viem/accounts";
+import type { Address } from "viem";
 import type { LocalAccount } from "viem/accounts";
 import type { RuntimeConfig } from "./config.js";
-import { fundAgentCelo, fundAgentGDollar, issueAgentCredential, relayAttestation, assertAgentPlayReady } from "./identity.js";
+import {
+  fundAgentCelo,
+  fundAgentGDollar,
+  relayAttestation,
+} from "./identity.js";
 import {
   isPm2Available,
   pm2ProcessName,
@@ -16,7 +20,6 @@ import {
 import { fetchSkillsRegistry, findRegistrySkill } from "./registry.js";
 import { buildSkillEnv, type SkillConfiguration, writeSkillEnv } from "./skill-env.js";
 import { installSkillFromRegistry } from "./skill-install.js";
-import { fetchAgentBalances } from "./deploy-stats.js";
 import { writeBaselineIfAbsent } from "./baseline-balance.js";
 import {
   allocateDerivationIndex,
@@ -29,6 +32,7 @@ import {
 export type PipelineStatus =
   | "provisioning"
   | "installing"
+  | "awaiting_vouch"
   | "starting"
   | "running"
   | "failed"
@@ -52,6 +56,7 @@ export interface DeployPersistHooks {
 export interface RunPipelineInput {
   deployId: string;
   displayName: string;
+  ownerWallet: Address;
   template?: string;
   skillId: string;
   skillConfiguration?: SkillConfiguration;
@@ -102,9 +107,6 @@ export async function runDeployPipeline(
     const agentAddress = (input.resume?.agentAddress ?? account.address) as `0x${string}`;
     const agentPrivateKey = deriveAgentPrivateKey(config.deployMnemonic, index);
     const pm2Name = pm2ProcessName(deployId);
-    const operatorWallet = config.operatorPrivateKey
-      ? privateKeyToAccount(config.operatorPrivateKey).address
-      : undefined;
 
     writeAgentMeta(config.agentsRoot, {
       deployId,
@@ -119,7 +121,7 @@ export async function runDeployPipeline(
       agentAddress,
       walletDerivationIndex: index,
       pm2Name,
-      operatorWallet,
+      operatorWallet: input.ownerWallet,
     });
 
     await fundAgentCelo(config, agentAddress);
@@ -131,9 +133,6 @@ export async function runDeployPipeline(
       "snapshot",
     );
 
-    let identityIssued = false;
-    let verifyUrl: string | undefined;
-
     if (input.skipIdentity) {
       throw new Error(
         "Agent ID verification is required — deploy cannot skip vault bond or attestation",
@@ -141,15 +140,6 @@ export async function runDeployPipeline(
     }
 
     await relayAttestation(config, account as LocalAccount);
-    const issue = await issueAgentCredential(config, agentAddress, { required: true });
-    identityIssued = issue.issued;
-    verifyUrl = issue.verifyUrl;
-
-    if (!identityIssued) {
-      throw new Error("GoodAgent ID issuance failed — agent cannot play without verification");
-    }
-
-    await assertAgentPlayReady(config, agentAddress);
 
     await hooks.onStatus("installing", { agentAddress, walletDerivationIndex: index, pm2Name });
 
@@ -169,6 +159,8 @@ export async function runDeployPipeline(
       env: skillEnv,
     });
 
+    const verifyUrl = `${config.apiBase}/agent/verify/${agentAddress}`;
+
     if (input.dryRun) {
       return {
         deployId,
@@ -178,36 +170,16 @@ export async function runDeployPipeline(
         ecosystemPath,
         skillDir,
         verifyUrl,
-        identityIssued,
+        identityIssued: false,
       };
     }
 
-    await hooks.onStatus("starting", { agentAddress, walletDerivationIndex: index, pm2Name });
-
-    if (!isPm2Available()) {
-      throw new Error("pm2 not found in PATH");
-    }
-    pm2Start(ecosystemPath);
-
-    await hooks.onStatus("running", {
+    await hooks.onStatus("awaiting_vouch", {
       agentAddress,
       walletDerivationIndex: index,
       pm2Name,
-      deployedAt: new Date(),
       lastError: null,
     });
-
-    if (agentAddress) {
-      try {
-        const bal = await fetchAgentBalances(agentAddress, config.rpcUrl);
-        const gs = Number(bal.gDollarFormatted);
-        if (Number.isFinite(gs) && gs >= 1) {
-          writeBaselineIfAbsent(config.agentsRoot, deployId, gs, "snapshot");
-        }
-      } catch {
-        // Baseline was set after platform funding.
-      }
-    }
 
     return {
       deployId,
@@ -217,7 +189,7 @@ export async function runDeployPipeline(
       ecosystemPath,
       skillDir,
       verifyUrl,
-      identityIssued,
+      identityIssued: false,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
