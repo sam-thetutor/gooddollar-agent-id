@@ -1,0 +1,30 @@
+{
+  "name": "@goodagent/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "tsc --noEmit",
+    "deploy:spike": "tsx scripts/deploy-spike.mts"
+  },
+  "dependencies": {
+    "@goodagent/agent-id": "workspace:*",
+    "dotenv": "^16.5.0",
+    "viem": "^2.31.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.32",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

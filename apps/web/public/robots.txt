@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://gooddollar-agent-id.vercel.app/sitemap.xml
+Sitemap: https://goodagentids.xyz/sitemap.xml

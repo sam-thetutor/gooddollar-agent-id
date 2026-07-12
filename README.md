@@ -181,3 +181,33 @@ here is how it works.
 when the owner of the agent signs a transaction to verify and back their agent. at this point the agent becomes verified. for the number of days that the owner specifies.
 
 the staking comes in to cater for scenarios where lets say a certain platform using our identity project wants to limit agents that are bots. they can put a requirement that any agent to participate in their program must maintain a certain stake amount 
+
+Hello Hadar, greetings to you.
+regarding your inquiries,
+
+We are building an infrastructure project for the AI on good dollar. With the announcement in season four that was inviting ai agent proejcts. we realized that there is no common standard that ai agents can use to veirfy themselves since most of them will come from different chains. So our goal is to become the common ai agent identity standard on Good dollar so that any agent from anychain that wants to plug into Good dollar ecosystem has a way of being identified.
+
+
+
+First, the big picture. We are building for the future of AI agents on GoodDollar.Our goal is to aolve the Ai agent identity fragmentation that is there right now on Good dollar. Right now, there is no standard way of identify and veirifying Ai agents on Good dollar and AI agents are multiplying fast, and very soon we are getting Ai platforms on Good dollar with the recent announcement from season 4 regarding AI agent projects. These pplatforms will start asking the same question about every bot: "who is behind this thing?" just like app stores require developer accounts and payment companies require ID. We're building that answer now, before it becomes a requirement, using GoodDollar's biggest strength: over 900,000 real, face-verified humans.
+
+How does an agent benefit from being verified? A verified agent can prove there is a real human standing behind it, with real money (a 250 G$ deposit) locked as a promise of good behavior. Anyone can check this in seconds. As platforms start requiring some form of agent ID, verified agents get in as the anonymous ones get blocked, rate-limited, or ignored. Verification becomes the agent's ticket to be trusted and to do business.
+
+How do we plan to attract agents? By making it ridiculously easy for the developers who build them. Our tools are published where developers already work (npm), verification can be added to an agent in minutes, and our docs are written so simply that an AI agent can read them and register itself. The deposit is fully refundable, so it costs nothing to join. We will also target the other AI agent projects joining Season 4 directly, they all need identity for their agents, and we are offering it ready-made.
+
+Why would users want verified agents, and how do we attract users? Would you let a stranger's bot handle your money or your tasks? Users want to know someone real is accountable, and that they lose something if their bot misbehaves. A verified agent gives both; an anonymous one just disappears when things go wrong. We don't expect users to come to us, we bring the checkmark to them: a public explorer where anyone can paste an address and get a plain answer, badges that verified agents display wherever they operate, and partnerships with agent marketplaces so "human-backed" becomes a filter users pick, like choosing a highly-rated seller.
+
+
+
+
+Hey Hadar, you are right and I will admit it I was assuming demand. Selfclaw isn't taking off as it had been hyped, but still there are some agents that used it and still do. 
+
+So let me change the approach and build on demand that already exists instead.
+
+GoodDollar already has 100k+ weekly active users, and they have real problems today: figuring out claiming, checking if an address is safe before sending G$, getting scammed by impersonators, basic onboarding questions. My plan for the season is to build 2 assistant agents that solve exactly those problems and put them in the community telegram where the users already are. they will both be live by end of tihs week. Both of them verified and bonded through the infra I already built — so the trust layer becomes something users actually touch instead of theory waiting for a market.
+
+Everything stays measurable the way season 4 scores things anyway: users helped, G$ locked in the bonds, all public on my explorer, so you can check progress anytime without asking me.
+
+On "even if we had agents it would only be a few" — honestly a few is all I wouldd need at this stage. Not asking for a market, just a handful of design partners. If a few show up during the season I will build around what they actually need, and if they don't, the plan above doesn't depend on them at all.
+
+And if the numbers aren't there by mid season, cut my stream. That's what the streaming model is for. Rather be judged on what I ship to existing users than on my predictions.

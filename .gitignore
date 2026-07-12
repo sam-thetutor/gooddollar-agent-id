@@ -13,3 +13,9 @@ coverage
 # Internal docs — kept local, not published
 docs/
 .test-agent.json
+.goodagent/
+
+# GoodRemind bot + its landing page — live in their own public repo
+# (github.com/sam-thetutor/goodremind-bot), kept out of this one
+apps/telegram-bot/
+apps/bot-site/

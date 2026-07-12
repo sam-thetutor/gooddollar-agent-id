@@ -41,3 +41,80 @@ model AgentCredential {
   @@index([humanRoot])
   @@map("agent_credentials")
 }
+
+// Telegram UBI-reminder bot: one row per (chat, wallet) pair. A chat can watch
+// several wallets. `lastRemindedDay` stores the UBIScheme `currentDay` of the
+// last reminder sent, so each wallet is pinged at most once per claim cycle.
+model TelegramSubscriber {
+  id              String    @id @default(cuid())
+  chatId          String    @map("chat_id")
+  wallet          String
+  active          Boolean   @default(true)
+  lastRemindedDay String?   @map("last_reminded_day")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([chatId, wallet])
+  @@index([active])
+  @@map("telegram_subscribers")
+}
+
+// Autonomous agent hosting — one row per PM2-supervised deploy (apps/host).
+model DeployedAgent {
+  id                    String    @id @default(cuid())
+  displayName           String    @map("display_name")
+  template              String    @default("gaming")
+  status                String    @default("pending_payment")
+  agentAddress          String?   @unique @map("agent_address")
+  walletDerivationIndex Int?      @map("wallet_derivation_index")
+  operatorWallet        String?   @map("operator_wallet")
+  ownerWallet           String?   @map("owner_wallet")
+  disabledSkills        String?   @map("disabled_skills") @db.Text
+  configuration         String?   @db.Text
+  lastHeartbeatAt       DateTime? @map("last_heartbeat_at")
+  pm2Name               String?   @map("pm2_name")
+  lastError             String?   @map("last_error")
+  deployPaymentTx       String?   @map("deploy_payment_tx")
+  telegramBotTokenEnc   String?   @map("telegram_bot_token_enc") @db.Text
+  plan                  String    @default("one_time")
+  expiresAt             DateTime? @map("expires_at")
+  deployedAt            DateTime? @map("deployed_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  skills   SkillInstall[]
+  payments DeployPayment[]
+
+  @@index([ownerWallet])
+  @@index([status])
+  @@map("deployed_agents")
+}
+
+model SkillInstall {
+  id              String    @id @default(cuid())
+  deployedAgentId String    @map("deployed_agent_id")
+  skillId         String    @map("skill_id")
+  registryPath    String    @map("registry_path")
+  status          String    @default("installed")
+  configJson      String?   @map("config_json") @db.Text
+  lastError       String?
+  activatedAt     DateTime? @map("activated_at")
+
+  deployedAgent DeployedAgent @relation(fields: [deployedAgentId], references: [id], onDelete: Cascade)
+
+  @@unique([deployedAgentId, skillId])
+  @@map("skill_installs")
+}
+
+model DeployPayment {
+  id              String   @id @default(cuid())
+  deployedAgentId String?  @map("deployed_agent_id")
+  amountUsd       Decimal  @map("amount_usd")
+  txHash          String?  @map("tx_hash")
+  status          String   @default("pending")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  deployedAgent DeployedAgent? @relation(fields: [deployedAgentId], references: [id])
+
+  @@map("deploy_payments")
+}

@@ -7,12 +7,15 @@
     "build": "turbo build",
     "dev": "turbo dev",
     "dev:api": "pnpm --filter @goodagent/api dev",
+    "dev:host": "pnpm --filter @goodagent/host dev",
     "dev:web": "pnpm --filter @goodagent/web dev",
     "dev:mcp": "pnpm --filter @goodagent/mcp-server dev",
+    "dev:tg": "pnpm --filter @goodagent/telegram-bot dev",
     "lint": "turbo lint",
     "test": "turbo test",
     "db:push": "pnpm --filter @goodagent/db db:push",
-    "db:studio": "pnpm --filter @goodagent/db db:studio"
+    "db:studio": "pnpm --filter @goodagent/db db:studio",
+    "deploy:spike": "pnpm --filter @goodagent/runtime deploy:spike"
   },
   "devDependencies": {
     "turbo": "^2.5.4",

@@ -17,6 +17,7 @@ export {
   getAgentStakes,
   getAgentVaultStatus,
   getClaimEligibility,
+  getClaimEligibilityBatch,
   getDailyStats,
   getErc8004Agent,
   getGBalance,

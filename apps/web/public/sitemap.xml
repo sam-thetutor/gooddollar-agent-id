@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://gooddollar-agent-id.vercel.app/</loc></url>
-  <url><loc>https://gooddollar-agent-id.vercel.app/verify</loc></url>
-  <url><loc>https://gooddollar-agent-id.vercel.app/explore</loc></url>
-  <url><loc>https://gooddollar-agent-id.vercel.app/issue</loc></url>
-  <url><loc>https://gooddollar-agent-id.vercel.app/for-agents</loc></url>
+  <url><loc>https://goodagentids.xyz/</loc></url>
+  <url><loc>https://goodagentids.xyz/verify</loc></url>
+  <url><loc>https://goodagentids.xyz/explore</loc></url>
+  <url><loc>https://goodagentids.xyz/issue</loc></url>
+  <url><loc>https://goodagentids.xyz/for-agents</loc></url>
+  <url><loc>https://goodagentids.xyz/quickstart.md</loc></url>
+  <url><loc>https://goodagentids.xyz/skills</loc></url>
 </urlset>

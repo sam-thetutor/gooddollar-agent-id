@@ -188,6 +188,58 @@ export async function getClaimEligibility(
   }
 }
 
+/**
+ * Batch-read claim eligibility for many wallets in one multicall (two reads per
+ * wallet: UBIScheme.checkEntitlement + Identity.isWhitelisted). Used by the
+ * Telegram reminder bot to scan all subscribers cheaply. Failed reads for a
+ * wallet degrade to "not eligible" rather than failing the whole batch.
+ */
+export async function getClaimEligibilityBatch(
+  wallets: string[],
+): Promise<ClaimEligibilityResult[]> {
+  if (wallets.length === 0) return [];
+  const accounts = wallets.map(normalizeAddress);
+  const client = createCeloPublicClient();
+  const ubi = UBI_SCHEME_ADDRESS[CELO_CHAIN_ID];
+  const identity = IDENTITY_ADDRESS[CELO_CHAIN_ID];
+
+  const results = await client.multicall({
+    contracts: accounts.flatMap((account) => [
+      {
+        address: ubi,
+        abi: ubiSchemeAbi,
+        functionName: "checkEntitlement" as const,
+        args: [account] as const,
+      },
+      {
+        address: identity,
+        abi: identityAbi,
+        functionName: "isWhitelisted" as const,
+        args: [account] as const,
+      },
+    ]),
+    allowFailure: true,
+  });
+
+  return accounts.map((account, i) => {
+    const entitlement = results[i * 2];
+    const whitelist = results[i * 2 + 1];
+    const amount =
+      entitlement.status === "success" ? (entitlement.result as bigint) : 0n;
+    const isWhitelisted =
+      whitelist.status === "success" && (whitelist.result as boolean);
+    const hasEntitlement = amount > 0n;
+    return {
+      wallet: account,
+      eligible: isWhitelisted && hasEntitlement,
+      isWhitelisted,
+      hasEntitlement,
+      claimAmount: amount.toString(),
+      claimAmountFormatted: formatUnits(amount, G_DOLLAR_DECIMALS),
+    };
+  });
+}
+
 export interface AgentVaultStatusResult {
   agent: string;
   /** True once the vault is deployed and configured (AGENT_VAULT_ADDRESS set). */

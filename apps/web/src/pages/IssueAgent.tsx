@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   formatUnits,
   getAddress,
@@ -50,9 +50,10 @@ export function IssueAgent() {
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
 
+  const [searchParams] = useSearchParams();
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [identityError, setIdentityError] = useState(false);
-  const [agent, setAgent] = useState("");
+  const [agent, setAgent] = useState(() => searchParams.get("agent") ?? "");
   const [ttlDays, setTtlDays] = useState(30);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

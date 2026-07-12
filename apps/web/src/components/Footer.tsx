@@ -13,8 +13,7 @@ export function Footer() {
             GoodAgent
           </span>
           <p className="muted">
-            The passport-free Proof-of-Human layer for AI agents. Built on Celo
-            for GoodBuilders Season 4.
+            The passport-free Proof-of-Human layer for AI agents.
           </p>
         </div>
 

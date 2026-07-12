@@ -2,27 +2,114 @@ import { Link } from "react-router-dom";
 import { Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
-
-const API_BASE = "https://gcopilot-api.geinz.lol";
+import {
+  API_ORIGIN,
+  DEMO_AGENT_ADDRESS,
+  DEMO_AGENT_NAME,
+  SITE_ORIGIN,
+} from "../lib/site.js";
 
 export function ForAgents() {
   usePageMeta(
     "For AI agents — GoodAgent",
-    "How to register, verify, and authenticate as a human-backed AI agent. Machine-readable guide at /llms.txt.",
+    "Quickstart: attest your key, get vouched by a verified human, verify live on Celo. Machine-readable guides at /quickstart.md and /llms.txt.",
   );
+
+  const demoIssueUrl = `/issue?agent=${DEMO_AGENT_ADDRESS}`;
+  const demoVerifyUrl = `${API_ORIGIN}/agent/verify/${DEMO_AGENT_ADDRESS}`;
+
   return (
     <>
       <Nav />
       <main className="page">
         <header className="hero compact">
           <p className="eyebrow">For AI agents</p>
-          <h1>Three things you can do here</h1>
+          <h1>Onboard in 5 steps</h1>
           <p className="lede">
-            Get a Proof-of-Human credential (a verified human vouches for your
-            address), verify other agents, and authenticate counterparties.
-            Machine-readable version: <a href="/llms.txt">/llms.txt</a>.
+            Attest your wallet → a verified human vouches → anyone can verify you
+            live. Full walkthrough:{" "}
+            <a href="/quickstart.md">/quickstart.md</a> · machine-readable{" "}
+            <a href="/llms.txt">/llms.txt</a>.
           </p>
         </header>
+
+        {/* QUICKSTART */}
+        <section className="card" id="quickstart">
+          <h2 className="card-title">Quickstart</h2>
+          <ol className="numbered">
+            <li>
+              <strong>Create an agent wallet</strong> — one Celo address per bot.
+            </li>
+            <li>
+              <strong>Attest on-chain</strong> — prove you control the key
+              (section 1 below).
+            </li>
+            <li>
+              <strong>Operator vouches</strong> — a GoodDollar-verified human
+              stakes 250 G$ and signs at{" "}
+              <Link to="/issue">/issue</Link>.
+            </li>
+            <li>
+              <strong>Poll until live</strong> —{" "}
+              <code>GET /agent/verify/&lt;address&gt;</code> returns{" "}
+              <code>valid: true</code>.
+            </li>
+            <li>
+              <strong>Verifiers check you</strong> — REST, SDK, or MCP (section
+              2).
+            </li>
+          </ol>
+          <p className="muted small">
+            MCP one-liner for Cursor / Claude Desktop:
+          </p>
+          <div className="codeblock">
+            <pre>{`{
+  "mcpServers": {
+    "gooddollar": {
+      "command": "npx",
+      "args": ["-y", "@goodagent/mcp-server"],
+      "env": { "CELO_RPC_URL": "https://forno.celo.org" }
+    }
+  }
+}`}</pre>
+          </div>
+        </section>
+
+        {/* DEMO AGENT */}
+        <section className="card" id="demo-agent">
+          <h2 className="card-title">Demo agent — {DEMO_AGENT_NAME}</h2>
+          <p className="muted">
+            Canonical walkthrough agent. <strong>Attested on Celo mainnet</strong>{" "}
+            (<code>agentProven</code> once registered). Copy this flow for your
+            own agent.
+          </p>
+          <dl className="kv">
+            <dt>Address</dt>
+            <dd>
+              <code>{DEMO_AGENT_ADDRESS}</code>
+            </dd>
+            <dt>Verify</dt>
+            <dd>
+              <a href={demoVerifyUrl} target="_blank" rel="noreferrer">
+                {demoVerifyUrl}
+              </a>
+            </dd>
+            <dt>Explorer</dt>
+            <dd>
+              <Link to={`/explore/agent/${DEMO_AGENT_ADDRESS}`}>
+                Profile on {SITE_ORIGIN.replace("https://", "")}
+              </Link>
+            </dd>
+            <dt>Operator vouch</dt>
+            <dd>
+              <Link to={demoIssueUrl}>Open /issue with address prefilled</Link>
+            </dd>
+          </dl>
+          <p className="muted small">
+            Operators: connect your GoodDollar-verified wallet, approve + stake
+            250 G$, sign — the UI requires attestation before submit.
+          </p>
+        </section>
 
         {/* 1. REGISTER */}
         <section className="card" id="register">
@@ -62,7 +149,7 @@ const signed = await signAgentAttestation(myAccount);
 
           <p className="muted small">Know when you're registered:</p>
           <div className="codeblock">
-            <pre>{`const url = "${API_BASE}/agent/verify/0xMyAddress";
+            <pre>{`const url = "${API_ORIGIN}/agent/verify/0xMyAddress";
 for (;;) {
   const r = await (await fetch(url)).json();
   if (r.found && r.valid) break;
@@ -79,7 +166,7 @@ for (;;) {
             root, on-chain revocation, and G$ bond.
           </p>
           <div className="codeblock">
-            <pre>{`GET ${API_BASE}/agent/verify/0xAGENT
+            <pre>{`GET ${API_ORIGIN}/agent/verify/0xAGENT
 
 { "found": true, "valid": true, "operator": "0x…", "humanRoot": "0x…",
   "agentProven": true, "bondChecked": true, "revocationChecked": true }
@@ -104,7 +191,8 @@ for (;;) {
             >
               @goodagent/mcp-server
             </a>{" "}
-            and call <code>gooddollar_verify_agent</code>.
+            — tools <code>gooddollar_verify_agent</code>,{" "}
+            <code>gooddollar_check_attestation</code>.
           </p>
           <p className="warn small">
             ⚠ This answers "is address X human-backed?" — not "is the party
@@ -129,7 +217,7 @@ const wire = await signAgentAuth(
 );
 
 // Verifier side (audience is REQUIRED and must match what the agent signed):
-POST ${API_BASE}/agent/verify-auth
+POST ${API_ORIGIN}/agent/verify-auth
 { "auth": { ...wire }, "audience": "their-service" }
 // -> { "authenticated": true, "valid": true } only if the signature is
 //    fresh (≤ 2 min), single-use (nonces can't be replayed), recovers to
@@ -166,9 +254,17 @@ POST ${API_BASE}/agent/verify-auth
         <section className="card" id="reference">
           <h2 className="card-title">Reference</h2>
           <dl className="kv">
+            <dt>Site</dt>
+            <dd>
+              <a href={SITE_ORIGIN}>{SITE_ORIGIN}</a>
+            </dd>
+            <dt>Quickstart</dt>
+            <dd>
+              <a href="/quickstart.md">/quickstart.md</a>
+            </dd>
             <dt>REST API</dt>
             <dd>
-              <code>{API_BASE}</code>
+              <code>{API_ORIGIN}</code>
             </dd>
             <dt>Verify</dt>
             <dd>

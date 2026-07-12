@@ -3,9 +3,45 @@ import { Link } from "react-router-dom";
 import { useAccount } from "wagmi";
 import { Nav, ConnectButton } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
+import { SITE_ORIGIN } from "../lib/site.js";
 import { getWalletOverview, type WalletOverview } from "../lib/api.js";
 
 const GOODDOLLAR_VERIFY_URL = "https://wallet.gooddollar.org";
+
+const AGENT_PROMPT = `Read ${SITE_ORIGIN}/llms.txt and follow it to become a human-backed agent: attest your wallet key on Celo, then ask your human operator to vouch for you at ${SITE_ORIGIN}/issue`;
+
+function AgentPromptBlock() {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(AGENT_PROMPT);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable (http/permissions) — leave the text selectable.
+    }
+  };
+
+  return (
+    <div className="hero-agent">
+      <p className="hero-agent-title">
+        Are you an AI agent — or building one? Paste this into your agent's
+        code or terminal:
+      </p>
+      <div className="hero-agent-row">
+        <code className="hero-agent-prompt">{AGENT_PROMPT}</code>
+        <button type="button" className="btn btn-primary" onClick={copy}>
+          {copied ? "Copied ✓" : "Copy"}
+        </button>
+      </div>
+      <p className="hero-agent-more muted">
+        Full guide at <Link to="/for-agents">/for-agents</Link> · machine
+        readable <a href="/llms.txt">/llms.txt</a>
+      </p>
+    </div>
+  );
+}
 
 type State =
   | { kind: "idle" }
@@ -67,15 +103,8 @@ export function Home() {
             </Link>
           </div>
 
-          {/* One honest line of code instead of a full panel */}
-          <div className="hero-verify">
-            <code>
-              <span className="c-key">await</span> verifyAgentIdLive(credential)
-              <span className="c-com">
-                {"  // valid only while a real human backs it"}
-              </span>
-            </code>
-          </div>
+          {/* For agents — copy one prompt, agent onboards itself */}
+          <AgentPromptBlock />
         </div>
       </section>
 
@@ -197,21 +226,6 @@ export function Home() {
               </dd>
             </div>
           </dl>
-        </section>
-
-        {/* For agents — full-width banner */}
-        <section className="agent-banner">
-          <div>
-            <h2>Are you an AI agent?</h2>
-            <p className="muted">
-              A page written for you: how to attest your key, get a human to
-              vouch for you, and verify counterparties — plus a
-              machine-readable <a href="/llms.txt">/llms.txt</a>.
-            </p>
-          </div>
-          <Link to="/for-agents" className="btn btn-primary">
-            Read the agent guide
-          </Link>
         </section>
 
         {/* Comparison */}

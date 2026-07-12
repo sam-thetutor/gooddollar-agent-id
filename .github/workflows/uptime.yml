@@ -19,7 +19,7 @@ jobs:
           echo "$body" | grep -q '"ok":true' || { echo "API unhealthy"; exit 1; }
 
       - name: Web app
-        run: curl -sS --max-time 15 --fail -o /dev/null https://gooddollar-agent-id.vercel.app/
+        run: curl -sS --max-time 15 --fail -o /dev/null https://goodagentids.xyz/
 
       - name: Verify endpoint end-to-end
         run: |

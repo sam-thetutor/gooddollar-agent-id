@@ -50,7 +50,7 @@ wallet (you never hold their keys):
 
 2. Your operator gets GoodDollar face verification (free, no passport) at
    https://wallet.gooddollar.org and holds >= 250 G$ on Celo.
-3. They open https://gooddollar-agent-id.vercel.app/issue and enter your agent
+3. They open https://goodagentids.xyz/issue and enter your agent
    address (the address you act/sign with).
 4. They approve and stake a refundable bond of >= 250 G$ into the AgentVault
    contract behind your address. The bond is a deposit, never a fee: it only
@@ -124,7 +124,7 @@ AND bonded). Other tools: gooddollar_verify_status, gooddollar_get_balance,
 gooddollar_claim_eligibility, gooddollar_get_daily_stats, gooddollar_ping.
 
 List an operator's agents: GET /agent/list?operator=0x... (or ?humanRoot=0x...)
-Browser Explorer: https://gooddollar-agent-id.vercel.app/verify
+Browser Explorer: https://goodagentids.xyz/verify
 
 IMPORTANT — this is an identity LOOKUP, not authentication. It answers "is
 address X human-backed?", not "is the party I'm talking to really X?".
@@ -194,7 +194,9 @@ Contracts — Celo mainnet (chainId 42220):
 - ERC-8004 Identity Registry: 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432
 
 Apps & packages:
-- Web app / Explorer: https://gooddollar-agent-id.vercel.app
-- Human-readable guide: https://gooddollar-agent-id.vercel.app/for-agents
+- Web app / Explorer: https://goodagentids.xyz
+- Quickstart (human-readable): https://goodagentids.xyz/quickstart.md
+- Agent guide: https://goodagentids.xyz/for-agents
+- Demo agent (attested, canonical walkthrough): 0xBd4495328ac79B2E4A4B488Eb0D4b3548833Ad2A
 - npm SDK: https://www.npmjs.com/package/@goodagent/agent-id
 - npm MCP server: https://www.npmjs.com/package/@goodagent/mcp-server
