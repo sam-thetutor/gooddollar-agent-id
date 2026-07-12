@@ -1,12 +1,29 @@
 /** Host supervisor API (autonomous deploy). */
-const HOST_BASE =
-  (import.meta.env.VITE_HOST_BASE_URL as string | undefined)?.trim() ||
-  (import.meta.env.DEV ? "http://localhost:3002" : "/host");
+import type { DeployControlAuth } from "@goodagent/shared";
 
-/** Deploy list reads DB — use production in local dev when Postgres isn't reachable. */
-const HOST_LIST_BASE =
-  (import.meta.env.VITE_HOST_LIST_BASE_URL as string | undefined)?.trim() ||
-  (import.meta.env.DEV ? "https://gcopilot-api.geinz.lol/host" : HOST_BASE);
+/** Ignore localhost URLs from .env — use production host in dev, same-origin /host in prod. */
+function resolveHostBase(): string {
+  const configured = import.meta.env.VITE_HOST_BASE_URL?.trim();
+  if (configured && !/localhost|127\.0\.0\.1/.test(configured)) {
+    return configured;
+  }
+  if (import.meta.env.DEV) {
+    return "https://gcopilot-api.geinz.lol/host";
+  }
+  return "/host";
+}
+
+const HOST_BASE = resolveHostBase();
+
+function resolveHostListBase(): string {
+  const configured = import.meta.env.VITE_HOST_LIST_BASE_URL?.trim();
+  if (configured && !/localhost|127\.0\.0\.1/.test(configured)) {
+    return configured;
+  }
+  return HOST_BASE;
+}
+
+const HOST_LIST_BASE = resolveHostListBase();
 
 export interface DeployAgent {
   id: string;
@@ -30,6 +47,7 @@ export interface DeployStatusResponse {
   skillId?: string | null;
   configuration?: string | null;
   status: string;
+  ownerWallet?: string | null;
   agentAddress: string | null;
   pm2Name: string | null;
   lastError: string | null;
@@ -148,13 +166,13 @@ export function createDeploy(input: {
 
 export function runDeployPipeline(
   deployId: string,
-  opts?: { skipIdentity?: boolean },
+  opts: DeployControlAuth,
 ) {
   return hostFetch<{ accepted: boolean; deployId: string }>(
     `/deploy/${deployId}/run-pipeline`,
     {
       method: "POST",
-      body: JSON.stringify(opts ?? {}),
+      body: JSON.stringify(opts),
     },
   );
 }
@@ -171,26 +189,33 @@ export function listDeploysByOwner(ownerWallet: string) {
   );
 }
 
-export function stopDeploy(deployId: string) {
+export function stopDeploy(deployId: string, auth: DeployControlAuth) {
   return hostFetch<{ agent: DeployAgent }>(`/deploy/${deployId}/stop`, {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify(auth),
   });
 }
 
-export function startDeploy(deployId: string) {
-  return hostFetch<{ agent: DeployAgent }>(`/deploy/${deployId}/start`, {
+export function startDeploy(deployId: string, auth: DeployControlAuth) {
+  return hostFetch<
+    | { agent: DeployAgent }
+    | { accepted: boolean; reprovisioning: boolean; deployId: string }
+  >(`/deploy/${deployId}/start`, {
     method: "POST",
-    body: "{}",
+    body: JSON.stringify(auth),
   });
 }
 
-export function setDeployBaseline(deployId: string, balanceGs: number) {
+export function setDeployBaseline(
+  deployId: string,
+  balanceGs: number,
+  auth: DeployControlAuth,
+) {
   return hostFetch<{ ok: boolean; balanceGs: number }>(
     `/deploy/${deployId}/baseline`,
     {
       method: "POST",
-      body: JSON.stringify({ balanceGs }),
+      body: JSON.stringify({ balanceGs, ...auth }),
     },
   );
 }

@@ -13,8 +13,10 @@ export type { AgentWalletMeta } from "./wallet.js";
 
 export {
   fundAgentCelo,
+  fundAgentGDollar,
   relayAttestation,
   issueAgentCredential,
+  assertAgentPlayReady,
 } from "./identity.js";
 export type { IssueResult } from "./identity.js";
 
@@ -56,6 +58,7 @@ export {
   runDeployPipeline,
   runClaimBotPipeline,
   stopDeployedAgent,
+  startDeployedAgent,
   restartDeployedAgent,
   pm2ProcessSnapshot,
 } from "./pipeline.js";

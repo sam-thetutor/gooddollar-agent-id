@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useAccount } from "wagmi";
+import { useAccount, useSignMessage } from "wagmi";
 import { ConnectButton, Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import {
@@ -11,6 +11,7 @@ import {
   type DeployStatusResponse,
   type SkillConfiguration,
 } from "../lib/host.js";
+import { signDeployControl } from "../lib/deploy-control.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 const REGISTRY_URL =
@@ -43,7 +44,7 @@ async function fetchRegistry(): Promise<Registry> {
 
 const STEPS = [
   { id: "create", label: "Create job" },
-  { id: "wallet", label: "Wallet & attest" },
+  { id: "wallet", label: "Fund & verify" },
   { id: "install", label: "Install skill" },
   { id: "start", label: "Go live" },
 ] as const;
@@ -289,12 +290,10 @@ function SkillPickCard({
 function DeployPipeline({
   status,
   deployId,
-  skipIdentity,
   onRetry,
 }: {
   status: DeployStatusResponse;
   deployId: string;
-  skipIdentity: boolean;
   onRetry: () => void;
 }) {
   const current = stepIndex(status.status, status.pipelineRunning);
@@ -366,8 +365,10 @@ function DeployPipeline({
         {status.pipelineRunning && (
           <span className="muted hint">Running pipeline…</span>
         )}
-        {!skipIdentity && !done && (
-          <span className="muted hint">Issuing GoodAgent ID on-chain</span>
+        {!done && (
+          <span className="muted hint">
+            Funding play wallet, attesting key, and locking 250 G$ vault bond
+          </span>
         )}
       </div>
     </section>
@@ -381,6 +382,7 @@ export function Deploy() {
   );
 
   const { address, isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const { data: registry, isLoading: registryLoading } = useQuery({
     queryKey: ["skills-registry"],
     queryFn: fetchRegistry,
@@ -397,7 +399,6 @@ export function Deploy() {
   const [config, setConfig] = useState<SkillConfiguration>(() =>
     defaultConfigForSkill(DEFAULT_SKILL_ID),
   );
-  const [skipIdentity, setSkipIdentity] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deployId, setDeployId] = useState<string | null>(null);
@@ -445,7 +446,13 @@ export function Deploy() {
         skipPayment: true,
       });
       setDeployId(agent.id);
-      await runDeployPipeline(agent.id, { skipIdentity });
+      const auth = await signDeployControl(
+        "run-pipeline",
+        agent.id,
+        address,
+        (args) => signMessageAsync(args),
+      );
+      await runDeployPipeline(agent.id, auth);
       await poll(agent.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -464,8 +471,8 @@ export function Deploy() {
           <p className="eyebrow">Autonomous deploy</p>
           <h1>Deploy a gaming agent</h1>
           <p className="lede">
-            We provision a wallet, install a skill from the registry, and keep
-            your agent running 24/7 on our supervisor.
+            We provision a wallet, fund it with 200 G$ + gas, lock your 250 G$
+            refundable vault bond, and keep your agent running 24/7.
           </p>
         </header>
 
@@ -535,8 +542,9 @@ export function Deploy() {
                   <h2 className="card-title">3 · Play settings</h2>
                   {selectedSkill?.spends_tokens ? (
                     <p className="muted hint deploy-section-hint">
-                      This skill wagers G$ on-chain. Set conservative limits —
-                      your agent stops when the daily cap is hit.
+                      We fund your agent play wallet with 200 G$ + 1 CELO for
+                      gas. You lock a refundable 250 G$ bond in AgentVault
+                      before it can wager. Set conservative limits below.
                     </p>
                   ) : (
                     <p className="muted hint deploy-section-hint">
@@ -551,22 +559,6 @@ export function Deploy() {
                   {skillId === "gaming/card-fighter/actionorder_vshouse" && (
                     <ActionorderFields config={config} onChange={updateConfig} />
                   )}
-
-                  <div className="deploy-advanced">
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={skipIdentity}
-                        onChange={(e) => setSkipIdentity(e.target.checked)}
-                        disabled={formLocked}
-                      />
-                      <span>
-                        <strong>Skip Agent ID issuance</strong> — wallet and
-                        supervisor only. Use if your operator hit the 10-agent
-                        cap.
-                      </span>
-                    </label>
-                  </div>
 
                   {error && <p className="error">{error}</p>}
 
@@ -588,12 +580,27 @@ export function Deploy() {
               <DeployPipeline
                 status={status}
                 deployId={deployId}
-                skipIdentity={skipIdentity}
-                onRetry={() =>
-                  void runDeployPipeline(deployId, { skipIdentity }).then(() =>
-                    poll(deployId),
-                  )
-                }
+                onRetry={() => {
+                  if (!address || !deployId) return;
+                  void (async () => {
+                    setBusy(true);
+                    setError(null);
+                    try {
+                      const auth = await signDeployControl(
+                        "run-pipeline",
+                        deployId,
+                        address,
+                        (args) => signMessageAsync(args),
+                      );
+                      await runDeployPipeline(deployId, auth);
+                      await poll(deployId);
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setBusy(false);
+                    }
+                  })();
+                }}
               />
             )}
           </>

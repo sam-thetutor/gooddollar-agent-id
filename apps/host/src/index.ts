@@ -22,14 +22,16 @@ import {
   getRuntimeConfig,
   loadRuntimeEnv,
   pm2ProcessSnapshot,
-  restartDeployedAgent,
   runDeployPipeline,
+  startDeployedAgent,
   stopDeployedAgent,
   setDeployBaselineBalance,
+  assertAgentPlayReady,
   type PipelineStatus,
 } from "@goodagent/runtime";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { verifyDeployControl } from "./deploy-control-auth.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rootEnv = resolve(here, "../../../.env");
@@ -71,6 +73,61 @@ function internalAuth(c: { req: { header: (name: string) => string | undefined }
 
 function pipelineToDeployStatus(status: PipelineStatus): DeployStatus {
   return status;
+}
+
+async function scheduleDeployPipeline(
+  id: string,
+  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
+  opts: { skipIdentity?: boolean; dryRun?: boolean },
+): Promise<void> {
+  const primarySkill = agent.skills[0];
+  if (!primarySkill) {
+    throw new Error("NO_SKILLS");
+  }
+
+  runningPipelines.add(id);
+  try {
+    loadRuntimeEnv();
+    const config = getRuntimeConfig();
+    const minDerivationIndex = await maxWalletDerivationIndex();
+    await runDeployPipeline(
+      config,
+      {
+        deployId: id,
+        displayName: agent.displayName,
+        template: agent.template,
+        skillId: primarySkill.skillId,
+        skillConfiguration: parseDeployConfiguration(agent),
+        skipIdentity: opts.skipIdentity,
+        dryRun: opts.dryRun,
+        minDerivationIndex,
+        resume:
+          agent.agentAddress && agent.walletDerivationIndex != null
+            ? {
+                agentAddress: agent.agentAddress as `0x${string}`,
+                walletDerivationIndex: agent.walletDerivationIndex,
+              }
+            : undefined,
+      },
+      {
+        onStatus: async (status, fields) => {
+          await updateDeployedAgent(id, {
+            status: pipelineToDeployStatus(status),
+            ...fields,
+          });
+        },
+      },
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[host] pipeline failed for ${id}:`, err);
+    await updateDeployedAgent(id, { status: "failed", lastError: message }).catch(
+      () => undefined,
+    );
+    throw err;
+  } finally {
+    runningPipelines.delete(id);
+  }
 }
 
 function publicAgent<T extends { telegramBotTokenEnc?: string | null }>(
@@ -203,6 +260,7 @@ app.get("/deploy/:id/status", async (c) => {
     skillId: agent.skills[0]?.skillId ?? null,
     configuration: agent.configuration,
     status: agent.status,
+    ownerWallet: agent.ownerWallet,
     agentAddress: agent.agentAddress,
     pm2Name: agent.pm2Name,
     lastHeartbeatAt: agent.lastHeartbeatAt,
@@ -247,14 +305,33 @@ app.post("/deploy/:id/skip-payment", async (c) => {
 app.post("/deploy/:id/run-pipeline", async (c) => {
   const id = c.req.param("id");
   const body = (await c.req
-    .json<{ skipIdentity?: boolean; dryRun?: boolean }>()
+    .json<{ skipIdentity?: boolean; dryRun?: boolean } & Record<string, unknown>>()
     .catch(() => ({ skipIdentity: undefined, dryRun: undefined }))) as {
     skipIdentity?: boolean;
     dryRun?: boolean;
-  };
+  } & Record<string, unknown>;
 
   const agent = await getDeployedAgent(id);
   if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const authErr = await verifyDeployControl(
+    "run-pipeline",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  if (body.skipIdentity) {
+    return c.json(
+      {
+        error: "SKIP_IDENTITY_DISABLED",
+        message:
+          "Agent ID verification is required. Lock the 250 G$ vault bond before play.",
+      },
+      400,
+    );
+  }
 
   const runnable: DeployStatus[] = ["provisioning", "failed"];
   if (agent.status === "provisioning" && !runningPipelines.has(id)) {
@@ -274,57 +351,10 @@ app.post("/deploy/:id/run-pipeline", async (c) => {
     return c.json({ error: "NO_SKILLS" }, 400);
   }
 
-  runningPipelines.add(id);
-  void (async () => {
-    try {
-      loadRuntimeEnv();
-      let config;
-      try {
-        config = getRuntimeConfig();
-      } catch (cfgErr) {
-        const message = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
-        await updateDeployedAgent(id, { status: "failed", lastError: message });
-        throw cfgErr;
-      }
-      const minDerivationIndex = await maxWalletDerivationIndex();
-      await runDeployPipeline(
-        config,
-        {
-          deployId: id,
-          displayName: agent.displayName,
-          template: agent.template,
-          skillId: primarySkill.skillId,
-          skillConfiguration: parseDeployConfiguration(agent),
-          skipIdentity: body.skipIdentity,
-          dryRun: body.dryRun,
-          minDerivationIndex,
-          resume:
-            agent.agentAddress && agent.walletDerivationIndex != null
-              ? {
-                  agentAddress: agent.agentAddress as `0x${string}`,
-                  walletDerivationIndex: agent.walletDerivationIndex,
-                }
-              : undefined,
-        },
-        {
-          onStatus: async (status, fields) => {
-            await updateDeployedAgent(id, {
-              status: pipelineToDeployStatus(status),
-              ...fields,
-            });
-          },
-        },
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[host] pipeline failed for ${id}:`, err);
-      await updateDeployedAgent(id, { status: "failed", lastError: message }).catch(
-        () => undefined,
-      );
-    } finally {
-      runningPipelines.delete(id);
-    }
-  })();
+  void scheduleDeployPipeline(id, agent, {
+    skipIdentity: false,
+    dryRun: body.dryRun,
+  }).catch(() => undefined);
 
   return c.json({ accepted: true, deployId: id }, 202);
 });
@@ -341,8 +371,15 @@ app.post("/deploy/:id/heartbeat", async (c) => {
 
 app.post("/deploy/:id/stop", async (c) => {
   const id = c.req.param("id");
+  const body = (await c.req.json<Record<string, unknown>>().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
   const agent = await getDeployedAgent(id);
   if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const authErr = await verifyDeployControl("pause", id, agent.ownerWallet, body);
+  if (authErr) return c.json({ error: authErr }, 401);
 
   if (agent.pm2Name) {
     try {
@@ -358,25 +395,71 @@ app.post("/deploy/:id/stop", async (c) => {
 
 app.post("/deploy/:id/start", async (c) => {
   const id = c.req.param("id");
+  const body = (await c.req.json<Record<string, unknown>>().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
   const agent = await getDeployedAgent(id);
   if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const authErr = await verifyDeployControl("resume", id, agent.ownerWallet, body);
+  if (authErr) return c.json({ error: authErr }, 401);
 
   if (!agent.pm2Name) {
     return c.json({ error: "NOT_PROVISIONED" }, 409);
   }
 
-  try {
-    restartDeployedAgent(id);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: "PM2_START_FAILED", message }, 500);
+  if (runningPipelines.has(id)) {
+    return c.json({ error: "PIPELINE_ALREADY_RUNNING" }, 409);
   }
 
-  const updated = await updateDeployedAgent(id, {
-    status: "running",
-    lastError: null,
-  });
-  return c.json({ agent: updated });
+  loadRuntimeEnv();
+  let config;
+  try {
+    config = getRuntimeConfig();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "HOST_CONFIG", message }, 500);
+  }
+
+  try {
+    if (agent.agentAddress) {
+      await assertAgentPlayReady(config, agent.agentAddress as `0x${string}`);
+    }
+    startDeployedAgent(config, id);
+    const updated = await updateDeployedAgent(id, {
+      status: "running",
+      lastError: null,
+    });
+    return c.json({ agent: updated });
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code !== "AGENT_NOT_PROVISIONED") {
+      const message = err instanceof Error ? err.message : String(err);
+      const notVerified =
+        message.includes("not attested") ||
+        message.includes("bond insufficient") ||
+        message.includes("verification is required");
+      return c.json(
+        { error: notVerified ? "AGENT_NOT_VERIFIED" : "PM2_START_FAILED", message },
+        notVerified ? 403 : 500,
+      );
+    }
+
+    if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+      return c.json(
+        {
+          error: "NOT_PROVISIONED",
+          message: "Agent was never provisioned on this host.",
+        },
+        409,
+      );
+    }
+
+    void scheduleDeployPipeline(id, agent, { skipIdentity: false }).catch(() => undefined);
+    await updateDeployedAgent(id, { status: "provisioning", lastError: null });
+    return c.json({ accepted: true, reprovisioning: true, deployId: id }, 202);
+  }
 });
 
 app.post("/deploy/:id/baseline", async (c) => {
@@ -384,7 +467,10 @@ app.post("/deploy/:id/baseline", async (c) => {
   const agent = await getDeployedAgent(id);
   if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
 
-  const body = await c.req.json<{ balanceGs?: number }>();
+  const body = await c.req.json<{ balanceGs?: number } & Record<string, unknown>>();
+  const authErr = await verifyDeployControl("baseline", id, agent.ownerWallet, body);
+  if (authErr) return c.json({ error: authErr }, 401);
+
   const balanceGs = body.balanceGs;
   if (balanceGs == null || !Number.isFinite(balanceGs) || balanceGs < 0) {
     return c.json({ error: "balanceGs must be a non-negative number" }, 400);

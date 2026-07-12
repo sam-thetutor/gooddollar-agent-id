@@ -29,6 +29,10 @@ rsync -az \
 rsync -az --delete \
   --exclude node_modules \
   --exclude dist \
+  "${ROOT}/packages/shared/" "${REMOTE}:${REMOTE_ROOT}/packages/shared/"
+rsync -az --delete \
+  --exclude node_modules \
+  --exclude dist \
   "${ROOT}/packages/agent-id/" "${REMOTE}:${REMOTE_ROOT}/packages/agent-id/"
 rsync -az --delete \
   --exclude node_modules \
@@ -62,6 +66,8 @@ KEYS=(
   OPERATOR_PRIVATE_KEY
   ENCRYPTION_SECRET
   HOST_INTERNAL_SECRET
+  AGENT_INITIAL_GS
+  AGENT_INITIAL_CELO
 )
 
 append_or_replace() {
@@ -83,6 +89,8 @@ append_or_replace AGENTS_ROOT "$AGENTS_ROOT" "$REMOTE_ENV"
 append_or_replace API_BASE "https://gcopilot-api.geinz.lol" "$REMOTE_ENV"
 append_or_replace HOST_PORT "3010" "$REMOTE_ENV"
 append_or_replace HOST_DEV_SKIP_PAYMENT "1" "$REMOTE_ENV"
+append_or_replace AGENT_INITIAL_GS "200" "$REMOTE_ENV"
+append_or_replace AGENT_INITIAL_CELO "1" "$REMOTE_ENV"
 REMOTE_SCRIPT
 
 # Copy secret values from local .env
@@ -101,6 +109,8 @@ PRIVATE_KEY
 OPERATOR_PRIVATE_KEY
 ENCRYPTION_SECRET
 HOST_INTERNAL_SECRET
+AGENT_INITIAL_GS
+AGENT_INITIAL_CELO
 KEYS
 
 echo "==> install, db push, build on VPS"
@@ -109,8 +119,9 @@ set -euo pipefail
 export PATH="\$HOME/.local/share/pnpm:\$HOME/.npm-global/bin:\$PATH"
 cd /home/geinz/gcopilot
 command -v pnpm >/dev/null || npm i -g pnpm@9.15.0
-pnpm install --filter @goodagent/host... --filter @goodagent/runtime... --filter @goodagent/db...
+pnpm install --filter @goodagent/host... --filter @goodagent/runtime... --filter @goodagent/db... --filter @goodagent/shared...
 pnpm --filter @goodagent/db exec dotenv -e ../../.env -- prisma db push --accept-data-loss
+pnpm --filter @goodagent/shared build
 pnpm --filter @goodagent/db build
 pnpm --filter @goodagent/runtime build
 pnpm --filter @goodagent/host build
@@ -125,10 +136,11 @@ cd /home/geinz/gcopilot/apps/host
 if pm2 describe goodagent-host >/dev/null 2>&1; then
   pm2 delete goodagent-host || true
 fi
-HOST_PORT=${HOST_PORT} pm2 start dist/index.js --name goodagent-host --cwd /home/geinz/gcopilot/apps/host
+# App loads /home/geinz/gcopilot/.env via dotenv — do not \`source\` it (mnemonic breaks bash).
+pm2 start dist/index.js --name goodagent-host --cwd /home/geinz/gcopilot/apps/host
 pm2 save
-sleep 2
-curl -sf "http://127.0.0.1:${HOST_PORT}/health"
+sleep 3
+curl -sf "http://127.0.0.1:3010/health"
 REMOTE_PM2
 
 echo "==> VPS host healthy on port ${HOST_PORT}"

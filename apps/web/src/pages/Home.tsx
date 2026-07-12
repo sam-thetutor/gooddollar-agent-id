@@ -96,7 +96,7 @@ export function Home() {
                 Issue an Agent ID
               </Link>
             ) : (
-              <ConnectButton />
+              <ConnectButton className="btn-lg" />
             )}
             <Link to="/verify" className="btn btn-ghost btn-lg">
               Verify an agent

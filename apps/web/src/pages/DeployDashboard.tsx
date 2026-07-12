@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useAccount, useSignMessage } from "wagmi";
 import { Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { API_ORIGIN } from "../lib/site.js";
@@ -11,6 +12,7 @@ import {
   stopDeploy,
   type DeployStatusResponse,
 } from "../lib/host.js";
+import { isDeployOwner, signDeployControl } from "../lib/deploy-control.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 type HealthState = "live" | "paused" | "stopped" | "failed" | "deploying" | "unknown";
@@ -127,6 +129,8 @@ function secondsAgo(iso: Date): number {
 
 export function DeployDashboard() {
   const { id } = useParams<{ id: string }>();
+  const { address, isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const [status, setStatus] = useState<DeployStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -189,6 +193,23 @@ export function DeployDashboard() {
     return Math.round((perf.wins / perf.gamesPlayed) * 100);
   }, [perf]);
 
+  const canControl = isDeployOwner(address, status?.ownerWallet);
+
+  const signControl = useCallback(
+    async (action: "pause" | "resume" | "baseline" | "run-pipeline") => {
+      if (!id || !address) {
+        throw new Error("Connect the owner wallet to control this agent.");
+      }
+      if (!canControl) {
+        throw new Error("Only the deploy owner wallet can control this agent.");
+      }
+      return signDeployControl(action, id, address, (args) =>
+        signMessageAsync(args),
+      );
+    },
+    [address, canControl, id, signMessageAsync],
+  );
+
   const nextMatchIn = useMemo(() => {
     void tick;
     if (health !== "live") return null;
@@ -236,7 +257,8 @@ export function DeployDashboard() {
     }
     setBaselineBusy(true);
     try {
-      await setDeployBaseline(id, n);
+      const auth = await signControl("baseline");
+      await setDeployBaseline(id, n, auth);
       setShowBaselineForm(false);
       setBaselineInput("");
       await refresh();
@@ -298,35 +320,52 @@ export function DeployDashboard() {
               <span className="deploy-console-sticky-balance tabular">
                 {gBalance} G$
               </span>
-              {health === "live" ? (
+              {canControl && health === "live" ? (
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  disabled={busy}
+                  disabled={busy || !isConnected}
                   onClick={() => {
                     setBusy(true);
-                    void stopDeploy(id)
+                    void signControl("pause")
+                      .then((auth) => stopDeploy(id!, auth))
                       .then(() => refresh())
+                      .catch((e) =>
+                        setError(e instanceof Error ? e.message : String(e)),
+                      )
                       .finally(() => setBusy(false));
                   }}
                 >
                   Pause
                 </button>
-              ) : (
+              ) : canControl ? (
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
-                  disabled={busy || !status.pm2Name}
+                  disabled={busy || !status.pm2Name || !isConnected}
                   onClick={() => {
                     setBusy(true);
-                    void startDeploy(id)
+                    void signControl("resume")
+                      .then((auth) => startDeploy(id!, auth))
+                      .then((res) => {
+                        if ("reprovisioning" in res && res.reprovisioning) {
+                          setError(
+                            "Re-provisioning agent on the server — this may take a minute…",
+                          );
+                        } else {
+                          setError(null);
+                        }
+                      })
                       .then(() => refresh())
+                      .catch((e) =>
+                        setError(e instanceof Error ? e.message : String(e)),
+                      )
                       .finally(() => setBusy(false));
                   }}
                 >
                   Resume
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -376,15 +415,19 @@ export function DeployDashboard() {
                 </p>
               </div>
               <div className="deploy-console-actions">
-                {status.status === "failed" && (
+                {status.status === "failed" && canControl && (
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
-                    disabled={busy}
+                    disabled={busy || !isConnected}
                     onClick={() => {
                       setBusy(true);
-                      void runDeployPipeline(id)
+                      void signControl("run-pipeline")
+                        .then((auth) => runDeployPipeline(id, auth))
                         .then(() => refresh())
+                        .catch((e) =>
+                          setError(e instanceof Error ? e.message : String(e)),
+                        )
                         .finally(() => setBusy(false));
                     }}
                   >
@@ -447,6 +490,7 @@ export function DeployDashboard() {
                   <small>G$</small>
                 </span>
                 {walletPnL?.baselineBalanceGs == null &&
+                  canControl &&
                   (showBaselineForm ? (
                     <span className="deploy-baseline-form">
                       <input

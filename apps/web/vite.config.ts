@@ -24,9 +24,8 @@ export default defineConfig(({ mode }) => {
           rewrite: (p) => p.replace(/^\/api/, ""),
         },
         "/host": {
-          target: "http://localhost:3002",
+          target: apiProxyTarget,
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/host/, ""),
         },
       },
     },

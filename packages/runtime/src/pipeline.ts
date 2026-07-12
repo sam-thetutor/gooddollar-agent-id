@@ -1,8 +1,10 @@
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
 import type { LocalAccount } from "viem/accounts";
 import type { RuntimeConfig } from "./config.js";
-import { fundAgentCelo, issueAgentCredential, relayAttestation } from "./identity.js";
+import { fundAgentCelo, fundAgentGDollar, issueAgentCredential, relayAttestation, assertAgentPlayReady } from "./identity.js";
 import {
   isPm2Available,
   pm2ProcessName,
@@ -21,6 +23,7 @@ import {
   deriveAgentAccount,
   deriveAgentPrivateKey,
   writeAgentMeta,
+  agentDir,
 } from "./wallet.js";
 
 export type PipelineStatus =
@@ -120,16 +123,33 @@ export async function runDeployPipeline(
     });
 
     await fundAgentCelo(config, agentAddress);
+    await fundAgentGDollar(config, agentAddress);
+    writeBaselineIfAbsent(
+      config.agentsRoot,
+      deployId,
+      config.agentInitialGs,
+      "snapshot",
+    );
 
     let identityIssued = false;
     let verifyUrl: string | undefined;
 
-    if (!input.skipIdentity) {
-      await relayAttestation(config, account as LocalAccount);
-      const issue = await issueAgentCredential(config, agentAddress);
-      identityIssued = issue.issued;
-      verifyUrl = issue.verifyUrl;
+    if (input.skipIdentity) {
+      throw new Error(
+        "Agent ID verification is required — deploy cannot skip vault bond or attestation",
+      );
     }
+
+    await relayAttestation(config, account as LocalAccount);
+    const issue = await issueAgentCredential(config, agentAddress, { required: true });
+    identityIssued = issue.issued;
+    verifyUrl = issue.verifyUrl;
+
+    if (!identityIssued) {
+      throw new Error("GoodAgent ID issuance failed — agent cannot play without verification");
+    }
+
+    await assertAgentPlayReady(config, agentAddress);
 
     await hooks.onStatus("installing", { agentAddress, walletDerivationIndex: index, pm2Name });
 
@@ -185,7 +205,7 @@ export async function runDeployPipeline(
           writeBaselineIfAbsent(config.agentsRoot, deployId, gs, "snapshot");
         }
       } catch {
-        // Baseline can be set manually after funding.
+        // Baseline was set after platform funding.
       }
     }
 
@@ -210,11 +230,58 @@ export async function runDeployPipeline(
 export const runClaimBotPipeline = runDeployPipeline;
 
 export function stopDeployedAgent(deployId: string): void {
-  pm2Stop(pm2ProcessName(deployId));
+  try {
+    pm2Stop(pm2ProcessName(deployId));
+  } catch {
+    // Process may already be stopped or never started.
+  }
 }
 
-export function restartDeployedAgent(deployId: string): void {
-  pm2Restart(pm2ProcessName(deployId));
+/** Start or restart PM2 for a deploy; cold-starts from ecosystem when needed. */
+export function startDeployedAgent(
+  config: RuntimeConfig,
+  deployId: string,
+): "started" | "restarted" {
+  const name = pm2ProcessName(deployId);
+  const ecoPath = resolve(
+    agentDir(config.agentsRoot, deployId),
+    "ecosystem.config.cjs",
+  );
+
+  if (!isPm2Available()) {
+    throw new Error("pm2 not found in PATH");
+  }
+
+  const snap = pm2ProcessSnapshot(name);
+  if (snap) {
+    if (snap.online) {
+      pm2Restart(name);
+      return "restarted";
+    }
+    execSync(`pm2 start ${JSON.stringify(name)}`, {
+      stdio: "inherit",
+      encoding: "utf8",
+    });
+    return "started";
+  }
+
+  if (existsSync(ecoPath)) {
+    pm2Start(ecoPath);
+    return "started";
+  }
+
+  const err = new Error(
+    "Agent files are missing on this host. Re-provision from the dashboard.",
+  );
+  (err as { code?: string }).code = "AGENT_NOT_PROVISIONED";
+  throw err;
+}
+
+export function restartDeployedAgent(
+  config: RuntimeConfig,
+  deployId: string,
+): void {
+  startDeployedAgent(config, deployId);
 }
 
 export interface Pm2ProcessSnapshot {

@@ -2,9 +2,11 @@ import {
   createPublicClient,
   createWalletClient,
   formatEther,
+  formatUnits,
   http,
   maxUint256,
   parseEther,
+  parseUnits,
   type Address,
   type Hex,
 } from "viem";
@@ -42,6 +44,16 @@ const erc20Abi = [
     stateMutability: "view",
     inputs: [{ name: "account", type: "address" }],
     outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "transfer",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
   },
 ] as const;
 
@@ -83,7 +95,7 @@ function clients(config: RuntimeConfig) {
 export async function fundAgentCelo(
   config: RuntimeConfig,
   agentAddress: Address,
-  minCelo = "0.05",
+  minCelo = config.agentInitialCelo,
 ): Promise<Hex | null> {
   const { pub } = clients(config);
   const balance = await pub.getBalance({ address: agentAddress });
@@ -134,6 +146,98 @@ export async function fundAgentCelo(
   await pub.waitForTransactionReceipt({ hash });
   console.log(`[fund] tx: ${hash}`);
   return hash;
+}
+
+export async function fundAgentGDollar(
+  config: RuntimeConfig,
+  agentAddress: Address,
+  minGs = config.agentInitialGs,
+): Promise<Hex | null> {
+  const { pub } = clients(config);
+  const targetWei = parseUnits(String(minGs), 18);
+
+  const balance = (await pub.readContract({
+    address: G_DOLLAR,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [agentAddress],
+  })) as bigint;
+
+  if (balance >= targetWei) {
+    console.log(
+      `[fund] ${agentAddress} already has ${formatUnits(balance, 18)} G$`,
+    );
+    return null;
+  }
+
+  const relayer = privateKeyToAccount(config.relayerPrivateKey);
+  const relayerBalance = (await pub.readContract({
+    address: G_DOLLAR,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [relayer.address],
+  })) as bigint;
+
+  const needed = targetWei - balance;
+  if (relayerBalance < needed) {
+    throw new Error(
+      `Relayer ${relayer.address} has ${formatUnits(relayerBalance, 18)} G$ but needs ` +
+        `${formatUnits(needed, 18)} to fund ${agentAddress}. Top up PRIVATE_KEY with more G$.`,
+    );
+  }
+
+  const wallet = createWalletClient({
+    account: relayer,
+    chain: celo,
+    transport: http(config.rpcUrl),
+  });
+
+  console.log(
+    `[fund] sending ${formatUnits(needed, 18)} G$ to ${agentAddress} from ${relayer.address}…`,
+  );
+  const hash = await wallet.writeContract({
+    address: G_DOLLAR,
+    abi: erc20Abi,
+    functionName: "transfer",
+    args: [agentAddress, needed],
+  });
+  await pub.waitForTransactionReceipt({ hash });
+  console.log(`[fund] G$ tx: ${hash}`);
+  return hash;
+}
+
+/** Agent must be attested and carry the full AgentVault bond before wagering. */
+export async function assertAgentPlayReady(
+  config: RuntimeConfig,
+  agentAddress: Address,
+): Promise<void> {
+  const { pub } = clients(config);
+
+  if (!(await isAgentAttested(agentAddress, { rpcUrl: config.rpcUrl }))) {
+    throw new Error(
+      "Agent key is not attested — GoodAgent ID verification is required before play",
+    );
+  }
+
+  const minStake = (await pub.readContract({
+    address: AGENT_VAULT_CELO,
+    abi: vaultAbi,
+    functionName: "minStake",
+  })) as bigint;
+
+  const currentStake = (await pub.readContract({
+    address: AGENT_VAULT_CELO,
+    abi: vaultAbi,
+    functionName: "stakeOf",
+    args: [agentAddress],
+  })) as bigint;
+
+  if (currentStake < minStake) {
+    throw new Error(
+      `Agent vault bond insufficient (${formatUnits(currentStake, 18)} G$ < ` +
+        `${formatUnits(minStake, 18)} G$ required) — lock the refundable bond before play`,
+    );
+  }
 }
 
 export async function relayAttestation(
@@ -209,13 +313,17 @@ export interface IssueResult {
 export async function issueAgentCredential(
   config: RuntimeConfig,
   agentAddress: Address,
+  opts?: { required?: boolean },
 ): Promise<IssueResult> {
   if (!config.operatorPrivateKey) {
+    const verifyUrl = `${config.apiBase.replace(/\/$/, "")}/agent/verify/${agentAddress}`;
+    if (opts?.required) {
+      throw new Error(
+        "OPERATOR_PRIVATE_KEY not set — cannot lock the 250 G$ AgentVault bond",
+      );
+    }
     console.warn("[issue] OPERATOR_PRIVATE_KEY not set — skip bond + credential");
-    return {
-      issued: false,
-      verifyUrl: `${config.apiBase.replace(/\/$/, "")}/agent/verify/${agentAddress}`,
-    };
+    return { issued: false, verifyUrl };
   }
 
   const operator = privateKeyToAccount(config.operatorPrivateKey);
