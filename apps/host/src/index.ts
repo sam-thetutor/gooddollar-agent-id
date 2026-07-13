@@ -13,9 +13,17 @@ import {
   recordHeartbeat,
   skipPaymentForDeploy,
   updateDeployedAgent,
+  appendDeployLogLine,
+  getDeployLogTail,
+  listDeployMatches,
+  recordDeployMatch,
+  recordDeployRefill,
+  syncDeployLogFile,
+  syncGamearenaStateFile,
   type DeployStatus,
 } from "@goodagent/db";
 import {
+  agentDir,
   fetchSkillsRegistry,
   findRegistrySkill,
   getDeployStats,
@@ -245,6 +253,27 @@ app.get("/deploy/:id/status", async (c) => {
       loadRuntimeEnv();
       const config = getRuntimeConfig();
       const skillConfig = parseDeployConfiguration(agent);
+      const deployDir = agentDir(config.agentsRoot, agent.id);
+      const statePath = resolve(
+        deployDir,
+        "skills",
+        "gamearena-player",
+        "state.json",
+      );
+      const logPath = resolve(deployDir, "logs", "out.log");
+
+      if (agent.skills[0]?.skillId?.includes("gamearena")) {
+        await syncGamearenaStateFile(agent.id, statePath).catch((err) => {
+          console.warn(`[host] state sync for ${agent.id}:`, err);
+        });
+        await syncDeployLogFile(agent.id, logPath).catch((err) => {
+          console.warn(`[host] log sync for ${agent.id}:`, err);
+        });
+      }
+
+      const persistedMatches = await listDeployMatches(agent.id).catch(() => []);
+      const persistedLogTail = await getDeployLogTail(agent.id).catch(() => null);
+
       stats = await getDeployStats({
         agentsRoot: config.agentsRoot,
         deployId: agent.id,
@@ -258,6 +287,9 @@ app.get("/deploy/:id/status", async (c) => {
             : skillConfig.PLAY_MODE === "offchain"
               ? "offchain"
               : null,
+        challengeAiUrl: skillConfig.CHALLENGE_AI_URL ?? null,
+        persistedMatches,
+        persistedLogTail,
       });
     } catch (err) {
       console.warn(`[host] stats for ${agent.id}:`, err);
@@ -374,6 +406,62 @@ app.post("/deploy/:id/heartbeat", async (c) => {
 
   const updated = await recordHeartbeat(c.req.param("id"));
   return c.json({ ok: true, lastHeartbeatAt: updated.lastHeartbeatAt });
+});
+
+app.post("/deploy/:id/activity", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+
+  const id = c.req.param("id");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const body = await c.req.json<{
+    type?: string;
+    matchId?: string;
+    gameType?: number;
+    wagerGs?: number;
+    result?: "won" | "lost" | "unresolved";
+    mode?: "offchain" | "onchain";
+    at?: string;
+    priceGs?: number;
+    txHash?: string;
+    message?: string;
+  }>();
+
+  if (body.type === "match") {
+    if (!body.matchId || !body.result || body.gameType == null) {
+      return c.json({ error: "INVALID_MATCH" }, 400);
+    }
+    await recordDeployMatch(id, {
+      matchId: body.matchId,
+      gameType: body.gameType,
+      wagerGs: Number(body.wagerGs ?? 0),
+      result: body.result,
+      mode: body.mode ?? "offchain",
+      at: body.at ?? new Date().toISOString(),
+    });
+    return c.json({ ok: true });
+  }
+
+  if (body.type === "refill") {
+    if (!body.txHash || body.priceGs == null) {
+      return c.json({ error: "INVALID_REFILL" }, 400);
+    }
+    await recordDeployRefill(id, {
+      priceGs: Number(body.priceGs),
+      txHash: body.txHash,
+      at: body.at ?? new Date().toISOString(),
+    });
+    return c.json({ ok: true });
+  }
+
+  if (body.type === "log") {
+    if (!body.message?.trim()) return c.json({ error: "INVALID_LOG" }, 400);
+    await appendDeployLogLine(id, body.message, body.at);
+    return c.json({ ok: true });
+  }
+
+  return c.json({ error: "UNKNOWN_TYPE" }, 400);
 });
 
 app.post("/deploy/:id/stop", async (c) => {

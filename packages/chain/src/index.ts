@@ -31,4 +31,7 @@ export type {
   DailyStatsResult,
   Erc8004AgentResult,
   VerifyStatusResult,
+  IdentityStatusCode,
+  IdentityStatusLabel,
+  IDENTITY_STATUS,
 } from "./reads.js";

@@ -44,21 +44,22 @@ export function ConnectButton({ className }: { className?: string }) {
   );
 }
 
-const AGENTS_LINKS = [
-  { to: "/agents", label: "My Agents", hint: "IDs you issued" },
-  { to: "/deployments", label: "Deployments", hint: "Live supervisors" },
-  { to: "/deploy", label: "Deploy agent", hint: "GameArena & more" },
-  { to: "/issue", label: "Issue Agent ID", hint: "Vouch on-chain" },
+const IDENTITY_LINKS = [
+  { to: "/issue", label: "Issue Agent ID", hint: "Vouch as a verified human" },
+  { to: "/agents", label: "My Agents", hint: "Agent IDs you've issued" },
+  { to: "/verify", label: "Verify", hint: "Check any Agent ID live" },
+  { to: "/explore", label: "Registry", hint: "Browse all vouched agents" },
 ] as const;
 
-const EXPLORE_LINKS = [
-  { to: "/explore", label: "Registry", hint: "All agents" },
-  { to: "/skills", label: "Skills", hint: "Gaming playbooks" },
-  { to: "/for-agents", label: "For agents", hint: "Dev guide" },
+const DEPLOY_LINKS = [
+  { to: "/deploy", label: "Deploy agent", hint: "Spin up a hosted agent" },
+  { to: "/deployments", label: "Deployments", hint: "Your live agents" },
+  { to: "/skills", label: "Skills", hint: "GameArena & playbooks" },
+  { to: "/for-agents", label: "For agents", hint: "Onboarding guide for bots" },
 ] as const;
 
-const AGENTS_PATHS = ["/agents", "/deployments", "/deploy", "/issue", "/manage"];
-const EXPLORE_PATHS = ["/explore", "/skills", "/for-agents"];
+const IDENTITY_PATHS = ["/issue", "/agents", "/verify", "/explore", "/manage"];
+const DEPLOY_PATHS = ["/deploy", "/deployments", "/dashboard", "/skills", "/for-agents"];
 
 export function Nav() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -85,17 +86,14 @@ export function Nav() {
 
         <nav id="site-nav-panel" className="nav-links nav-desktop">
           <NavDropdown
-            label="Agents"
-            paths={AGENTS_PATHS}
-            items={[...AGENTS_LINKS]}
+            label="Identity"
+            paths={IDENTITY_PATHS}
+            items={[...IDENTITY_LINKS]}
           />
-          <NavLink to="/verify" className="nav-link">
-            Verify
-          </NavLink>
           <NavDropdown
-            label="Explore"
-            paths={EXPLORE_PATHS}
-            items={[...EXPLORE_LINKS]}
+            label="Deploy"
+            paths={DEPLOY_PATHS}
+            items={[...DEPLOY_LINKS]}
           />
         </nav>
 
@@ -122,8 +120,8 @@ export function Nav() {
         hidden={!menuOpen}
       >
         <div className="nav-mobile-section">
-          <p className="nav-mobile-label">Agents</p>
-          {AGENTS_LINKS.map((item) => (
+          <p className="nav-mobile-label">Identity</p>
+          {IDENTITY_LINKS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -136,8 +134,8 @@ export function Nav() {
           ))}
         </div>
         <div className="nav-mobile-section">
-          <p className="nav-mobile-label">Explore</p>
-          {EXPLORE_LINKS.map((item) => (
+          <p className="nav-mobile-label">Deploy</p>
+          {DEPLOY_LINKS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -149,14 +147,6 @@ export function Nav() {
             </NavLink>
           ))}
         </div>
-        <NavLink
-          to="/verify"
-          className="nav-mobile-link nav-mobile-link-standalone"
-          onClick={() => setMenuOpen(false)}
-        >
-          <span>Verify an agent</span>
-          <small>Check any Agent ID on-chain</small>
-        </NavLink>
       </div>
 
       {menuOpen && (

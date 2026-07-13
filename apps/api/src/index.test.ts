@@ -71,9 +71,11 @@ vi.mock("@goodagent/chain", () => ({
   getGBalance: async () => ({ balance: "0", balanceFormatted: "0", symbol: "G$" }),
   getVerifyStatus: async (wallet: string) => ({
     wallet,
-    isWhitelisted: false,
-    root: null,
+    isWhitelisted: true,
+    root: wallet,
     expiresAt: null,
+    status: 1,
+    statusLabel: "whitelisted" as const,
   }),
   getClaimEligibility: async (wallet: string) => ({
     wallet,

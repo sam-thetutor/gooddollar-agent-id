@@ -84,10 +84,60 @@ model DeployedAgent {
 
   skills   SkillInstall[]
   payments DeployPayment[]
+  matches  DeployMatch[]
+  refills  DeployRefill[]
+  logLines DeployLogLine[]
 
   @@index([ownerWallet])
   @@index([status])
   @@map("deployed_agents")
+}
+
+// GameArena (and future skills) — durable match ledger per deploy.
+model DeployMatch {
+  id              String   @id @default(cuid())
+  deployedAgentId String   @map("deployed_agent_id")
+  matchId         String   @map("match_id")
+  gameType        Int      @map("game_type")
+  wagerGs         Decimal  @map("wager_gs")
+  result          String
+  mode            String   @default("offchain")
+  playedAt        DateTime @map("played_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  deployedAgent DeployedAgent @relation(fields: [deployedAgentId], references: [id], onDelete: Cascade)
+
+  @@unique([deployedAgentId, matchId])
+  @@index([deployedAgentId, playedAt])
+  @@map("deploy_matches")
+}
+
+model DeployRefill {
+  id              String   @id @default(cuid())
+  deployedAgentId String   @map("deployed_agent_id")
+  priceGs         Decimal  @map("price_gs")
+  txHash          String   @map("tx_hash")
+  refilledAt      DateTime @map("refilled_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  deployedAgent DeployedAgent @relation(fields: [deployedAgentId], references: [id], onDelete: Cascade)
+
+  @@unique([deployedAgentId, txHash])
+  @@index([deployedAgentId, refilledAt])
+  @@map("deploy_refills")
+}
+
+model DeployLogLine {
+  id              String   @id @default(cuid())
+  deployedAgentId String   @map("deployed_agent_id")
+  message         String   @db.Text
+  loggedAt        DateTime @map("logged_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  deployedAgent DeployedAgent @relation(fields: [deployedAgentId], references: [id], onDelete: Cascade)
+
+  @@index([deployedAgentId, loggedAt])
+  @@map("deploy_log_lines")
 }
 
 model SkillInstall {

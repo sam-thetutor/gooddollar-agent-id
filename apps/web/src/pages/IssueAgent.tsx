@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   formatUnits,
   getAddress,
@@ -16,6 +16,11 @@ import {
 } from "wagmi";
 import { Nav, ConnectButton } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
+import { GoodDollarVerifyButton } from "../components/GoodDollarVerifyButton.js";
+import {
+  fvCallbackSearchWithoutFv,
+  parseFvCallback,
+} from "../lib/gooddollar-identity.js";
 import {
   agentIdDomain,
   agentIdTypes,
@@ -32,12 +37,16 @@ import {
   isVaultConfigured,
   VAULT_ADDRESS,
 } from "../lib/vault.js";
-import { getWalletOverview, issueAgent } from "../lib/api.js";
+import { getWalletOverview, issueAgent, type WalletOverview } from "../lib/api.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 const TTL_OPTIONS = [7, 30, 90, 365];
 
-type Identity = { verified: boolean; root: string | null };
+type Identity = {
+  verified: boolean;
+  root: string | null;
+  statusLabel: WalletOverview["verify"]["statusLabel"];
+};
 type AgentSnapshot = readonly [`0x${string}`, bigint, bigint];
 
 export function IssueAgent() {
@@ -51,7 +60,13 @@ export function IssueAgent() {
   const publicClient = usePublicClient();
 
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const deployReturnId = searchParams.get("deploy");
+  const fvCallback = useMemo(
+    () => parseFvCallback(searchParams),
+    [searchParams],
+  );
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [identityError, setIdentityError] = useState(false);
   const [agent, setAgent] = useState(() => searchParams.get("agent") ?? "");
@@ -77,6 +92,7 @@ export function IssueAgent() {
           setIdentity({
             verified: d.verify.isWhitelisted,
             root: d.verify.root,
+            statusLabel: d.verify.statusLabel,
           });
       })
       .catch(() => {
@@ -89,7 +105,23 @@ export function IssueAgent() {
     return () => {
       cancelled = true;
     };
-  }, [isConnected, address]);
+  }, [isConnected, address, fvCallback?.isVerified]);
+
+  useEffect(() => {
+    if (!fvCallback || !identity?.verified) return;
+    const next = fvCallbackSearchWithoutFv(searchParams);
+    const query = next.toString();
+    navigate(
+      { pathname: location.pathname, search: query ? `?${query}` : "" },
+      { replace: true },
+    );
+  }, [
+    fvCallback,
+    identity?.verified,
+    location.pathname,
+    navigate,
+    searchParams,
+  ]);
 
   const agentValid = useMemo(() => isAddress(agent), [agent]);
   const agentAddr = agentValid ? (getAddress(agent) as `0x${string}`) : null;
@@ -305,17 +337,24 @@ export function IssueAgent() {
         <section className="card">
           <p className="warn">You're not GoodDollar-verified yet.</p>
           <p className="muted hint">
-            Issuing requires a verified human root. Verify in the GoodDollar
-            wallet, then come back.
+            Issuing requires a verified human root. You'll sign a short message
+            in your wallet, complete face verification, then return here to
+            issue your Agent ID.
           </p>
-          <a
-            className="btn btn-primary"
-            href="https://wallet.gooddollar.org"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Verify with GoodDollar
-          </a>
+          {fvCallback && (
+            <p
+              className={
+                fvCallback.isVerified ? "ok small hint" : "error small hint"
+              }
+            >
+              {fvCallback.isVerified
+                ? "Face verification passed — checking your on-chain status…"
+                : fvCallback.reason
+                  ? `Verification incomplete: ${fvCallback.reason}`
+                  : "Verification was not completed. Try again when you're ready."}
+            </p>
+          )}
+          <GoodDollarVerifyButton />
         </section>
       )}
 
@@ -334,6 +373,16 @@ export function IssueAgent() {
 
       {isConnected && identity?.verified && !issued && (
         <section className="card form">
+          <p className="muted small hint">
+            GoodDollar identity:{" "}
+            <span className="pill pill-ok">{identity.statusLabel}</span>
+            {identity.root && identity.statusLabel === "connected" && (
+              <>
+                {" "}
+                · root <code>{identity.root}</code>
+              </>
+            )}
+          </p>
           <label className="field">
             <span>Agent address</span>
             <input

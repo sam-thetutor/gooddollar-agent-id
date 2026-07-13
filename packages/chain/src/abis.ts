@@ -52,6 +52,26 @@ export const identityAbi = [
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "identities",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [
+      { name: "dateAuthenticated", type: "uint256" },
+      { name: "dateAdded", type: "uint256" },
+      { name: "did", type: "string" },
+      { name: "whitelistedOnChainId", type: "uint256" },
+      { name: "status", type: "uint8" },
+    ],
+  },
+  {
+    type: "function",
+    name: "isBlacklisted",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
 ] as const;
 
 /** AgentVault — required refundable G$ stake (bond) for Agent IDs (packages/contracts). */

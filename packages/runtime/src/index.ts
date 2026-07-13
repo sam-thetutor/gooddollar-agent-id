@@ -83,6 +83,7 @@ export type {
   GamePerformance,
   WalletPnL,
   MatchRecord,
+  GamearenaLadder,
 } from "./deploy-stats.js";
 
 export {

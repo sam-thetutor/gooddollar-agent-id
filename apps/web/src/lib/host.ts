@@ -119,6 +119,24 @@ export interface DeployStats {
     deltaMismatchGs: number | null;
   } | null;
   logTail: string | null;
+  ladder?: GamearenaLadder | null;
+}
+
+export interface GamearenaLadder {
+  rank: number | null;
+  points: number | null;
+  wins: number | null;
+  matches: number | null;
+  remainingToday: number | null;
+  top: Array<{
+    rank: number;
+    wallet: string;
+    points: number;
+    matches: number;
+    wins: number;
+    username: string | null;
+  }>;
+  error: string | null;
 }
 
 export function getDeploy(deployId: string) {

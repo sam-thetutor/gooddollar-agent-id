@@ -69,11 +69,55 @@ export async function getGBalance(wallet: string): Promise<BalanceResult> {
   }
 }
 
+/** Raw `identities[account].status` on the GoodDollar Identity contract. */
+export const IDENTITY_STATUS = {
+  NONE: 0,
+  WHITELISTED: 1,
+  DAO_CONTRACT: 2,
+  BLACKLISTED: 255,
+} as const;
+
+export type IdentityStatusCode =
+  (typeof IDENTITY_STATUS)[keyof typeof IDENTITY_STATUS];
+
+export type IdentityStatusLabel =
+  | "unverified"
+  | "whitelisted"
+  | "connected"
+  | "expired"
+  | "blacklisted"
+  | "contract";
+
 export interface VerifyStatusResult {
   wallet: string;
+  /** True when the wallet has an active GoodDollar identity (root or connected). */
   isWhitelisted: boolean;
   root: string | null;
   expiresAt: string | null;
+  /** Raw on-chain `identities[wallet].status` (0/1/2/255). */
+  status: IdentityStatusCode;
+  statusLabel: IdentityStatusLabel;
+}
+
+function isZeroAddress(addr: Address): boolean {
+  return /^0x0+$/i.test(addr);
+}
+
+function deriveIdentityStatusLabel(opts: {
+  account: Address;
+  root: Address | null;
+  status: number;
+  active: boolean;
+}): IdentityStatusLabel {
+  if (opts.status === IDENTITY_STATUS.BLACKLISTED) return "blacklisted";
+  if (opts.status === IDENTITY_STATUS.DAO_CONTRACT) return "contract";
+  if (opts.active && opts.root) {
+    return opts.account.toLowerCase() === opts.root.toLowerCase()
+      ? "whitelisted"
+      : "connected";
+  }
+  if (opts.status === IDENTITY_STATUS.WHITELISTED) return "expired";
+  return "unverified";
 }
 
 export async function getVerifyStatus(
@@ -84,13 +128,7 @@ export async function getVerifyStatus(
   const identity = IDENTITY_ADDRESS[CELO_CHAIN_ID];
 
   try {
-    const [isWhitelisted, root, lastAuth, authPeriodDays] = await Promise.all([
-      client.readContract({
-        address: identity,
-        abi: identityAbi,
-        functionName: "isWhitelisted",
-        args: [account],
-      }),
+    const [root, identityRow, authPeriodDays] = await Promise.all([
       client.readContract({
         address: identity,
         abi: identityAbi,
@@ -100,7 +138,7 @@ export async function getVerifyStatus(
       client.readContract({
         address: identity,
         abi: identityAbi,
-        functionName: "lastAuthenticated",
+        functionName: "identities",
         args: [account],
       }),
       client.readContract({
@@ -111,20 +149,41 @@ export async function getVerifyStatus(
       }),
     ]);
 
+    const rootAddress = root as Address;
+    const rootResolved = isZeroAddress(rootAddress) ? null : rootAddress;
+    const authAccount = rootResolved ?? account;
+
+    const lastAuth = (await client.readContract({
+      address: identity,
+      abi: identityAbi,
+      functionName: "lastAuthenticated",
+      args: [authAccount],
+    })) as bigint;
+
     let expiresAt: string | null = null;
     if (lastAuth > 0n) {
       const expirySeconds = lastAuth + authPeriodDays * SECONDS_PER_DAY;
       expiresAt = new Date(Number(expirySeconds) * 1000).toISOString();
     }
 
-    const rootAddress = root as Address;
-    const isZeroRoot = /^0x0+$/.test(rootAddress);
+    const status = Number(
+      identityRow[4],
+    ) as IdentityStatusCode;
+    const active = rootResolved !== null;
+    const statusLabel = deriveIdentityStatusLabel({
+      account,
+      root: rootResolved,
+      status,
+      active,
+    });
 
     return {
       wallet: account,
-      isWhitelisted,
-      root: isZeroRoot ? null : rootAddress,
+      isWhitelisted: active,
+      root: rootResolved,
       expiresAt,
+      status,
+      statusLabel,
     };
   } catch (error) {
     throw new AgentIdError(

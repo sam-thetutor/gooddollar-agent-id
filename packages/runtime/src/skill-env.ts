@@ -17,6 +17,22 @@ export function writeSkillEnv(skillDir: string, vars: Record<string, string>): v
   }
 }
 
+export function buildHostReportEnv(deployId: string): Record<string, string> {
+  const hostPort = process.env.HOST_PORT ?? "3002";
+  const hostUrl =
+    process.env.HOST_INTERNAL_URL?.trim() ??
+    `http://127.0.0.1:${hostPort}`;
+  const env: Record<string, string> = {
+    DEPLOY_ID: deployId,
+    GOODAGENT_HOST_URL: hostUrl.replace(/\/$/, ""),
+  };
+  const secret = process.env.HOST_INTERNAL_SECRET?.trim();
+  if (secret) {
+    env.HOST_INTERNAL_SECRET = secret;
+  }
+  return env;
+}
+
 export function buildGamearenaEnv(
   agentPrivateKey: `0x${string}` | null,
   rpcUrl: string,
@@ -71,6 +87,7 @@ export function buildActionorderEnv(
 export function buildSkillEnv(
   skillId: string,
   opts: {
+    deployId: string;
     agentAddress: Address;
     agentPrivateKey: `0x${string}` | null;
     rpcUrl: string;
@@ -78,16 +95,18 @@ export function buildSkillEnv(
     config: SkillConfiguration;
   },
 ): Record<string, string> {
+  let env: Record<string, string>;
   if (skillId === "gaming/wagering/gamearena_1v1") {
-    return buildGamearenaEnv(
+    env = buildGamearenaEnv(
       opts.agentPrivateKey,
       opts.rpcUrl,
       opts.config,
       opts.agentAddress,
     );
+  } else if (skillId === "gaming/card-fighter/actionorder_vshouse") {
+    env = buildActionorderEnv(opts.agentAddress, opts.displayName, opts.config);
+  } else {
+    throw new Error(`Unsupported skill_id for env: ${skillId}`);
   }
-  if (skillId === "gaming/card-fighter/actionorder_vshouse") {
-    return buildActionorderEnv(opts.agentAddress, opts.displayName, opts.config);
-  }
-  throw new Error(`Unsupported skill_id for env: ${skillId}`);
+  return { ...env, ...buildHostReportEnv(opts.deployId) };
 }

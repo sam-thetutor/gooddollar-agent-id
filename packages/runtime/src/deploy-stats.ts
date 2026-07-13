@@ -14,8 +14,12 @@ import {
   writeBaseline,
   type BaselineSource,
 } from "./baseline-balance.js";
+import {
+  fetchGamearenaLadder,
+  type GamearenaLadder,
+} from "./gamearena-ladder.js";
 
-export type { BaselineSource };
+export type { BaselineSource, GamearenaLadder };
 
 const G_DOLLAR = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A" as const;
 
@@ -42,6 +46,8 @@ export interface GamearenaState {
   day: string;
   lostTodayGs: number;
   matchesToday: number;
+  refillsToday?: number;
+  spentOnRefillsTodayGs?: number;
   history: MatchRecord[];
 }
 
@@ -90,6 +96,7 @@ export interface DeployStats {
   performance: GamePerformance | null;
   walletPnL: WalletPnL | null;
   logTail: string | null;
+  ladder: GamearenaLadder | null;
 }
 
 function readLogTail(path: string, lines = 8): string | null {
@@ -127,6 +134,54 @@ function todayNetPnL(state: GamearenaState): number {
     if (m.result === "lost") net -= m.wagerGs;
   }
   return net;
+}
+
+function mergeMatchHistories(
+  fileHistory: MatchRecord[],
+  persisted: MatchRecord[],
+): MatchRecord[] {
+  const byId = new Map<string, MatchRecord>();
+  for (const rec of persisted) {
+    byId.set(rec.matchId, rec);
+  }
+  for (const rec of fileHistory) {
+    byId.set(rec.matchId, rec);
+  }
+  return [...byId.values()].sort((a, b) => a.at.localeCompare(b.at));
+}
+
+export function buildGamearenaState(opts: {
+  fileState: GamearenaState | null;
+  persistedMatches: MatchRecord[];
+}): GamearenaState | null {
+  const merged = mergeMatchHistories(
+    opts.fileState?.history ?? [],
+    opts.persistedMatches,
+  );
+  if (!merged.length && !opts.fileState) return null;
+
+  const day = todayUtc();
+  const todayMatches = merged.filter((m) => m.at.startsWith(day));
+  const lostTodayGs =
+    opts.fileState?.day === day
+      ? opts.fileState.lostTodayGs
+      : todayMatches.reduce(
+          (sum, m) =>
+            m.result === "lost" && m.mode === "onchain" ? sum + m.wagerGs : sum,
+          0,
+        );
+
+  return {
+    day: opts.fileState?.day ?? day,
+    lostTodayGs,
+    matchesToday:
+      opts.fileState?.day === day
+        ? opts.fileState.matchesToday
+        : todayMatches.length,
+    refillsToday: opts.fileState?.refillsToday,
+    spentOnRefillsTodayGs: opts.fileState?.spentOnRefillsTodayGs,
+    history: merged,
+  };
 }
 
 function computePerformance(state: GamearenaState): Omit<GamePerformance, "skill" | "summary"> {
@@ -285,6 +340,9 @@ export async function getDeployStats(opts: {
   rpcUrl: string;
   configBaselineGs?: string | null;
   playMode?: "offchain" | "onchain" | null;
+  challengeAiUrl?: string | null;
+  persistedMatches?: MatchRecord[];
+  persistedLogTail?: string | null;
 }): Promise<DeployStats> {
   const balances = opts.agentAddress
     ? await fetchAgentBalances(opts.agentAddress, opts.rpcUrl).catch(() => null)
@@ -297,13 +355,24 @@ export async function getDeployStats(opts: {
   let performance: GamePerformance | null = null;
   let logTail: string | null = null;
   let ledgerDeltaGs: number | null = null;
+  let ladder: GamearenaLadder | null = null;
+  let resolvedPlayMode: "offchain" | "onchain" | null =
+    opts.playMode ?? null;
 
   if (opts.skillId?.includes("gamearena")) {
     const ga = readGamearenaStats(opts.agentsRoot, opts.deployId);
-    logTail = ga.logTail;
-    const playMode = resolveGamearenaPlayMode(ga.state, opts.playMode ?? null);
-    if (ga.state) {
-      const computed = computePerformance(ga.state);
+    const mergedState = buildGamearenaState({
+      fileState: ga.state,
+      persistedMatches: opts.persistedMatches ?? [],
+    });
+    logTail =
+      ga.logTail ??
+      opts.persistedLogTail ??
+      null;
+    const playMode = resolveGamearenaPlayMode(mergedState, opts.playMode ?? null);
+    resolvedPlayMode = playMode;
+    if (mergedState) {
+      const computed = computePerformance(mergedState);
       ledgerDeltaGs = computed.netPnLGs;
       performance = {
         skill: "gamearena-player",
@@ -311,7 +380,7 @@ export async function getDeployStats(opts: {
         summary: ga.summary,
         ...computed,
       };
-    } else if (ga.summary) {
+    } else if (ga.summary || opts.persistedLogTail) {
       performance = {
         skill: "gamearena-player",
         playMode,
@@ -332,6 +401,17 @@ export async function getDeployStats(opts: {
     }
   }
 
+  if (
+    opts.agentAddress &&
+    opts.skillId?.includes("gamearena") &&
+    resolvedPlayMode === "offchain"
+  ) {
+    ladder = await fetchGamearenaLadder(
+      opts.agentAddress,
+      opts.challengeAiUrl ?? "https://gamearenahq.xyz",
+    );
+  }
+
   const walletPnL = buildWalletPnL({
     agentsRoot: opts.agentsRoot,
     deployId: opts.deployId,
@@ -343,5 +423,5 @@ export async function getDeployStats(opts: {
     ledgerDeltaGs,
   });
 
-  return { balances, performance, walletPnL, logTail };
+  return { balances, performance, walletPnL, logTail, ladder };
 }

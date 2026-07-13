@@ -182,6 +182,7 @@ export function DeployDashboard() {
   );
 
   const perf = status?.stats?.performance;
+  const ladder = status?.stats?.ladder;
   const offchainPlay =
     isGamearenaOffchain(status?.skillId, config) ||
     perf?.playMode === "offchain";
@@ -202,9 +203,17 @@ export function DeployDashboard() {
   );
 
   const winRate = useMemo(() => {
+    if (ladder?.matches && ladder.matches > 0 && ladder.wins != null) {
+      return Math.round((ladder.wins / ladder.matches) * 100);
+    }
     if (!perf || perf.gamesPlayed === 0) return null;
     return Math.round((perf.wins / perf.gamesPlayed) * 100);
-  }, [perf]);
+  }, [perf, ladder]);
+
+  const ladderLosses = useMemo(() => {
+    if (ladder?.matches == null || ladder.wins == null) return null;
+    return Math.max(0, ladder.matches - ladder.wins);
+  }, [ladder]);
 
   const canControl = isDeployOwner(address, status?.ownerWallet);
 
@@ -543,90 +552,115 @@ export function DeployDashboard() {
                   <small>G$</small>
                 </span>
               </div>
-              <div className="deploy-hero-stat">
-                <span className="deploy-hero-label">
-                  {offchainPlay ? "Tickets today" : "P&amp;L"}
-                </span>
-                <span
-                  className={`deploy-hero-value tabular${
-                    offchainPlay ? "" : pnlClass(walletPnL?.walletDeltaGs ?? perf?.netPnLGs)
-                  }`}
-                >
-                  {offchainPlay
-                    ? `${perf?.matchesToday ?? 0}`
-                    : walletPnL?.walletDeltaGs != null
-                      ? signedGs(walletPnL.walletDeltaGs)
-                      : perf
-                        ? signedGs(perf.netPnLGs)
-                        : "0"}
-                  <small>{offchainPlay ? "played" : "G$"}</small>
-                </span>
-                {offchainPlay ? (
-                  <span className="deploy-hero-meta muted">
-                    cap {config.DAILY_MATCH_CAP ?? "5"}/day
+              {offchainPlay && ladder?.rank != null ? (
+                <div className="deploy-hero-stat">
+                  <span className="deploy-hero-label">Rank</span>
+                  <span className="deploy-hero-value tabular">
+                    #{ladder.rank}
                   </span>
-                ) : (
-                  walletPnL?.baselineBalanceGs == null &&
-                  canControl &&
-                  (showBaselineForm ? (
-                    <span className="deploy-baseline-form">
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        className="deploy-baseline-input"
-                        placeholder="200"
-                        value={baselineInput}
-                        onChange={(e) => setBaselineInput(e.target.value)}
-                        disabled={baselineBusy}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => void submitBaseline()}
-                        disabled={baselineBusy}
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setShowBaselineForm(false)}
-                        disabled={baselineBusy}
-                      >
-                        Cancel
-                      </button>
+                  {ladder.points != null && (
+                    <span className="deploy-hero-meta muted">
+                      {ladder.points} pts this week
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="deploy-hero-stat">
+                  <span className="deploy-hero-label">
+                    {offchainPlay ? "Tickets today" : "P&amp;L"}
+                  </span>
+                  <span
+                    className={`deploy-hero-value tabular${
+                      offchainPlay ? "" : pnlClass(walletPnL?.walletDeltaGs ?? perf?.netPnLGs)
+                    }`}
+                  >
+                    {offchainPlay
+                      ? `${ladder?.remainingToday ?? perf?.matchesToday ?? 0}`
+                      : walletPnL?.walletDeltaGs != null
+                        ? signedGs(walletPnL.walletDeltaGs)
+                        : perf
+                          ? signedGs(perf.netPnLGs)
+                          : "0"}
+                    <small>{offchainPlay ? "left" : "G$"}</small>
+                  </span>
+                  {offchainPlay ? (
+                    <span className="deploy-hero-meta muted">
+                      {perf?.matchesToday ?? 0} played · cap{" "}
+                      {config.DAILY_MATCH_CAP ?? "50"}/day
                     </span>
                   ) : (
-                    <button
-                      type="button"
-                      className="deploy-baseline-link"
-                      onClick={() => setShowBaselineForm(true)}
-                    >
-                      Set baseline
-                    </button>
-                  ))
-                )}
-              </div>
+                    walletPnL?.baselineBalanceGs == null &&
+                    canControl &&
+                    (showBaselineForm ? (
+                      <span className="deploy-baseline-form">
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          className="deploy-baseline-input"
+                          placeholder="200"
+                          value={baselineInput}
+                          onChange={(e) => setBaselineInput(e.target.value)}
+                          disabled={baselineBusy}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => void submitBaseline()}
+                          disabled={baselineBusy}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setShowBaselineForm(false)}
+                          disabled={baselineBusy}
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="deploy-baseline-link"
+                        onClick={() => setShowBaselineForm(true)}
+                      >
+                        Set baseline
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
               <div className="deploy-hero-stat">
                 <span className="deploy-hero-label">Record</span>
                 <span className="deploy-hero-value tabular">
-                  {perf?.wins ?? 0}
+                  {ladder?.wins != null ? ladder.wins : (perf?.wins ?? 0)}
                   <span className="deploy-hero-record-sep">–</span>
-                  {perf?.losses ?? 0}
+                  {ladderLosses != null
+                    ? ladderLosses
+                    : (perf?.losses ?? 0)}
                 </span>
-                {perf && perf.gamesPlayed > 0 && (
+                {(ladder?.matches != null || (perf && perf.gamesPlayed > 0)) && (
                   <span className="deploy-hero-meta muted">
-                    {perf.gamesPlayed}
+                    {ladder?.matches ?? perf?.gamesPlayed ?? 0}
                     {winRate != null ? ` · ${winRate}%` : ""}
+                    {ladder?.matches != null ? " on ladder" : ""}
                   </span>
                 )}
               </div>
               <div className="deploy-hero-stat">
-                <span className="deploy-hero-label">CELO</span>
-                <span className="deploy-hero-value tabular">
-                  {formatBalance(balances?.celoFormatted, 3)}
+                <span className="deploy-hero-label">
+                  {offchainPlay ? "Tickets" : "CELO"}
                 </span>
+                <span className="deploy-hero-value tabular">
+                  {offchainPlay
+                    ? (ladder?.remainingToday ?? "—")
+                    : formatBalance(balances?.celoFormatted, 3)}
+                </span>
+                {offchainPlay && (
+                  <span className="deploy-hero-meta muted">left today</span>
+                )}
               </div>
             </section>
 
@@ -782,6 +816,80 @@ export function DeployDashboard() {
               </div>
 
               <aside className="deploy-console-aside">
+                {offchainPlay && (
+                  <section className="deploy-console-aside-block">
+                    <div className="deploy-section-head">
+                      <h3>Weekly leaderboard</h3>
+                      <a
+                        className="deploy-section-meta muted"
+                        href="https://gamearenahq.xyz/games/challenge-ai"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        GameArena ↗
+                      </a>
+                    </div>
+                    {ladder?.error && (
+                      <p className="muted deploy-ladder-error">{ladder.error}</p>
+                    )}
+                    {ladder?.rank != null ? (
+                      <dl className="deploy-aside-dl">
+                        <div>
+                          <dt>Your rank</dt>
+                          <dd className="tabular positive">#{ladder.rank}</dd>
+                        </div>
+                        <div>
+                          <dt>Points</dt>
+                          <dd className="tabular">{ladder.points ?? "—"}</dd>
+                        </div>
+                        <div>
+                          <dt>Ladder record</dt>
+                          <dd className="tabular">
+                            {ladder.wins ?? 0}W / {ladderLosses ?? 0}L
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Tickets left</dt>
+                          <dd className="tabular">
+                            {ladder.remainingToday ?? "—"}
+                          </dd>
+                        </div>
+                      </dl>
+                    ) : !ladder?.error ? (
+                      <p className="deploy-console-empty muted">
+                        Loading ladder…
+                      </p>
+                    ) : null}
+                    {ladder && ladder.top.length > 0 && (
+                      <ol className="deploy-ladder-top">
+                        {ladder.top.map((row) => {
+                          const isMe =
+                            status.agentAddress &&
+                            row.wallet.toLowerCase() ===
+                              status.agentAddress.toLowerCase();
+                          return (
+                            <li
+                              key={row.wallet}
+                              className={isMe ? "deploy-ladder-me" : undefined}
+                            >
+                              <span className="deploy-ladder-rank tabular">
+                                #{row.rank}
+                              </span>
+                              <span className="deploy-ladder-name">
+                                {row.username ??
+                                  shortenAddress(row.wallet)}
+                              </span>
+                              <span className="deploy-ladder-pts tabular">
+                                {row.points} pts
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
+                  </section>
+                )}
+
                 <section className="deploy-console-aside-block">
                   <h3>Process</h3>
                   <dl className="deploy-aside-dl">
@@ -830,6 +938,12 @@ export function DeployDashboard() {
                         <div>
                           <dt>Matches today</dt>
                           <dd className="tabular">{perf?.matchesToday ?? 0}</dd>
+                        </div>
+                        <div>
+                          <dt>CELO gas</dt>
+                          <dd className="tabular">
+                            {formatBalance(balances?.celoFormatted, 3)}
+                          </dd>
                         </div>
                       </>
                     ) : (

@@ -14,7 +14,20 @@ const API_BASE = (
 export interface WalletOverview {
   address: string;
   balance: { balance: string; balanceFormatted: string; symbol: string };
-  verify: { isWhitelisted: boolean; root: string | null; expiresAt: string | null };
+  verify: {
+    isWhitelisted: boolean;
+    root: string | null;
+    expiresAt: string | null;
+    /** Raw on-chain identities[wallet].status (0/1/2/255). */
+    status: number;
+    statusLabel:
+      | "unverified"
+      | "whitelisted"
+      | "connected"
+      | "expired"
+      | "blacklisted"
+      | "contract";
+  };
   claim: {
     eligible: boolean;
     isWhitelisted: boolean;

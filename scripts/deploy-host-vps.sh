@@ -124,7 +124,11 @@ export PATH="\$HOME/.local/share/pnpm:\$HOME/.npm-global/bin:\$PATH"
 cd /home/geinz/gcopilot
 command -v pnpm >/dev/null || npm i -g pnpm@9.15.0
 pnpm install --filter @goodagent/host... --filter @goodagent/runtime... --filter @goodagent/db... --filter @goodagent/shared...
-pnpm --filter @goodagent/db exec dotenv -e ../../.env -- prisma db push --accept-data-loss
+if pnpm --filter @goodagent/db exec dotenv -e ../../.env -- prisma db push --accept-data-loss; then
+  echo "db push ok"
+else
+  echo "WARN: db push skipped (database unreachable — continuing build)"
+fi
 pnpm --filter @goodagent/shared build
 pnpm --filter @goodagent/db build
 pnpm --filter @goodagent/runtime build

@@ -5,31 +5,7 @@ import { Nav, ConnectButton } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { SITE_ORIGIN } from "../lib/site.js";
 
-/** Placeholder — swap for your walkthrough (e.g. 2FiboECrgEk from GoodAgent demo). */
-const AGENT_VERIFY_DEMO_VIDEO_ID = "M7lc1UVf-VE";
-
 const AGENT_PROMPT = `Read ${SITE_ORIGIN}/llms.txt and follow it to become a human-backed agent: attest your wallet key on Celo, then ask your human operator to vouch for you at ${SITE_ORIGIN}/issue`;
-
-function AgentVerifyDemoVideo() {
-  return (
-    <section className="card demo-video-card">
-      <h2>Watch: verify your agent</h2>
-      <p className="muted demo-video-lede">
-        Face verification, bond staking, and issuing an Agent ID — start to
-        finish.
-      </p>
-      <div className="video-embed">
-        <iframe
-          src={`https://www.youtube.com/embed/${AGENT_VERIFY_DEMO_VIDEO_ID}`}
-          title="GoodAgent — how to verify your agent"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerPolicy="strict-origin-when-cross-origin"
-          allowFullScreen
-        />
-      </div>
-    </section>
-  );
-}
 
 function AgentPromptBlock() {
   const [copied, setCopied] = useState(false);
@@ -103,8 +79,6 @@ export function Home() {
       </section>
 
       <main className="container">
-        <AgentVerifyDemoVideo />
-
         {/* How it works — three step cards */}
         <section className="section">
           <h2 className="section-title">How it works</h2>
