@@ -81,6 +81,7 @@ export interface DeployStats {
   } | null;
   performance: {
     skill: string;
+    playMode?: "offchain" | "onchain";
     gamesPlayed: number;
     wins: number;
     losses: number;

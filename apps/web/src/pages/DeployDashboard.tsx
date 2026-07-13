@@ -14,6 +14,11 @@ import {
 } from "../lib/host.js";
 import { isDeployOwner, signDeployControl } from "../lib/deploy-control.js";
 import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
+import {
+  isGamearenaOffchain,
+  isGamearenaSkill,
+} from "../lib/gamearena-config.js";
+import { parseSkillConfig } from "../lib/skill-config.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 type HealthState = "live" | "paused" | "stopped" | "failed" | "deploying" | "awaiting_vouch" | "unknown";
@@ -88,12 +93,7 @@ function shortenAddress(addr: string): string {
 }
 
 function parseConfig(raw?: string | null): Record<string, string> {
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw) as Record<string, string>;
-  } catch {
-    return {};
-  }
+  return parseSkillConfig(raw);
 }
 
 function skillLabel(skillId?: string | null): string {
@@ -109,7 +109,12 @@ function humanInterval(seconds?: string): string {
   return `${n}s between matches`;
 }
 
-function matchPnL(result: string, wagerGs: number): string {
+function matchPnL(
+  result: string,
+  wagerGs: number,
+  offchain: boolean,
+): string {
+  if (offchain || wagerGs === 0) return "—";
   if (result === "won") return `+${wagerGs}`;
   if (result === "lost") return `−${wagerGs}`;
   return "0";
@@ -177,6 +182,11 @@ export function DeployDashboard() {
   );
 
   const perf = status?.stats?.performance;
+  const offchainPlay =
+    isGamearenaOffchain(status?.skillId, config) ||
+    perf?.playMode === "offchain";
+  const onchainGamearena =
+    isGamearenaSkill(status?.skillId) && !offchainPlay;
   const walletPnL = status?.stats?.walletPnL;
   const balances = status?.stats?.balances;
   const gBalance = formatBalance(balances?.gDollarFormatted, 0);
@@ -295,6 +305,7 @@ export function DeployDashboard() {
 
   const wagerGs = config.WAGER_GS ?? String(perf?.wagerGs ?? "—");
   const lowBalance =
+    onchainGamearena &&
     balances &&
     Number(balances.gDollarFormatted) < Number(wagerGs);
 
@@ -520,7 +531,7 @@ export function DeployDashboard() {
             {lowBalance && health === "live" && (
               <p className="deploy-console-banner">
                 Low G$ balance — send funds to{" "}
-                <code>{status.agentAddress}</code> to keep wagering.
+                <code>{status.agentAddress}</code> to keep on-chain wagering.
               </p>
             )}
 
@@ -533,18 +544,29 @@ export function DeployDashboard() {
                 </span>
               </div>
               <div className="deploy-hero-stat">
-                <span className="deploy-hero-label">P&amp;L</span>
-                <span
-                  className={`deploy-hero-value tabular${pnlClass(walletPnL?.walletDeltaGs ?? perf?.netPnLGs)}`}
-                >
-                  {walletPnL?.walletDeltaGs != null
-                    ? signedGs(walletPnL.walletDeltaGs)
-                    : perf
-                      ? signedGs(perf.netPnLGs)
-                      : "0"}
-                  <small>G$</small>
+                <span className="deploy-hero-label">
+                  {offchainPlay ? "Tickets today" : "P&amp;L"}
                 </span>
-                {walletPnL?.baselineBalanceGs == null &&
+                <span
+                  className={`deploy-hero-value tabular${
+                    offchainPlay ? "" : pnlClass(walletPnL?.walletDeltaGs ?? perf?.netPnLGs)
+                  }`}
+                >
+                  {offchainPlay
+                    ? `${perf?.matchesToday ?? 0}`
+                    : walletPnL?.walletDeltaGs != null
+                      ? signedGs(walletPnL.walletDeltaGs)
+                      : perf
+                        ? signedGs(perf.netPnLGs)
+                        : "0"}
+                  <small>{offchainPlay ? "played" : "G$"}</small>
+                </span>
+                {offchainPlay ? (
+                  <span className="deploy-hero-meta muted">
+                    cap {config.DAILY_MATCH_CAP ?? "5"}/day
+                  </span>
+                ) : (
+                  walletPnL?.baselineBalanceGs == null &&
                   canControl &&
                   (showBaselineForm ? (
                     <span className="deploy-baseline-form">
@@ -583,7 +605,8 @@ export function DeployDashboard() {
                     >
                       Set baseline
                     </button>
-                  ))}
+                  ))
+                )}
               </div>
               <div className="deploy-hero-stat">
                 <span className="deploy-hero-label">Record</span>
@@ -643,8 +666,8 @@ export function DeployDashboard() {
                           <tr>
                             <th>Match</th>
                             <th>Result</th>
-                            <th>P&amp;L</th>
-                            <th>Wager</th>
+                            {!offchainPlay && <th>P&amp;L</th>}
+                            {!offchainPlay && <th>Wager</th>}
                             <th>Time</th>
                           </tr>
                         </thead>
@@ -663,18 +686,22 @@ export function DeployDashboard() {
                                       : "Pending"}
                                 </span>
                               </td>
-                              <td
-                                className={`tabular${
-                                  m.result === "won"
-                                    ? " positive"
-                                    : m.result === "lost"
-                                      ? " negative"
-                                      : ""
-                                }`}
-                              >
-                                {matchPnL(m.result, m.wagerGs)} G$
-                              </td>
-                              <td className="tabular muted">{m.wagerGs} G$</td>
+                              {!offchainPlay && (
+                                <td
+                                  className={`tabular${
+                                    m.result === "won"
+                                      ? " positive"
+                                      : m.result === "lost"
+                                        ? " negative"
+                                        : ""
+                                  }`}
+                                >
+                                  {matchPnL(m.result, m.wagerGs, offchainPlay)} G$
+                                </td>
+                              )}
+                              {!offchainPlay && (
+                                <td className="tabular muted">{m.wagerGs} G$</td>
+                              )}
                               <td className="muted">
                                 {formatTimeShort(m.at)}
                               </td>
@@ -788,38 +815,59 @@ export function DeployDashboard() {
                 <section className="deploy-console-aside-block">
                   <h3>Play settings</h3>
                   <dl className="deploy-aside-dl">
+                    {offchainPlay ? (
+                      <>
+                        <div>
+                          <dt>Mode</dt>
+                          <dd>Off-chain challenge-ai</dd>
+                        </div>
+                        <div>
+                          <dt>Daily match cap</dt>
+                          <dd className="tabular">
+                            {config.DAILY_MATCH_CAP ?? "5"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Matches today</dt>
+                          <dd className="tabular">{perf?.matchesToday ?? 0}</dd>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <dt>Wager</dt>
+                          <dd className="tabular">{wagerGs} G$</dd>
+                        </div>
+                        <div>
+                          <dt>Daily loss cap</dt>
+                          <dd className="tabular">
+                            {config.DAILY_LOSS_CAP_GS ?? "—"} G$
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Today P&amp;L</dt>
+                          <dd className={`tabular${pnlClass(perf?.todayNetPnLGs)}`}>
+                            {signedGs(perf?.todayNetPnLGs ?? 0)} G$
+                          </dd>
+                        </div>
+                        {perf && perf.gamesPlayed > 0 && (
+                          <div>
+                            <dt>Ledger</dt>
+                            <dd className={`tabular${pnlClass(perf.netPnLGs)}`}>
+                              {signedGs(perf.netPnLGs)} G$
+                            </dd>
+                          </div>
+                        )}
+                      </>
+                    )}
                     <div>
-                      <dt>Wager</dt>
-                      <dd className="tabular">{wagerGs} G$</dd>
-                    </div>
-                    <div>
-                      <dt>Daily loss cap</dt>
-                      <dd className="tabular">
-                        {config.DAILY_LOSS_CAP_GS ?? "—"} G$
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Max matches/day</dt>
+                      <dt>Max matches/run</dt>
                       <dd className="tabular">{config.MAX_MATCHES ?? "—"}</dd>
                     </div>
                     <div>
                       <dt>Interval</dt>
                       <dd>{humanInterval(config.MATCH_INTERVAL_SECONDS)}</dd>
                     </div>
-                    <div>
-                      <dt>Today</dt>
-                      <dd className={`tabular${pnlClass(perf?.todayNetPnLGs)}`}>
-                        {signedGs(perf?.todayNetPnLGs ?? 0)} G$
-                      </dd>
-                    </div>
-                    {perf && perf.gamesPlayed > 0 && (
-                      <div>
-                        <dt>Ledger</dt>
-                        <dd className={`tabular${pnlClass(perf.netPnLGs)}`}>
-                          {signedGs(perf.netPnLGs)} G$
-                        </dd>
-                      </div>
-                    )}
                   </dl>
                 </section>
 

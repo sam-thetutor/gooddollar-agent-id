@@ -10,6 +10,8 @@ import {
   type DeployStatusResponse,
 } from "../lib/host.js";
 import { deployAgentNeedsVouch, issueAgentHref } from "../lib/deploy-vouch.js";
+import { isGamearenaOffchain } from "../lib/gamearena-config.js";
+import { parseSkillConfig } from "../lib/skill-config.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 type FilterTab = "all" | "live" | "failed" | "setup";
@@ -70,7 +72,16 @@ function formatRecord(perf: DeployStatusResponse["stats"]): string {
   return `${p.wins}W–${p.losses}L`;
 }
 
-function formatPnL(perf: DeployStatusResponse["stats"]): string {
+function formatPnL(
+  perf: DeployStatusResponse["stats"],
+  skillId?: string | null,
+  configuration?: string | null,
+): string {
+  if (isGamearenaOffchain(skillId, parseSkillConfig(configuration))) {
+    const p = perf?.performance;
+    if (!p || p.gamesPlayed === 0) return "—";
+    return `${p.wins}W–${p.losses}L`;
+  }
   const wallet = perf?.walletPnL;
   if (wallet?.walletDeltaGs != null) {
     return signedGs(wallet.walletDeltaGs);
@@ -311,7 +322,7 @@ export function MyDeployments() {
                       <th>Status</th>
                       <th>Balance</th>
                       <th>Record</th>
-                      <th>P&amp;L</th>
+                      <th>Performance</th>
                       <th>Last active</th>
                       <th aria-hidden />
                     </tr>
@@ -319,11 +330,21 @@ export function MyDeployments() {
                   <tbody>
                     {filtered.map(({ agent, status, health }) => {
                       const perf = status?.stats?.performance;
-                      const pnl = formatPnL(status?.stats ?? null);
+                      const offchain = isGamearenaOffchain(
+                        agent.skills?.[0]?.skillId,
+                        parseSkillConfig(agent.configuration ?? status?.configuration),
+                      );
+                      const pnl = formatPnL(
+                        status?.stats ?? null,
+                        agent.skills?.[0]?.skillId,
+                        agent.configuration ?? status?.configuration,
+                      );
                       const pnlNum =
-                        status?.stats?.walletPnL?.walletDeltaGs ??
-                        perf?.netPnLGs ??
-                        0;
+                        offchain
+                          ? 0
+                          : (status?.stats?.walletPnL?.walletDeltaGs ??
+                            perf?.netPnLGs ??
+                            0);
                       const errorLine = agent.lastError?.split("\n")[0];
 
                       return (
@@ -395,7 +416,7 @@ export function MyDeployments() {
                                   : ""
                             }`}
                           >
-                            {status ? `${pnl} G$` : "…"}
+                            {status ? `${pnl}${offchain ? "" : " G$"}` : "…"}
                           </td>
                           <td className="muted">
                             {lastActiveLabel(agent, status ?? undefined)}

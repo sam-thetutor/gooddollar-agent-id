@@ -34,6 +34,7 @@ export interface MatchRecord {
   gameType: number;
   wagerGs: number;
   result: "won" | "lost" | "unresolved";
+  mode?: "offchain" | "onchain";
   at: string;
 }
 
@@ -53,6 +54,8 @@ export interface AgentBalances {
 
 export interface GamePerformance {
   skill: "gamearena-player" | "unknown";
+  /** From deploy config when skill is gamearena-player */
+  playMode?: "offchain" | "onchain";
   gamesPlayed: number;
   wins: number;
   losses: number;
@@ -262,6 +265,18 @@ export function readGamearenaStats(
   return { state, logTail, summary };
 }
 
+function resolveGamearenaPlayMode(
+  state: GamearenaState | null,
+  configPlayMode?: string | null,
+): "offchain" | "onchain" {
+  if (configPlayMode === "onchain") return "onchain";
+  if (configPlayMode === "offchain") return "offchain";
+  if (state?.history.some((m) => m.mode === "onchain" || m.wagerGs > 0)) {
+    return "onchain";
+  }
+  return "offchain";
+}
+
 export async function getDeployStats(opts: {
   agentsRoot: string;
   deployId: string;
@@ -269,6 +284,7 @@ export async function getDeployStats(opts: {
   skillId: string | null;
   rpcUrl: string;
   configBaselineGs?: string | null;
+  playMode?: "offchain" | "onchain" | null;
 }): Promise<DeployStats> {
   const balances = opts.agentAddress
     ? await fetchAgentBalances(opts.agentAddress, opts.rpcUrl).catch(() => null)
@@ -285,17 +301,20 @@ export async function getDeployStats(opts: {
   if (opts.skillId?.includes("gamearena")) {
     const ga = readGamearenaStats(opts.agentsRoot, opts.deployId);
     logTail = ga.logTail;
+    const playMode = resolveGamearenaPlayMode(ga.state, opts.playMode ?? null);
     if (ga.state) {
       const computed = computePerformance(ga.state);
       ledgerDeltaGs = computed.netPnLGs;
       performance = {
         skill: "gamearena-player",
+        playMode,
         summary: ga.summary,
         ...computed,
       };
     } else if (ga.summary) {
       performance = {
         skill: "gamearena-player",
+        playMode,
         gamesPlayed: 0,
         wins: 0,
         losses: 0,

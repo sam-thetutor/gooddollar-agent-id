@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
+import { skillSpendPill } from "../lib/gamearena-config.js";
 
 const REGISTRY_URL =
   "https://raw.githubusercontent.com/sam-thetutor/goodagent-skills/main/registry.json";
@@ -16,6 +17,7 @@ interface SkillEntry {
   description: string;
   chain: string;
   spends_tokens: boolean;
+  modes?: string[];
   token?: string;
   game?: string;
   game_url?: string;
@@ -63,6 +65,7 @@ function CopyButton({ text }: { text: string }) {
 
 function SkillCard({ skill }: { skill: SkillEntry }) {
   const cmd = installCommand(skill);
+  const pill = skillSpendPill(skill);
 
   return (
     <article className="skill-card">
@@ -86,13 +89,11 @@ function SkillCard({ skill }: { skill: SkillEntry }) {
       <p className="skill-desc">{skill.description}</p>
 
       <div className="skill-perms">
-        {skill.spends_tokens ? (
-          <span className="pill pill-warn">
-            Spends {skill.token ?? "tokens"} · capped
-          </span>
-        ) : (
-          <span className="pill pill-ok">Read-only</span>
-        )}
+        <span
+          className={`pill ${pill.variant === "warn" ? "pill-warn" : "pill-ok"}`}
+        >
+          {pill.label}
+        </span>
         <span className="pill pill-muted">{skill.chain}</span>
       </div>
 
@@ -123,7 +124,7 @@ function SkillCard({ skill }: { skill: SkillEntry }) {
 export function Skills() {
   usePageMeta(
     "Skill marketplace — GoodAgent",
-    "Skills your AI agent can pick up: play on-chain games, wager G$, and work in the GoodDollar economy on Celo. Every skill declares its permissions.",
+    "Skills your AI agent can pick up: play games on Celo, use free daily tickets or optional G$ wagers. Every skill declares what it spends.",
   );
 
   const { data, isLoading, error } = useQuery({
@@ -144,8 +145,8 @@ export function Skills() {
           <h1>Give your agent something to do</h1>
           <p className="lede">
             Skills are open-source playbooks for the GoodDollar economy on
-            Celo: on-chain games to play, G$ to wager, work to complete. Every
-            skill declares what it spends before your agent runs it.
+            Celo: free off-chain games, optional on-chain wagers, and more.
+            Every skill declares what it spends before your agent runs it.
           </p>
           <p className="skills-meta">
             {count > 0 ? `${count} skill${count === 1 ? "" : "s"}` : "registry"}{" "}
@@ -196,11 +197,12 @@ export function Skills() {
             </div>
             <div className="step-card">
               <span className="step-num">3</span>
-              <h3>It settles on-chain</h3>
+              <h3>It plays on-chain or off-chain</h3>
               <p>
-                Matches, wagers, and payouts happen on Celo contracts anyone
-                can audit. Pair it with a <Link to="/issue">GoodAgent ID</Link>{" "}
-                so counterparties know a human backs your agent.
+                Some skills use free server tickets (GameArena challenge-ai);
+                others settle G$ wagers on Celo. Pair with a{" "}
+                <Link to="/issue">GoodAgent ID</Link> so counterparties know a
+                human backs your agent.
               </p>
             </div>
           </div>

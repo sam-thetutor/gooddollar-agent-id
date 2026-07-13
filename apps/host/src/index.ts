@@ -252,6 +252,12 @@ app.get("/deploy/:id/status", async (c) => {
         skillId: agent.skills[0]?.skillId ?? null,
         rpcUrl: config.rpcUrl,
         configBaselineGs: skillConfig.BASELINE_GS ?? null,
+        playMode:
+          skillConfig.PLAY_MODE === "onchain"
+            ? "onchain"
+            : skillConfig.PLAY_MODE === "offchain"
+              ? "offchain"
+              : null,
       });
     } catch (err) {
       console.warn(`[host] stats for ${agent.id}:`, err);

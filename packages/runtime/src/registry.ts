@@ -11,6 +11,7 @@ export interface RegistrySkill {
   description: string;
   chain: string;
   spends_tokens: boolean;
+  modes?: string[];
   token?: string;
   game?: string;
   game_url?: string;

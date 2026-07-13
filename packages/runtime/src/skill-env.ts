@@ -18,19 +18,32 @@ export function writeSkillEnv(skillDir: string, vars: Record<string, string>): v
 }
 
 export function buildGamearenaEnv(
-  agentPrivateKey: `0x${string}`,
+  agentPrivateKey: `0x${string}` | null,
   rpcUrl: string,
   config: SkillConfiguration,
+  agentAddress: Address,
 ): Record<string, string> {
-  return {
-    PRIVATE_KEY: agentPrivateKey,
+  const playMode = config.PLAY_MODE ?? "offchain";
+  if (playMode === "onchain" && !agentPrivateKey) {
+    throw new Error("gamearena-player on-chain mode requires agent private key");
+  }
+
+  const env: Record<string, string> = {
+    PLAY_MODE: playMode,
+    PLAYER_ADDRESS: config.PLAYER_ADDRESS ?? agentAddress,
+    CHALLENGE_AI_URL: config.CHALLENGE_AI_URL ?? "https://gamearenahq.xyz",
     CELO_RPC_URL: config.CELO_RPC_URL ?? rpcUrl,
+    DAILY_MATCH_CAP: config.DAILY_MATCH_CAP ?? "5",
     WAGER_GS: config.WAGER_GS ?? "1",
     GAME_TYPE: config.GAME_TYPE ?? "0",
     DAILY_LOSS_CAP_GS: config.DAILY_LOSS_CAP_GS ?? "20",
     MAX_MATCHES: config.MAX_MATCHES ?? "10",
     MATCH_INTERVAL_SECONDS: config.MATCH_INTERVAL_SECONDS ?? "300",
   };
+  if (agentPrivateKey) {
+    env.PRIVATE_KEY = agentPrivateKey;
+  }
+  return env;
 }
 
 export function buildActionorderEnv(
@@ -63,10 +76,12 @@ export function buildSkillEnv(
   },
 ): Record<string, string> {
   if (skillId === "gaming/wagering/gamearena_1v1") {
-    if (!opts.agentPrivateKey) {
-      throw new Error("gamearena-player requires agent private key");
-    }
-    return buildGamearenaEnv(opts.agentPrivateKey, opts.rpcUrl, opts.config);
+    return buildGamearenaEnv(
+      opts.agentPrivateKey,
+      opts.rpcUrl,
+      opts.config,
+      opts.agentAddress,
+    );
   }
   if (skillId === "gaming/card-fighter/actionorder_vshouse") {
     return buildActionorderEnv(opts.agentAddress, opts.displayName, opts.config);

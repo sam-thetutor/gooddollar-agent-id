@@ -146,7 +146,10 @@ export async function runDeployPipeline(
     const skillDir = installSkillFromRegistry(config.agentsRoot, deployId, skill);
     const skillEnv = buildSkillEnv(skillId, {
       agentAddress,
-      agentPrivateKey: skill.spends_tokens ? agentPrivateKey : null,
+      agentPrivateKey:
+        skill.spends_tokens || skillId === "gaming/wagering/gamearena_1v1"
+          ? agentPrivateKey
+          : null,
       rpcUrl: config.rpcUrl,
       displayName,
       config: input.skillConfiguration ?? {},
