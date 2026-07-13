@@ -73,7 +73,10 @@ function defaultConfigForSkill(skillId: string): SkillConfiguration {
   if (skillId === "gaming/wagering/gamearena_1v1") {
     return {
       PLAY_MODE: "offchain",
-      DAILY_MATCH_CAP: "5",
+      DAILY_MATCH_CAP: "50",
+      AUTO_REFILL: "1",
+      DAILY_REFILL_CAP_GS: "20",
+      MAX_REFILLS_PER_DAY: "10",
       GAME_TYPE: "0",
       MAX_MATCHES: "10",
       MATCH_INTERVAL_SECONDS: "300",

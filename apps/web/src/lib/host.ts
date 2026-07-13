@@ -1,27 +1,28 @@
 /** Host supervisor API (autonomous deploy). */
 import type { DeployControlAuth } from "@goodagent/shared";
 
-/** In dev, skip localhost host URL unless VITE_HOST_USE_LOCAL=1 (local @goodagent/host running). */
+function isLocalhostUrl(url: string): boolean {
+  return /localhost|127\.0\.0\.1/.test(url);
+}
+
+/** Production builds always use same-origin /host (Vercel rewrite). */
 function resolveHostBase(): string {
+  if (import.meta.env.PROD) {
+    return "/host";
+  }
   const configured = import.meta.env.VITE_HOST_BASE_URL?.trim();
   const useLocal = import.meta.env.VITE_HOST_USE_LOCAL === "1";
-  if (
-    configured &&
-    (useLocal || !/localhost|127\.0\.0\.1/.test(configured))
-  ) {
+  if (configured && (useLocal || !isLocalhostUrl(configured))) {
     return configured;
   }
-  if (import.meta.env.DEV) {
-    return "https://gcopilot-api.geinz.lol/host";
-  }
-  return "/host";
+  return "https://gcopilot-api.geinz.lol/host";
 }
 
 const HOST_BASE = resolveHostBase();
 
 function resolveHostListBase(): string {
   const configured = import.meta.env.VITE_HOST_LIST_BASE_URL?.trim();
-  if (configured && !/localhost|127\.0\.0\.1/.test(configured)) {
+  if (configured && !isLocalhostUrl(configured)) {
     return configured;
   }
   return HOST_BASE;
