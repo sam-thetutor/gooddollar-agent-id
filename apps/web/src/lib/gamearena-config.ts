@@ -41,7 +41,7 @@ export function skillSpendPill(skill: {
   modes?: string[];
 }): SkillPermPill {
   if (skill.skill_id === GAMEARENA_SKILL_ID) {
-    return { label: "Free tickets · optional G$", variant: "ok" };
+    return { label: "G$ ticket refills · capped", variant: "warn" };
   }
   if (skill.spends_tokens) {
     return {

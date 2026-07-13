@@ -35,7 +35,7 @@ import { verifyDeployControl } from "./deploy-control-auth.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rootEnv = resolve(here, "../../../.env");
-loadEnv({ path: existsSync(rootEnv) ? rootEnv : undefined });
+loadEnv({ path: existsSync(rootEnv) ? rootEnv : undefined, override: true });
 
 const HOST_PORT = Number(process.env.HOST_PORT ?? 3002);
 const HOST_INTERNAL_SECRET = process.env.HOST_INTERNAL_SECRET?.trim() ?? "";

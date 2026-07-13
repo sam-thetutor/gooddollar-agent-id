@@ -100,8 +100,12 @@ while IFS= read -r key; do
     echo "WARN: ${key} missing in local .env"
     continue
   fi
-  # Escape for remote sed
-  esc_val="$(printf '%s' "$val" | sed 's/[&/\]/\\&/g')"
+  # Escape for remote sed; mnemonic must stay quoted (dotenv reads only first word otherwise).
+  if [[ "${key}" == "DEPLOY_MNEMONIC" ]]; then
+    esc_val="\"$(printf '%s' "$val" | sed 's/"/\\"/g')\""
+  else
+    esc_val="$(printf '%s' "$val" | sed 's/[&/\]/\\&/g')"
+  fi
   ssh "${REMOTE}" "grep -q '^${key}=' /home/geinz/gcopilot/.env && sed -i 's|^${key}=.*|${key}=${esc_val}|' /home/geinz/gcopilot/.env || echo '${key}=${esc_val}' >> /home/geinz/gcopilot/.env"
 done <<'KEYS'
 DEPLOY_MNEMONIC

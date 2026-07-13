@@ -31,7 +31,8 @@ export function installSkillFromRegistry(
 
   if (existsSync(resolve(cache, ".git"))) {
     console.log(`[skill-install] updating cache ${cache}`);
-    execSync("git pull --ff-only", { cwd: cache, stdio: "inherit" });
+    execSync("git fetch origin", { cwd: cache, stdio: "inherit" });
+    execSync("git reset --hard origin/main", { cwd: cache, stdio: "inherit" });
   } else {
     console.log(`[skill-install] cloning ${SKILLS_REPO_URL}`);
     execSync(`git clone --depth 1 ${JSON.stringify(SKILLS_REPO_URL)} ${JSON.stringify(cache)}`, {

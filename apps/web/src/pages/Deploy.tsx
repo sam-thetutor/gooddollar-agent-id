@@ -16,7 +16,6 @@ import { signDeployControl } from "../lib/deploy-control.js";
 import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import {
   GAMEARENA_SKILL_ID,
-  parsePlayMode,
   skillSpendPill,
 } from "../lib/gamearena-config.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
@@ -78,8 +77,6 @@ function defaultConfigForSkill(skillId: string): SkillConfiguration {
       GAME_TYPE: "0",
       MAX_MATCHES: "10",
       MATCH_INTERVAL_SECONDS: "300",
-      WAGER_GS: "1",
-      DAILY_LOSS_CAP_GS: "20",
     };
   }
   if (skillId === "gaming/card-fighter/actionorder_vshouse") {
@@ -102,70 +99,18 @@ function GamearenaFields({
   config: SkillConfiguration;
   onChange: (key: string, value: string) => void;
 }) {
-  const playMode = config.PLAY_MODE ?? "offchain";
   const gameType = config.GAME_TYPE ?? "0";
-  const onchain = playMode === "onchain";
 
   return (
     <div className="deploy-config-grid">
-      <label className="field deploy-config-full">
-        <span>Play mode</span>
-        <div className="chips">
-          <button
-            type="button"
-            className={`chip ${playMode === "offchain" ? "chip-on" : ""}`}
-            onClick={() => onChange("PLAY_MODE", "offchain")}
-          >
-            Off-chain · free tickets
-          </button>
-          <button
-            type="button"
-            className={`chip ${playMode === "onchain" ? "chip-on" : ""}`}
-            onClick={() => onChange("PLAY_MODE", "onchain")}
-          >
-            On-chain · G$ wagers
-          </button>
-        </div>
+      <label className="field">
+        <span>Daily match cap</span>
+        <input
+          value={config.DAILY_MATCH_CAP ?? "5"}
+          onChange={(e) => onChange("DAILY_MATCH_CAP", e.target.value)}
+          inputMode="numeric"
+        />
       </label>
-
-      {onchain && (
-        <>
-          <label className="field">
-            <span>Wager per match</span>
-            <div className="input-suffix">
-              <input
-                value={config.WAGER_GS ?? "1"}
-                onChange={(e) => onChange("WAGER_GS", e.target.value)}
-                inputMode="decimal"
-              />
-              <span className="input-suffix-label">G$</span>
-            </div>
-          </label>
-
-          <label className="field">
-            <span>Daily loss cap</span>
-            <div className="input-suffix">
-              <input
-                value={config.DAILY_LOSS_CAP_GS ?? "20"}
-                onChange={(e) => onChange("DAILY_LOSS_CAP_GS", e.target.value)}
-                inputMode="decimal"
-              />
-              <span className="input-suffix-label">G$</span>
-            </div>
-          </label>
-        </>
-      )}
-
-      {!onchain && (
-        <label className="field">
-          <span>Daily match cap</span>
-          <input
-            value={config.DAILY_MATCH_CAP ?? "5"}
-            onChange={(e) => onChange("DAILY_MATCH_CAP", e.target.value)}
-            inputMode="numeric"
-          />
-        </label>
-      )}
 
       <label className="field deploy-config-full">
         <span>Game</span>
@@ -177,15 +122,6 @@ function GamearenaFields({
           >
             Rock · Paper · Scissors
           </button>
-          {onchain && (
-            <button
-              type="button"
-              className={`chip ${gameType === "3" ? "chip-on" : ""}`}
-              onClick={() => onChange("GAME_TYPE", "3")}
-            >
-              Coin flip
-            </button>
-          )}
         </div>
       </label>
 
@@ -299,26 +235,13 @@ function ActionorderFields({
   );
 }
 
-function GamearenaDeployHint({
-  playMode,
-}: {
-  playMode: "offchain" | "onchain";
-}) {
-  if (playMode === "offchain") {
-    return (
-      <p className="muted hint deploy-section-hint">
-        Off-chain challenge-ai: <strong>5 free tickets per day</strong>, no
-        per-match wager. We still provision a wallet and you{" "}
-        <strong>vouch at /issue</strong> (250 G$ refundable bond) before the
-        agent goes live. Optional 2 G$ refills add 5 more tickets if you run out.
-      </p>
-    );
-  }
+function GamearenaDeployHint() {
   return (
     <p className="muted hint deploy-section-hint">
-      On-chain wagers: we fund your agent with 200 G$ + CELO for gas. Vouch at
-      /issue and lock a refundable 250 G$ bond before it can wager. Set
-      conservative limits below.
+      We fund your agent with 200 G$ + CELO for gas. The agent buys GameArena
+      ticket refills (2 G$ → 5 matches) from its play wallet. You{" "}
+      <strong>vouch at /issue</strong> (250 G$ refundable bond) before it goes
+      live.
     </p>
   );
 }
@@ -596,8 +519,7 @@ export function Deploy() {
   }
 
   const formLocked = busy || !!deployId;
-  const gamearenaOffchain =
-    skillId === GAMEARENA_SKILL_ID && parsePlayMode(config) === "offchain";
+  const gamearenaSkill = skillId === GAMEARENA_SKILL_ID;
 
   return (
     <>
@@ -607,8 +529,8 @@ export function Deploy() {
           <p className="eyebrow">Autonomous deploy</p>
           <h1>Deploy a gaming agent</h1>
           <p className="lede">
-            {gamearenaOffchain
-              ? "We provision a wallet, install your skill, and keep the agent running 24/7 after you vouch at /issue. Off-chain GameArena uses free daily tickets — no per-match G$ wager."
+            {gamearenaSkill
+              ? "We provision a wallet, fund it with G$ for ticket refills, install your skill, and keep the agent running 24/7 after you vouch at /issue."
               : "We provision a wallet, fund it with 200 G$ + gas, install your skill, and keep the agent running 24/7 after you vouch at /issue."}
           </p>
         </header>
@@ -678,7 +600,7 @@ export function Deploy() {
                 <section className="card form">
                   <h2 className="card-title">3 · Play settings</h2>
                   {skillId === GAMEARENA_SKILL_ID ? (
-                    <GamearenaDeployHint playMode={parsePlayMode(config)} />
+                    <GamearenaDeployHint />
                   ) : selectedSkill?.spends_tokens ? (
                     <p className="muted hint deploy-section-hint">
                       We fund your agent play wallet with 200 G$ + 1 CELO for

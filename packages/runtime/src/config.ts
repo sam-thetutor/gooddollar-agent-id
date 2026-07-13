@@ -15,7 +15,7 @@ export function loadRuntimeEnv(): void {
   ].filter((p) => p && existsSync(p));
 
   for (const path of candidates) {
-    loadEnv({ path, override: false });
+    loadEnv({ path, override: true });
   }
 }
 
@@ -47,6 +47,13 @@ export function getRuntimeConfig(): RuntimeConfig {
   if (!deployMnemonic) {
     throw new Error(
       "DEPLOY_MNEMONIC is required — generate a fresh 12/24-word mnemonic for the deploy pool only.",
+    );
+  }
+  const mnemonicWords = deployMnemonic.split(/\s+/).filter(Boolean);
+  if (mnemonicWords.length < 12) {
+    throw new Error(
+      `DEPLOY_MNEMONIC must be 12 or 24 BIP39 words (got ${mnemonicWords.length}). ` +
+        "Wrap the phrase in double quotes in .env — dotenv otherwise reads only the first word.",
     );
   }
 
