@@ -299,8 +299,7 @@ export function Home() {
 
           <p className="lp-lede lp-reveal">
             No passports. No API keys. A face-verified human vouches for an
-            agent with a signature and a refundable G$ bond — and anyone can
-            verify it live, on-chain, in one call.
+            agent with a signature and a refundable G$ bond.
           </p>
 
           <div className="lp-cta lp-reveal">
