@@ -433,7 +433,7 @@ export function Deploy() {
 
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const { data: registry, isLoading: registryLoading } = useQuery({
     queryKey: ["skills-registry"],
     queryFn: fetchRegistry,

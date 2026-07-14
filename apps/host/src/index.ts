@@ -13,17 +13,12 @@ import {
   recordHeartbeat,
   skipPaymentForDeploy,
   updateDeployedAgent,
-  appendDeployLogLine,
-  getDeployLogTail,
-  listDeployMatches,
   recordDeployMatch,
   recordDeployRefill,
-  syncDeployLogFile,
-  syncGamearenaStateFile,
+  appendDeployLogLine,
   type DeployStatus,
 } from "@goodagent/db";
 import {
-  agentDir,
   fetchSkillsRegistry,
   findRegistrySkill,
   getDeployStats,
@@ -52,6 +47,8 @@ const DEV_SKIP_PAYMENT = process.env.HOST_DEV_SKIP_PAYMENT === "1";
 
 const app = new Hono();
 const runningPipelines = new Set<string>();
+const VERIFY_CACHE_MS = 60_000;
+const verifyCache = new Map<string, { at: number; data: unknown }>();
 
 app.use("*", cors({ origin: "*" }));
 
@@ -143,6 +140,7 @@ async function scheduleDeployPipeline(
   }
 }
 
+
 function publicAgent<T extends { telegramBotTokenEnc?: string | null }>(
   agent: T,
 ): Omit<T, "telegramBotTokenEnc"> {
@@ -151,12 +149,20 @@ function publicAgent<T extends { telegramBotTokenEnc?: string | null }>(
 }
 
 async function fetchVerifyStatus(agentAddress: string): Promise<unknown | null> {
+  const cached = verifyCache.get(agentAddress);
+  if (cached && Date.now() - cached.at < VERIFY_CACHE_MS) {
+    return cached.data;
+  }
   try {
-    const res = await fetch(`${API_BASE}/agent/verify/${agentAddress}`);
+    const res = await fetch(`${API_BASE}/agent/verify/${agentAddress}`, {
+      signal: AbortSignal.timeout(5_000),
+    });
     if (!res.ok) return null;
-    return res.json();
+    const data = await res.json();
+    verifyCache.set(agentAddress, { at: Date.now(), data });
+    return data;
   } catch {
-    return null;
+    return cached?.data ?? null;
   }
 }
 
@@ -253,26 +259,6 @@ app.get("/deploy/:id/status", async (c) => {
       loadRuntimeEnv();
       const config = getRuntimeConfig();
       const skillConfig = parseDeployConfiguration(agent);
-      const deployDir = agentDir(config.agentsRoot, agent.id);
-      const statePath = resolve(
-        deployDir,
-        "skills",
-        "gamearena-player",
-        "state.json",
-      );
-      const logPath = resolve(deployDir, "logs", "out.log");
-
-      if (agent.skills[0]?.skillId?.includes("gamearena")) {
-        await syncGamearenaStateFile(agent.id, statePath).catch((err) => {
-          console.warn(`[host] state sync for ${agent.id}:`, err);
-        });
-        await syncDeployLogFile(agent.id, logPath).catch((err) => {
-          console.warn(`[host] log sync for ${agent.id}:`, err);
-        });
-      }
-
-      const persistedMatches = await listDeployMatches(agent.id).catch(() => []);
-      const persistedLogTail = await getDeployLogTail(agent.id).catch(() => null);
 
       stats = await getDeployStats({
         agentsRoot: config.agentsRoot,
@@ -288,8 +274,6 @@ app.get("/deploy/:id/status", async (c) => {
               ? "offchain"
               : null,
         challengeAiUrl: skillConfig.CHALLENGE_AI_URL ?? null,
-        persistedMatches,
-        persistedLogTail,
       });
     } catch (err) {
       console.warn(`[host] stats for ${agent.id}:`, err);

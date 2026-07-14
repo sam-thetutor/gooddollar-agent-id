@@ -6,6 +6,39 @@ type LadderAction = (typeof CHALLENGE_ACTIONS)[number];
 const ACTION_RE =
   /createServerReference\)\("([a-f0-9]+)"[^"]*"([^"]+)"\)/g;
 
+const GAMEARENA_USER_AGENT = "Mozilla/5.0 (compatible; GoodAgent/1.0)";
+
+const GAMEARENA_GET_HEADERS = {
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,application/javascript,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "User-Agent": GAMEARENA_USER_AGENT,
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+} as const;
+
+const RETRYABLE_STATUSES = new Set([403, 429, 503]);
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  attempts = 5,
+): Promise<Response> {
+  let last: Response | null = null;
+  for (let i = 0; i < attempts; i++) {
+    const res = await fetch(url, init);
+    if (res.ok || !RETRYABLE_STATUSES.has(res.status) || i === attempts - 1) {
+      return res;
+    }
+    last = res;
+    await new Promise((r) =>
+      setTimeout(r, 1000 * 2 ** i + Math.random() * 500),
+    );
+  }
+  return last!;
+}
+
 export interface LadderTopEntry {
   rank: number;
   wallet: string;
@@ -73,7 +106,34 @@ async function discoverLadderAction(
     return actionCache.actions.getArenaLadder;
   }
 
-  const pageRes = await fetch(pageUrl, { headers: { Accept: "text/html" } });
+  const maxAttempts = 6;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const actionId = await discoverLadderActionOnce(pageUrl, origin);
+      actionCache = {
+        at: Date.now(),
+        pageUrl,
+        actions: { getArenaLadder: actionId },
+      };
+      return actionId;
+    } catch (error) {
+      lastError = error as Error;
+      const retryable = /\((403|429|503)\)/.test(lastError.message);
+      if (!retryable || attempt === maxAttempts - 1) break;
+      await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
+    }
+  }
+
+  throw lastError!;
+}
+
+async function discoverLadderActionOnce(
+  pageUrl: string,
+  origin: string,
+): Promise<string> {
+  const pageRes = await fetchWithRetry(pageUrl, { headers: GAMEARENA_GET_HEADERS });
   if (!pageRes.ok) {
     throw new Error(`GameArena page fetch failed (${pageRes.status})`);
   }
@@ -91,7 +151,9 @@ async function discoverLadderAction(
   await Promise.all(
     chunkPaths.map(async (path) => {
       try {
-        const res = await fetch(`${origin}${path}`);
+        const res = await fetchWithRetry(`${origin}${path}`, {
+          headers: GAMEARENA_GET_HEADERS,
+        });
         if (!res.ok) return;
         const js = await res.text();
         let match: RegExpExecArray | null;
@@ -112,7 +174,6 @@ async function discoverLadderAction(
     throw new Error("getArenaLadder action not found in GameArena bundles");
   }
 
-  actionCache = { at: Date.now(), pageUrl, actions };
   return actions.getArenaLadder;
 }
 
@@ -125,9 +186,15 @@ export async function fetchGamearenaLadder(
     const pageUrl = `${origin}/games/challenge-ai`;
     const actionId = await discoverLadderAction(pageUrl, origin);
 
-    const res = await fetch(pageUrl, {
+    const res = await fetchWithRetry(pageUrl, {
       method: "POST",
       headers: {
+        Accept: "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": GAMEARENA_USER_AGENT,
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
         "Content-Type": "text/plain;charset=UTF-8",
         Origin: origin,
         Referer: pageUrl,

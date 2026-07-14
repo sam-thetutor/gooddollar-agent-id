@@ -15,7 +15,6 @@ import {
   type BaselineSource,
 } from "./baseline-balance.js";
 import {
-  fetchGamearenaLadder,
   type GamearenaLadder,
 } from "./gamearena-ladder.js";
 
@@ -273,7 +272,10 @@ export async function fetchAgentBalances(
   agentAddress: Address,
   rpcUrl: string,
 ): Promise<AgentBalances> {
-  const pub = createPublicClient({ chain: celo, transport: http(rpcUrl) });
+  const pub = createPublicClient({
+    chain: celo,
+    transport: http(rpcUrl, { timeout: 8_000 }),
+  });
   const [celoWei, gWei] = await Promise.all([
     pub.getBalance({ address: agentAddress }),
     pub.readContract({
@@ -356,8 +358,6 @@ export async function getDeployStats(opts: {
   let logTail: string | null = null;
   let ledgerDeltaGs: number | null = null;
   let ladder: GamearenaLadder | null = null;
-  let resolvedPlayMode: "offchain" | "onchain" | null =
-    opts.playMode ?? null;
 
   if (opts.skillId?.includes("gamearena")) {
     const ga = readGamearenaStats(opts.agentsRoot, opts.deployId);
@@ -370,7 +370,6 @@ export async function getDeployStats(opts: {
       opts.persistedLogTail ??
       null;
     const playMode = resolveGamearenaPlayMode(mergedState, opts.playMode ?? null);
-    resolvedPlayMode = playMode;
     if (mergedState) {
       const computed = computePerformance(mergedState);
       ledgerDeltaGs = computed.netPnLGs;
@@ -399,17 +398,6 @@ export async function getDeployStats(opts: {
       };
       ledgerDeltaGs = 0;
     }
-  }
-
-  if (
-    opts.agentAddress &&
-    opts.skillId?.includes("gamearena") &&
-    resolvedPlayMode === "offchain"
-  ) {
-    ladder = await fetchGamearenaLadder(
-      opts.agentAddress,
-      opts.challengeAiUrl ?? "https://gamearenahq.xyz",
-    );
   }
 
   const walletPnL = buildWalletPnL({
