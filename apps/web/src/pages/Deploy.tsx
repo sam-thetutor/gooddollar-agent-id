@@ -564,7 +564,7 @@ export function Deploy() {
                     <input
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="e.g. Arena Bot #1"
+                      placeholder="e.g. Arena Agent #1"
                       disabled={formLocked}
                     />
                   </label>

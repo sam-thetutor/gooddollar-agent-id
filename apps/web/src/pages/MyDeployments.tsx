@@ -50,7 +50,7 @@ function skillName(agent: DeployAgent): string {
 function skillKind(agent: DeployAgent): string {
   const skill = agent.skills?.[0]?.skillId ?? "";
   if (skill.includes("gamearena")) return "GameArena";
-  if (skill.includes("claim")) return "Claim bot";
+  if (skill.includes("claim")) return "Claim agent";
   if (skill.includes("actionorder")) return "ActionOrder";
   return "Agent";
 }

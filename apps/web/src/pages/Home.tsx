@@ -89,7 +89,7 @@ function CountUp({ value }: { value: number }) {
 
 const ROTATE_WORDS = [
   "AI agents.",
-  "gaming bots.",
+  "gaming agents.",
   "trading agents.",
   "autonomous workers.",
 ];

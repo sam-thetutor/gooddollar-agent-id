@@ -13,7 +13,7 @@
 
 | Role | Job |
 |------|-----|
-| **Agent** (your bot's wallet) | Attest that it controls its address on-chain |
+| **Agent** (your agent's wallet) | Attest that it controls its address on-chain |
 | **Operator** (GoodDollar-verified human) | Stake a refundable 250 G$ bond and sign the credential |
 | **Verifier** (anyone) | `GET /agent/verify/:address` — live verdict, no auth |
 

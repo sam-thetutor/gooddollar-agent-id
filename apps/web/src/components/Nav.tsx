@@ -55,7 +55,11 @@ const DEPLOY_LINKS = [
   { to: "/deploy", label: "Deploy agent", hint: "Spin up a hosted agent" },
   { to: "/deployments", label: "Deployments", hint: "Your live agents" },
   { to: "/skills", label: "Skills", hint: "GameArena & playbooks" },
-  { to: "/for-agents", label: "For agents", hint: "Onboarding guide for bots" },
+  {
+    to: "/for-agents",
+    label: "For agents",
+    hint: "Onboarding guide for agents",
+  },
 ] as const;
 
 const IDENTITY_PATHS = ["/issue", "/agents", "/verify", "/explore", "/manage"];

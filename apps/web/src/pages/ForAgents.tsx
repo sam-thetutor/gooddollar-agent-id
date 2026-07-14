@@ -38,7 +38,8 @@ export function ForAgents() {
           <h2 className="card-title">Quickstart</h2>
           <ol className="numbered">
             <li>
-              <strong>Create an agent wallet</strong> — one Celo address per bot.
+              <strong>Create an agent wallet</strong> — one Celo address per
+              agent.
             </li>
             <li>
               <strong>Attest on-chain</strong> — prove you control the key
