@@ -42,20 +42,28 @@ model AgentCredential {
   @@map("agent_credentials")
 }
 
-// Telegram UBI-reminder bot: one row per (chat, wallet) pair. A chat can watch
-// several wallets. `lastRemindedDay` stores the UBIScheme `currentDay` of the
-// last reminder sent, so each wallet is pinged at most once per claim cycle.
+// Telegram UBI-reminder bots: one row per (deploy, chat, wallet). `deployId`
+// scopes rows to a hosted reminder-agent deploy ("" = the flagship bot), since
+// Telegram private chat ids are identical across bots. `lastRemindedDay`
+// stores the UBIScheme `currentDay` of the last reminder, so each wallet is
+// pinged at most once per claim cycle. `streak`/`lastClaimedDay` track
+// consecutive on-chain claim days for streaks and leaderboards.
 model TelegramSubscriber {
   id              String    @id @default(cuid())
+  deployId        String    @default("") @map("deploy_id")
   chatId          String    @map("chat_id")
   wallet          String
   active          Boolean   @default(true)
   lastRemindedDay String?   @map("last_reminded_day")
+  lastClaimedDay  String?   @map("last_claimed_day")
+  streak          Int       @default(0)
+  bestStreak      Int       @default(0) @map("best_streak")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  @@unique([chatId, wallet])
+  @@unique([deployId, chatId, wallet])
   @@index([active])
+  @@index([deployId, active])
   @@map("telegram_subscribers")
 }
 

@@ -60,6 +60,7 @@ export interface RunPipelineInput {
   template?: string;
   skillId: string;
   skillConfiguration?: SkillConfiguration;
+  telegramBotToken?: string | null;
   skipIdentity?: boolean;
   dryRun?: boolean;
   resume?: {
@@ -154,6 +155,7 @@ export async function runDeployPipeline(
       rpcUrl: config.rpcUrl,
       displayName,
       config: input.skillConfiguration ?? {},
+      telegramBotToken: input.telegramBotToken ?? null,
     });
     writeSkillEnv(skillDir, skillEnv);
 

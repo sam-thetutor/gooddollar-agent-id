@@ -173,6 +173,8 @@ export function createDeploy(input: {
   ownerWallet: string;
   skillId: string;
   configuration?: SkillConfiguration;
+  telegramBotToken?: string;
+  template?: string;
   skipPayment?: boolean;
 }) {
   return hostFetch<{ agent: DeployAgent }>("/deploy", {
@@ -182,7 +184,8 @@ export function createDeploy(input: {
       ownerWallet: input.ownerWallet,
       skillId: input.skillId,
       configuration: input.configuration,
-      template: "gaming",
+      telegramBotToken: input.telegramBotToken,
+      template: input.template ?? "gaming",
       skipPayment: input.skipPayment ?? true,
     }),
   });

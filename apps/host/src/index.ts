@@ -6,12 +6,22 @@ import { serve } from "@hono/node-server";
 import {
   confirmDeployPayment,
   createDeployedAgent,
+  decryptTelegramBotToken,
   getDeployedAgent,
+  listActiveSubscribers,
+  listChatSubscriptions,
   listDeployedAgentsByOwner,
+  markReminded,
   maxWalletDerivationIndex,
   parseDeployConfiguration,
+  recordClaims,
   recordHeartbeat,
   skipPaymentForDeploy,
+  streakLeaderboard,
+  subscribeWallet,
+  unsubscribeChat,
+  unsubscribeWallet,
+  deactivateChats,
   updateDeployedAgent,
   recordDeployMatch,
   recordDeployRefill,
@@ -99,6 +109,10 @@ async function scheduleDeployPipeline(
     loadRuntimeEnv();
     const config = getRuntimeConfig();
     const minDerivationIndex = await maxWalletDerivationIndex();
+    const telegramBotToken = await decryptTelegramBotToken(
+      agent,
+      config.encryptionSecret,
+    );
     await runDeployPipeline(
       config,
       {
@@ -108,6 +122,7 @@ async function scheduleDeployPipeline(
         template: agent.template,
         skillId: primarySkill.skillId,
         skillConfiguration: parseDeployConfiguration(agent),
+        telegramBotToken,
         skipIdentity: opts.skipIdentity,
         dryRun: opts.dryRun,
         minDerivationIndex,
@@ -191,11 +206,32 @@ app.post("/deploy", async (c) => {
     skillId?: string;
     skillIds?: string[];
     configuration?: Record<string, string>;
+    telegramBotToken?: string;
     skipPayment?: boolean;
   }>();
 
   if (!body.displayName?.trim()) {
     return c.json({ error: "displayName is required" }, 400);
+  }
+
+  // Bot tokens are secrets: encrypted at rest, never stored in configuration.
+  const telegramBotToken = body.telegramBotToken?.trim() || null;
+  const configuration = { ...(body.configuration ?? {}) };
+  delete configuration.TELEGRAM_BOT_TOKEN;
+
+  let encryptionSecret: string | null = null;
+  if (telegramBotToken) {
+    loadRuntimeEnv();
+    encryptionSecret = process.env.ENCRYPTION_SECRET?.trim() || null;
+    if (!encryptionSecret) {
+      return c.json(
+        {
+          error: "HOST_CONFIG",
+          message: "ENCRYPTION_SECRET is not configured on this host",
+        },
+        500,
+      );
+    }
   }
 
   let skills;
@@ -227,7 +263,9 @@ app.post("/deploy", async (c) => {
     template: body.template ?? "gaming",
     ownerWallet: body.ownerWallet,
     skills,
-    configuration: body.configuration ?? null,
+    configuration: Object.keys(configuration).length ? configuration : null,
+    telegramBotToken,
+    encryptionSecret,
   });
 
   if (body.skipPayment && DEV_SKIP_PAYMENT) {
@@ -446,6 +484,98 @@ app.post("/deploy/:id/activity", async (c) => {
   }
 
   return c.json({ error: "UNKNOWN_TYPE" }, 400);
+});
+
+/* ------------------------------------------------------------------ */
+/* Telegram reminder skill — central subscriber store scoped by deploy */
+/* ------------------------------------------------------------------ */
+
+const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
+
+app.get("/deploy/:id/telegram/subscribers", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const chatId = c.req.query("chatId");
+  const subscribers = chatId
+    ? await listChatSubscriptions(chatId, id)
+    : await listActiveSubscribers(id);
+  return c.json({
+    subscribers: subscribers.map((s) => ({
+      id: s.id,
+      chatId: s.chatId,
+      wallet: s.wallet,
+      lastRemindedDay: s.lastRemindedDay,
+      lastClaimedDay: s.lastClaimedDay,
+      streak: s.streak,
+      bestStreak: s.bestStreak,
+    })),
+  });
+});
+
+app.post("/deploy/:id/telegram/subscribe", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const body = await c.req.json<{ chatId?: string; wallet?: string }>();
+  if (!body.chatId?.trim() || !body.wallet || !WALLET_RE.test(body.wallet)) {
+    return c.json({ error: "chatId and a valid wallet are required" }, 400);
+  }
+  const sub = await subscribeWallet(body.chatId.trim(), body.wallet, id);
+  return c.json({ ok: true, id: sub.id, streak: sub.streak });
+});
+
+app.post("/deploy/:id/telegram/unsubscribe", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const body = await c.req.json<{ chatId?: string; wallet?: string }>();
+  if (!body.chatId?.trim()) {
+    return c.json({ error: "chatId is required" }, 400);
+  }
+  if (body.wallet) {
+    const removed = await unsubscribeWallet(body.chatId.trim(), body.wallet, id);
+    return c.json({ ok: true, removed: removed ? 1 : 0 });
+  }
+  const removed = await unsubscribeChat(body.chatId.trim(), id);
+  return c.json({ ok: true, removed });
+});
+
+app.post("/deploy/:id/telegram/reminded", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const body = await c.req.json<{ ids?: string[]; day?: string }>();
+  if (!Array.isArray(body.ids) || !body.day) {
+    return c.json({ error: "ids and day are required" }, 400);
+  }
+  await markReminded(body.ids, body.day);
+  return c.json({ ok: true });
+});
+
+app.post("/deploy/:id/telegram/claims", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const body = await c.req.json<{ wallets?: string[]; day?: string }>();
+  if (!Array.isArray(body.wallets) || !body.day) {
+    return c.json({ error: "wallets and day are required" }, 400);
+  }
+  await recordClaims(body.wallets, body.day, id);
+  return c.json({ ok: true });
+});
+
+app.get("/deploy/:id/telegram/leaderboard", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const limit = Math.min(Number(c.req.query("limit") ?? 10) || 10, 25);
+  const rows = await streakLeaderboard(id, limit);
+  return c.json({ leaderboard: rows });
+});
+
+app.post("/deploy/:id/telegram/deactivate", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const body = await c.req.json<{ chatIds?: string[] }>();
+  if (!Array.isArray(body.chatIds)) {
+    return c.json({ error: "chatIds is required" }, 400);
+  }
+  await deactivateChats(body.chatIds, id);
+  return c.json({ ok: true });
 });
 
 app.post("/deploy/:id/stop", async (c) => {

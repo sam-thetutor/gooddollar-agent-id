@@ -1,6 +1,7 @@
 import { chmodSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Address } from "viem";
+import { resolveGamearenaProxy } from "./gamearena-proxy.js";
 
 export type SkillConfiguration = Record<string, string>;
 
@@ -84,6 +85,30 @@ export function buildActionorderEnv(
   };
 }
 
+export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
+
+export function buildUbiReminderEnv(
+  agentAddress: Address,
+  displayName: string,
+  rpcUrl: string,
+  config: SkillConfiguration,
+  telegramBotToken: string | null,
+): Record<string, string> {
+  if (!telegramBotToken) {
+    throw new Error(
+      "ubi-reminder requires a Telegram bot token (create one with @BotFather)",
+    );
+  }
+  return {
+    TELEGRAM_BOT_TOKEN: telegramBotToken,
+    AGENT_ADDRESS: agentAddress,
+    BOT_NAME: config.BOT_NAME ?? displayName,
+    CELO_RPC_URL: config.CELO_RPC_URL ?? rpcUrl,
+    REMINDER_INTERVAL_MINUTES: config.REMINDER_INTERVAL_MINUTES ?? "15",
+    IDENTITY_EXPIRY_WARN_DAYS: config.IDENTITY_EXPIRY_WARN_DAYS ?? "14",
+  };
+}
+
 export function buildSkillEnv(
   skillId: string,
   opts: {
@@ -93,6 +118,7 @@ export function buildSkillEnv(
     rpcUrl: string;
     displayName: string;
     config: SkillConfiguration;
+    telegramBotToken?: string | null;
   },
 ): Record<string, string> {
   let env: Record<string, string>;
@@ -105,8 +131,21 @@ export function buildSkillEnv(
     );
   } else if (skillId === "gaming/card-fighter/actionorder_vshouse") {
     env = buildActionorderEnv(opts.agentAddress, opts.displayName, opts.config);
+  } else if (skillId === UBI_REMINDER_SKILL_ID) {
+    env = buildUbiReminderEnv(
+      opts.agentAddress,
+      opts.displayName,
+      opts.rpcUrl,
+      opts.config,
+      opts.telegramBotToken ?? null,
+    );
   } else {
     throw new Error(`Unsupported skill_id for env: ${skillId}`);
   }
-  return { ...env, ...buildHostReportEnv(opts.deployId) };
+  const merged = { ...env, ...buildHostReportEnv(opts.deployId) };
+  if (skillId === "gaming/wagering/gamearena_1v1") {
+    const proxy = resolveGamearenaProxy(opts.deployId, opts.config);
+    if (proxy) merged.GAMEARENA_PROXY = proxy;
+  }
+  return merged;
 }

@@ -24,6 +24,7 @@ const REGISTRY_URL =
   "https://raw.githubusercontent.com/sam-thetutor/goodagent-skills/main/registry.json";
 
 const DEFAULT_SKILL_ID = "gaming/wagering/gamearena_1v1";
+const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
 
 interface SkillEntry {
   name: string;
@@ -90,6 +91,12 @@ function defaultConfigForSkill(skillId: string): SkillConfiguration {
       MAX_MATCHES: "5",
       DAILY_MATCH_CAP: "50",
       MATCH_INTERVAL_SECONDS: "10",
+    };
+  }
+  if (skillId === UBI_REMINDER_SKILL_ID) {
+    return {
+      REMINDER_INTERVAL_MINUTES: "15",
+      IDENTITY_EXPIRY_WARN_DAYS: "14",
     };
   }
   return {};
@@ -234,6 +241,71 @@ function ActionorderFields({
           <span className="input-suffix-label">sec</span>
         </div>
       </label>
+    </div>
+  );
+}
+
+function UbiReminderFields({
+  config,
+  onChange,
+  botToken,
+  onTokenChange,
+}: {
+  config: SkillConfiguration;
+  onChange: (key: string, value: string) => void;
+  botToken: string;
+  onTokenChange: (value: string) => void;
+}) {
+  return (
+    <div className="deploy-config-grid">
+      <label className="field deploy-config-full">
+        <span>Telegram bot token</span>
+        <input
+          type="password"
+          value={botToken}
+          onChange={(e) => onTokenChange(e.target.value)}
+          placeholder="123456789:AA…  (from @BotFather)"
+          autoComplete="off"
+        />
+      </label>
+
+      <label className="field">
+        <span>Scan interval</span>
+        <div className="input-suffix">
+          <input
+            value={config.REMINDER_INTERVAL_MINUTES ?? "15"}
+            onChange={(e) =>
+              onChange("REMINDER_INTERVAL_MINUTES", e.target.value)
+            }
+            inputMode="numeric"
+          />
+          <span className="input-suffix-label">min</span>
+        </div>
+      </label>
+
+      <label className="field">
+        <span>Identity expiry warning</span>
+        <div className="input-suffix">
+          <input
+            value={config.IDENTITY_EXPIRY_WARN_DAYS ?? "14"}
+            onChange={(e) =>
+              onChange("IDENTITY_EXPIRY_WARN_DAYS", e.target.value)
+            }
+            inputMode="numeric"
+          />
+          <span className="input-suffix-label">days</span>
+        </div>
+      </label>
+
+      <p className="muted hint deploy-config-full">
+        Create a bot with{" "}
+        <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">
+          @BotFather
+        </a>{" "}
+        and paste its token here. The token is encrypted at rest and only ever
+        used by your deployed agent. The bot reads public chain data only — it
+        never holds funds.
+      </p>
     </div>
   );
 }
@@ -428,7 +500,7 @@ function DeployPipeline({
 export function Deploy() {
   usePageMeta(
     "Deploy Agent — GoodAgent",
-    "Deploy a 24/7 gaming agent with GameArena or ACTION-ORDER skills.",
+    "Deploy a 24/7 agent: GameArena and ACTION-ORDER players, or a Telegram UBI reminder bot.",
   );
 
   const { address, isConnected } = useAccount();
@@ -447,6 +519,7 @@ export function Deploy() {
 
   const [name, setName] = useState("My GameArena Agent");
   const [skillId, setSkillId] = useState(DEFAULT_SKILL_ID);
+  const [botToken, setBotToken] = useState("");
   const [config, setConfig] = useState<SkillConfiguration>(() =>
     defaultConfigForSkill(DEFAULT_SKILL_ID),
   );
@@ -486,6 +559,8 @@ export function Deploy() {
       setName("My GameArena Agent");
     } else if (skillId === "gaming/card-fighter/actionorder_vshouse") {
       setName("My ACTION-ORDER Agent");
+    } else if (skillId === UBI_REMINDER_SKILL_ID) {
+      setName("My UBI Reminder Agent");
     }
   }, [skillId]);
 
@@ -503,6 +578,9 @@ export function Deploy() {
         ownerWallet: address,
         skillId,
         configuration: config,
+        telegramBotToken:
+          skillId === UBI_REMINDER_SKILL_ID ? botToken.trim() : undefined,
+        template: skillId === UBI_REMINDER_SKILL_ID ? "social" : "gaming",
         skipPayment: true,
       });
       setDeployId(agent.id);
@@ -530,11 +608,13 @@ export function Deploy() {
       <main className="page deploy-page">
         <header className="hero compact">
           <p className="eyebrow">Autonomous deploy</p>
-          <h1>Deploy a gaming agent</h1>
+          <h1>Deploy an agent</h1>
           <p className="lede">
-            {gamearenaSkill
-              ? "We provision a wallet, fund it with G$ for ticket refills, install your skill, and keep the agent running 24/7 after you vouch at /issue."
-              : "We provision a wallet, fund it with 200 G$ + gas, install your skill, and keep the agent running 24/7 after you vouch at /issue."}
+            {skillId === UBI_REMINDER_SKILL_ID
+              ? "We provision an agent identity, install your reminder bot, and keep it running 24/7 after you vouch at /issue."
+              : gamearenaSkill
+                ? "We provision a wallet, fund it with G$ for ticket refills, install your skill, and keep the agent running 24/7 after you vouch at /issue."
+                : "We provision a wallet, fund it with 200 G$ + gas, install your skill, and keep the agent running 24/7 after you vouch at /issue."}
           </p>
         </header>
 
@@ -601,9 +681,20 @@ export function Deploy() {
                 </section>
 
                 <section className="card form">
-                  <h2 className="card-title">3 · Play settings</h2>
+                  <h2 className="card-title">
+                    {skillId === UBI_REMINDER_SKILL_ID
+                      ? "3 · Bot settings"
+                      : "3 · Play settings"}
+                  </h2>
                   {skillId === GAMEARENA_SKILL_ID ? (
                     <GamearenaDeployHint />
+                  ) : skillId === UBI_REMINDER_SKILL_ID ? (
+                    <p className="muted hint deploy-section-hint">
+                      Read-only agent — it watches the chain and messages
+                      Telegram, never touches funds. You vouch at /issue
+                      (refundable 250 G$ bond) so your bot carries a verifiable
+                      human-backed identity.
+                    </p>
                   ) : selectedSkill?.spends_tokens ? (
                     <p className="muted hint deploy-section-hint">
                       We fund your agent play wallet with 200 G$ + 1 CELO for
@@ -624,6 +715,14 @@ export function Deploy() {
                   {skillId === "gaming/card-fighter/actionorder_vshouse" && (
                     <ActionorderFields config={config} onChange={updateConfig} />
                   )}
+                  {skillId === UBI_REMINDER_SKILL_ID && (
+                    <UbiReminderFields
+                      config={config}
+                      onChange={updateConfig}
+                      botToken={botToken}
+                      onTokenChange={setBotToken}
+                    />
+                  )}
 
                   {error && <p className="error">{error}</p>}
 
@@ -631,7 +730,11 @@ export function Deploy() {
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={formLocked || !name.trim()}
+                      disabled={
+                        formLocked ||
+                        !name.trim() ||
+                        (skillId === UBI_REMINDER_SKILL_ID && !botToken.trim())
+                      }
                       onClick={() => void handleDeploy()}
                     >
                       {busy ? "Deploying…" : "Deploy agent"}
