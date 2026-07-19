@@ -60,7 +60,7 @@ export interface AgentBalances {
 export interface GamePerformance {
   skill: "gamearena-player" | "unknown";
   /** From deploy config when skill is gamearena-player */
-  playMode?: "offchain" | "onchain";
+  playMode?: "offchain" | "onchain" | "auto";
   gamesPlayed: number;
   wins: number;
   losses: number;
@@ -325,8 +325,9 @@ export function readGamearenaStats(
 function resolveGamearenaPlayMode(
   state: GamearenaState | null,
   configPlayMode?: string | null,
-): "offchain" | "onchain" {
+): "offchain" | "onchain" | "auto" {
   if (configPlayMode === "onchain") return "onchain";
+  if (configPlayMode === "auto") return "auto";
   if (configPlayMode === "offchain") return "offchain";
   if (state?.history.some((m) => m.mode === "onchain" || m.wagerGs > 0)) {
     return "onchain";
