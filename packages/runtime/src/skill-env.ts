@@ -44,9 +44,15 @@ export function buildGamearenaEnv(
   if (playMode === "onchain" && !agentPrivateKey) {
     throw new Error("gamearena-player on-chain mode requires agent private key");
   }
+  if (playMode === "auto" && !agentPrivateKey) {
+    throw new Error("gamearena-player auto mode requires agent private key");
+  }
 
   const env: Record<string, string> = {
     PLAY_MODE: playMode,
+    MARKOV_STRATEGY: config.MARKOV_STRATEGY ?? "random",
+    RPS_SEQUENCE: config.RPS_SEQUENCE ?? "rock,paper,scissors",
+    RPS_FIXED: config.RPS_FIXED ?? "rock",
     PLAYER_ADDRESS: config.PLAYER_ADDRESS ?? agentAddress,
     CHALLENGE_AI_URL: config.CHALLENGE_AI_URL ?? "https://gamearenahq.xyz",
     CELO_RPC_URL: config.CELO_RPC_URL ?? rpcUrl,
@@ -57,6 +63,9 @@ export function buildGamearenaEnv(
     WAGER_GS: config.WAGER_GS ?? "1",
     GAME_TYPE: config.GAME_TYPE ?? "0",
     DAILY_LOSS_CAP_GS: config.DAILY_LOSS_CAP_GS ?? "20",
+    ACCEPT_TIMEOUT_SECONDS: config.ACCEPT_TIMEOUT_SECONDS ?? "90",
+    RESOLVE_TIMEOUT_SECONDS: config.RESOLVE_TIMEOUT_SECONDS ?? "120",
+    ACCEPT_POLL_SECONDS: config.ACCEPT_POLL_SECONDS ?? "5",
     MAX_MATCHES: config.MAX_MATCHES ?? "10",
     MATCH_INTERVAL_SECONDS: config.MATCH_INTERVAL_SECONDS ?? "300",
   };
@@ -86,6 +95,10 @@ export function buildActionorderEnv(
 }
 
 export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
+export const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
+
+const BALAIO_SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhemF3dGFqYnB6aHBsdnR1amVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NjI0MjYsImV4cCI6MjA4MTAzODQyNn0.m1lboja6h24zePQexzWSY9MeC4WyLGa_kQvKbJxPmVg";
 
 export function buildUbiReminderEnv(
   agentAddress: Address,
@@ -109,6 +122,38 @@ export function buildUbiReminderEnv(
   };
 }
 
+export function buildBalaioEnv(
+  agentPrivateKey: `0x${string}` | null,
+  rpcUrl: string,
+  config: SkillConfiguration,
+  agentAddress: Address,
+  apiBase: string,
+): Record<string, string> {
+  if (!agentPrivateKey) {
+    throw new Error("balaio-worker requires agent private key");
+  }
+  const verifyBase =
+    config.GOODAGENT_VERIFY_BASE ??
+    `${apiBase.replace(/\/$/, "")}/agent/verify?agent=`;
+  return {
+    PRIVATE_KEY: agentPrivateKey,
+    AGENT_ADDRESS: agentAddress,
+    CELO_RPC_URL: config.CELO_RPC_URL ?? rpcUrl,
+    BALAIO_API_BASE: config.BALAIO_API_BASE ?? "https://www.usebalaio.com",
+    BALAIO_CONTRACT:
+      config.BALAIO_CONTRACT ?? "0xe60aa33E8Dee3Bb1B2218bF025AcB624312D519E",
+    BALAIO_SUPABASE_URL:
+      config.BALAIO_SUPABASE_URL ?? "https://lazawtajbpzhplvtujej.supabase.co",
+    BALAIO_SUPABASE_ANON_KEY:
+      config.BALAIO_SUPABASE_ANON_KEY ?? BALAIO_SUPABASE_ANON_KEY,
+    SCAN_INTERVAL_SECONDS: config.SCAN_INTERVAL_SECONDS ?? "300",
+    MIN_REWARD: config.MIN_REWARD ?? "1",
+    REWARD_TOKENS: config.REWARD_TOKENS ?? "G$,USDC,CELO,cUSD",
+    MAX_TASKS_PER_RUN: config.MAX_TASKS_PER_RUN ?? "1",
+    GOODAGENT_VERIFY_BASE: verifyBase,
+  };
+}
+
 export function buildSkillEnv(
   skillId: string,
   opts: {
@@ -119,6 +164,7 @@ export function buildSkillEnv(
     displayName: string;
     config: SkillConfiguration;
     telegramBotToken?: string | null;
+    apiBase?: string;
   },
 ): Record<string, string> {
   let env: Record<string, string>;
@@ -138,6 +184,14 @@ export function buildSkillEnv(
       opts.rpcUrl,
       opts.config,
       opts.telegramBotToken ?? null,
+    );
+  } else if (skillId === BALAIO_WORKER_SKILL_ID) {
+    env = buildBalaioEnv(
+      opts.agentPrivateKey,
+      opts.rpcUrl,
+      opts.config,
+      opts.agentAddress,
+      opts.apiBase ?? "https://gcopilot-api.geinz.lol",
     );
   } else {
     throw new Error(`Unsupported skill_id for env: ${skillId}`);

@@ -16,15 +16,21 @@ import { signDeployControl } from "../lib/deploy-control.js";
 import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import {
   GAMEARENA_SKILL_ID,
+  MARKOV_STRATEGIES,
   skillSpendPill,
 } from "../lib/gamearena-config.js";
+import {
+  DEFAULT_DEPLOY_SKILL_ID,
+  filterListedSkills,
+  resolveDefaultDeploySkillId,
+} from "../lib/skill-registry.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 const REGISTRY_URL =
   "https://raw.githubusercontent.com/sam-thetutor/goodagent-skills/main/registry.json";
 
-const DEFAULT_SKILL_ID = "gaming/wagering/gamearena_1v1";
 const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
+const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
 
 interface SkillEntry {
   name: string;
@@ -33,6 +39,8 @@ interface SkillEntry {
   description: string;
   chain: string;
   spends_tokens: boolean;
+  listed?: boolean;
+  enabled?: boolean;
   modes?: string[];
   token?: string;
   game?: string;
@@ -74,10 +82,16 @@ function defaultConfigForSkill(skillId: string): SkillConfiguration {
   if (skillId === "gaming/wagering/gamearena_1v1") {
     return {
       PLAY_MODE: "offchain",
+      MARKOV_STRATEGY: "random",
+      RPS_SEQUENCE: "rock,paper,scissors",
+      RPS_FIXED: "rock",
       DAILY_MATCH_CAP: "50",
       AUTO_REFILL: "1",
       DAILY_REFILL_CAP_GS: "20",
       MAX_REFILLS_PER_DAY: "10",
+      WAGER_GS: "1",
+      DAILY_LOSS_CAP_GS: "20",
+      ACCEPT_TIMEOUT_SECONDS: "90",
       GAME_TYPE: "0",
       MAX_MATCHES: "10",
       MATCH_INTERVAL_SECONDS: "300",
@@ -99,6 +113,14 @@ function defaultConfigForSkill(skillId: string): SkillConfiguration {
       IDENTITY_EXPIRY_WARN_DAYS: "14",
     };
   }
+  if (skillId === BALAIO_WORKER_SKILL_ID) {
+    return {
+      SCAN_INTERVAL_SECONDS: "300",
+      MIN_REWARD: "1",
+      REWARD_TOKENS: "G$,USDC,CELO,cUSD",
+      MAX_TASKS_PER_RUN: "1",
+    };
+  }
   return {};
 }
 
@@ -110,17 +132,87 @@ function GamearenaFields({
   onChange: (key: string, value: string) => void;
 }) {
   const gameType = config.GAME_TYPE ?? "0";
+  const playMode = config.PLAY_MODE ?? "offchain";
+  const strategy = config.MARKOV_STRATEGY ?? "random";
+  const showOnchain = playMode === "onchain" || playMode === "auto";
+  const showOffchain = playMode === "offchain" || playMode === "auto";
 
   return (
     <div className="deploy-config-grid">
-      <label className="field">
-        <span>Daily match cap</span>
-        <input
-          value={config.DAILY_MATCH_CAP ?? "5"}
-          onChange={(e) => onChange("DAILY_MATCH_CAP", e.target.value)}
-          inputMode="numeric"
-        />
+      <label className="field deploy-config-full">
+        <span>Play mode</span>
+        <div className="chips">
+          <button
+            type="button"
+            className={`chip ${playMode === "offchain" ? "chip-on" : ""}`}
+            onClick={() => onChange("PLAY_MODE", "offchain")}
+          >
+            Free tickets
+          </button>
+          <button
+            type="button"
+            className={`chip ${playMode === "onchain" ? "chip-on" : ""}`}
+            onClick={() => onChange("PLAY_MODE", "onchain")}
+          >
+            On-chain G$
+          </button>
+          <button
+            type="button"
+            className={`chip ${playMode === "auto" ? "chip-on" : ""}`}
+            onClick={() => onChange("PLAY_MODE", "auto")}
+          >
+            Auto
+          </button>
+        </div>
       </label>
+
+      <label className="field">
+        <span>MARKOV strategy</span>
+        <select
+          value={strategy}
+          onChange={(e) => onChange("MARKOV_STRATEGY", e.target.value)}
+        >
+          {MARKOV_STRATEGIES.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {strategy === "sequence" && (
+        <label className="field">
+          <span>Throw sequence</span>
+          <input
+            value={config.RPS_SEQUENCE ?? "rock,paper,scissors"}
+            onChange={(e) => onChange("RPS_SEQUENCE", e.target.value)}
+            placeholder="rock,paper,scissors"
+          />
+        </label>
+      )}
+
+      {strategy === "fixed" && (
+        <label className="field">
+          <span>Fixed throw</span>
+          <select
+            value={config.RPS_FIXED ?? "rock"}
+            onChange={(e) => onChange("RPS_FIXED", e.target.value)}
+          >
+            <option value="rock">Rock</option>
+            <option value="paper">Paper</option>
+            <option value="scissors">Scissors</option>
+          </select>
+        </label>
+      )}
+
+      {strategy !== "random" && (
+        <p className="muted hint deploy-config-full">
+          {
+            MARKOV_STRATEGIES.find((s) => s.id === strategy)?.hint ??
+              "Strategy applies to every throw vs MARKOV."
+          }
+        </p>
+      )}
 
       <label className="field deploy-config-full">
         <span>Game</span>
@@ -134,6 +226,57 @@ function GamearenaFields({
           </button>
         </div>
       </label>
+
+      {showOffchain && (
+        <label className="field">
+          <span>Daily match cap</span>
+          <input
+            value={config.DAILY_MATCH_CAP ?? "50"}
+            onChange={(e) => onChange("DAILY_MATCH_CAP", e.target.value)}
+            inputMode="numeric"
+          />
+        </label>
+      )}
+
+      {showOnchain && (
+        <>
+          <label className="field">
+            <span>Wager per match</span>
+            <div className="input-suffix">
+              <input
+                value={config.WAGER_GS ?? "1"}
+                onChange={(e) => onChange("WAGER_GS", e.target.value)}
+                inputMode="numeric"
+              />
+              <span className="input-suffix-label">G$</span>
+            </div>
+          </label>
+          <label className="field">
+            <span>Daily loss cap</span>
+            <div className="input-suffix">
+              <input
+                value={config.DAILY_LOSS_CAP_GS ?? "20"}
+                onChange={(e) => onChange("DAILY_LOSS_CAP_GS", e.target.value)}
+                inputMode="numeric"
+              />
+              <span className="input-suffix-label">G$</span>
+            </div>
+          </label>
+          <label className="field">
+            <span>MARKOV accept timeout</span>
+            <div className="input-suffix">
+              <input
+                value={config.ACCEPT_TIMEOUT_SECONDS ?? "90"}
+                onChange={(e) =>
+                  onChange("ACCEPT_TIMEOUT_SECONDS", e.target.value)
+                }
+                inputMode="numeric"
+              />
+              <span className="input-suffix-label">sec</span>
+            </div>
+          </label>
+        </>
+      )}
 
       <label className="field">
         <span>Max matches per run</span>
@@ -310,11 +453,69 @@ function UbiReminderFields({
   );
 }
 
+function BalaioFields({
+  config,
+  onChange,
+}: {
+  config: SkillConfiguration;
+  onChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div className="deploy-config-grid">
+      <label className="field">
+        <span>Scan interval</span>
+        <div className="input-suffix">
+          <input
+            value={config.SCAN_INTERVAL_SECONDS ?? "300"}
+            onChange={(e) => onChange("SCAN_INTERVAL_SECONDS", e.target.value)}
+            inputMode="numeric"
+          />
+          <span className="input-suffix-label">sec</span>
+        </div>
+      </label>
+
+      <label className="field">
+        <span>Minimum reward</span>
+        <input
+          value={config.MIN_REWARD ?? "1"}
+          onChange={(e) => onChange("MIN_REWARD", e.target.value)}
+          inputMode="numeric"
+        />
+      </label>
+
+      <label className="field">
+        <span>Reward tokens</span>
+        <input
+          value={config.REWARD_TOKENS ?? "G$,USDC,CELO,cUSD"}
+          onChange={(e) => onChange("REWARD_TOKENS", e.target.value)}
+          placeholder="G$,USDC,CELO,cUSD"
+        />
+      </label>
+
+      <label className="field">
+        <span>Max claims per scan</span>
+        <input
+          value={config.MAX_TASKS_PER_RUN ?? "1"}
+          onChange={(e) => onChange("MAX_TASKS_PER_RUN", e.target.value)}
+          inputMode="numeric"
+        />
+      </label>
+
+      <p className="muted hint deploy-config-full">
+        The agent claims tasks on-chain and submits your GoodAgent verify URL as
+        proof. Rewards are paid only after the buyer approves on Balaio.
+      </p>
+    </div>
+  );
+}
+
 function GamearenaDeployHint() {
   return (
     <p className="muted hint deploy-section-hint">
-      We fund your agent with 200 G$ + CELO for gas. The agent buys GameArena
-      ticket refills (2 G$ → 5 matches) from its play wallet. You{" "}
+      We fund your agent with 200 G$ + CELO for gas. Pick free tickets,
+      on-chain wagers, or auto (tickets first, then G$ when MARKOV is live).
+      Choose how your agent throws vs MARKOV — random, a fixed move, or a
+      repeating sequence. You{" "}
       <strong>vouch at /issue</strong> (250 G$ refundable bond) before it goes
       live.
     </p>
@@ -513,15 +714,20 @@ export function Deploy() {
   });
 
   const deployableSkills = useMemo(
-    () => registry?.skills ?? [],
+    () => filterListedSkills(registry?.skills ?? []),
+    [registry],
+  );
+
+  const defaultSkillId = useMemo(
+    () => resolveDefaultDeploySkillId(registry?.skills ?? []),
     [registry],
   );
 
   const [name, setName] = useState("My GameArena Agent");
-  const [skillId, setSkillId] = useState(DEFAULT_SKILL_ID);
+  const [skillId, setSkillId] = useState(DEFAULT_DEPLOY_SKILL_ID);
   const [botToken, setBotToken] = useState("");
   const [config, setConfig] = useState<SkillConfiguration>(() =>
-    defaultConfigForSkill(DEFAULT_SKILL_ID),
+    defaultConfigForSkill(DEFAULT_DEPLOY_SKILL_ID),
   );
   const [busy, setBusy] = useState(false);
   const [startBusy, setStartBusy] = useState(false);
@@ -554,6 +760,15 @@ export function Deploy() {
   }, [deployId, poll]);
 
   useEffect(() => {
+    if (
+      deployableSkills.length > 0 &&
+      !deployableSkills.some((s) => s.skill_id === skillId)
+    ) {
+      setSkillId(defaultSkillId);
+    }
+  }, [skillId, deployableSkills, defaultSkillId]);
+
+  useEffect(() => {
     setConfig(defaultConfigForSkill(skillId));
     if (skillId === "gaming/wagering/gamearena_1v1") {
       setName("My GameArena Agent");
@@ -561,6 +776,8 @@ export function Deploy() {
       setName("My ACTION-ORDER Agent");
     } else if (skillId === UBI_REMINDER_SKILL_ID) {
       setName("My UBI Reminder Agent");
+    } else if (skillId === BALAIO_WORKER_SKILL_ID) {
+      setName("My Balaio Worker");
     }
   }, [skillId]);
 
@@ -580,7 +797,12 @@ export function Deploy() {
         configuration: config,
         telegramBotToken:
           skillId === UBI_REMINDER_SKILL_ID ? botToken.trim() : undefined,
-        template: skillId === UBI_REMINDER_SKILL_ID ? "social" : "gaming",
+        template:
+          skillId === UBI_REMINDER_SKILL_ID
+            ? "social"
+            : skillId === BALAIO_WORKER_SKILL_ID
+              ? "work"
+              : "gaming",
         skipPayment: true,
       });
       setDeployId(agent.id);
@@ -601,6 +823,7 @@ export function Deploy() {
 
   const formLocked = busy || !!deployId;
   const gamearenaSkill = skillId === GAMEARENA_SKILL_ID;
+  const balaioSkill = skillId === BALAIO_WORKER_SKILL_ID;
 
   return (
     <>
@@ -612,6 +835,8 @@ export function Deploy() {
           <p className="lede">
             {skillId === UBI_REMINDER_SKILL_ID
               ? "We provision an agent identity, install your reminder bot, and keep it running 24/7 after you vouch at /issue."
+              : balaioSkill
+                ? "We provision a wallet with CELO for gas, install the Balaio worker skill, and keep your agent scanning for tasks 24/7 after you vouch at /issue."
               : gamearenaSkill
                 ? "We provision a wallet, fund it with G$ for ticket refills, install your skill, and keep the agent running 24/7 after you vouch at /issue."
                 : "We provision a wallet, fund it with 200 G$ + gas, install your skill, and keep the agent running 24/7 after you vouch at /issue."}
@@ -684,7 +909,9 @@ export function Deploy() {
                   <h2 className="card-title">
                     {skillId === UBI_REMINDER_SKILL_ID
                       ? "3 · Bot settings"
-                      : "3 · Play settings"}
+                      : balaioSkill
+                        ? "3 · Worker settings"
+                        : "3 · Play settings"}
                   </h2>
                   {skillId === GAMEARENA_SKILL_ID ? (
                     <GamearenaDeployHint />
@@ -694,6 +921,13 @@ export function Deploy() {
                       Telegram, never touches funds. You vouch at /issue
                       (refundable 250 G$ bond) so your bot carries a verifiable
                       human-backed identity.
+                    </p>
+                  ) : balaioSkill ? (
+                    <p className="muted hint deploy-section-hint">
+                      Your agent signs on-chain Balaio transactions with CELO
+                      gas only — no upfront wager. You vouch at /issue
+                      (refundable 250 G$ bond) so buyers can verify who
+                      completed the work.
                     </p>
                   ) : selectedSkill?.spends_tokens ? (
                     <p className="muted hint deploy-section-hint">
@@ -722,6 +956,9 @@ export function Deploy() {
                       botToken={botToken}
                       onTokenChange={setBotToken}
                     />
+                  )}
+                  {skillId === BALAIO_WORKER_SKILL_ID && (
+                    <BalaioFields config={config} onChange={updateConfig} />
                   )}
 
                   {error && <p className="error">{error}</p>}

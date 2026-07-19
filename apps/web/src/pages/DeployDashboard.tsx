@@ -15,8 +15,10 @@ import {
 import { isDeployOwner, signDeployControl } from "../lib/deploy-control.js";
 import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import {
-  isGamearenaOffchain,
   isGamearenaSkill,
+  parsePlayMode,
+  playModeLabel,
+  strategyLabelFromConfig,
 } from "../lib/gamearena-config.js";
 import { parseSkillConfig } from "../lib/skill-config.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
@@ -186,11 +188,16 @@ export function DeployDashboard() {
   );
 
   const perf = status?.stats?.performance;
+  const playMode = isGamearenaSkill(status?.skillId)
+    ? parsePlayMode(config)
+    : null;
   const offchainPlay =
-    isGamearenaOffchain(status?.skillId, config) ||
+    (isGamearenaSkill(status?.skillId) && playMode !== "onchain") ||
     perf?.playMode === "offchain";
   const onchainGamearena =
-    isGamearenaSkill(status?.skillId) && !offchainPlay;
+    isGamearenaSkill(status?.skillId) &&
+    (playMode === "onchain" || (!offchainPlay && playMode !== "auto"));
+  const autoGamearena = playMode === "auto";
   const walletPnL = status?.stats?.walletPnL;
   const balances = status?.stats?.balances;
   const gBalance = formatBalance(balances?.gDollarFormatted, 0);
@@ -845,16 +852,24 @@ export function DeployDashboard() {
                 <section className="deploy-console-aside-block">
                   <h3>Play settings</h3>
                   <dl className="deploy-aside-dl">
-                    {offchainPlay ? (
+                    {isGamearenaSkill(status?.skillId) && (
                       <>
                         <div>
                           <dt>Mode</dt>
-                          <dd>Off-chain challenge-ai</dd>
+                          <dd>{playModeLabel(playMode)}</dd>
                         </div>
+                        <div>
+                          <dt>Strategy</dt>
+                          <dd>{strategyLabelFromConfig(config)}</dd>
+                        </div>
+                      </>
+                    )}
+                    {offchainPlay || autoGamearena ? (
+                      <>
                         <div>
                           <dt>Daily match cap</dt>
                           <dd className="tabular">
-                            {config.DAILY_MATCH_CAP ?? "5"}
+                            {config.DAILY_MATCH_CAP ?? "50"}
                           </dd>
                         </div>
                         <div>
@@ -868,7 +883,8 @@ export function DeployDashboard() {
                           </dd>
                         </div>
                       </>
-                    ) : (
+                    ) : null}
+                    {onchainGamearena || autoGamearena ? (
                       <>
                         <div>
                           <dt>Wager</dt>
@@ -881,12 +897,20 @@ export function DeployDashboard() {
                           </dd>
                         </div>
                         <div>
-                          <dt>Today P&amp;L</dt>
-                          <dd className={`tabular${pnlClass(perf?.todayNetPnLGs)}`}>
-                            {signedGs(perf?.todayNetPnLGs ?? 0)} G$
+                          <dt>Accept timeout</dt>
+                          <dd className="tabular">
+                            {config.ACCEPT_TIMEOUT_SECONDS ?? "90"}s
                           </dd>
                         </div>
-                        {perf && perf.gamesPlayed > 0 && (
+                        {!offchainPlay && (
+                          <div>
+                            <dt>Today P&amp;L</dt>
+                            <dd className={`tabular${pnlClass(perf?.todayNetPnLGs)}`}>
+                              {signedGs(perf?.todayNetPnLGs ?? 0)} G$
+                            </dd>
+                          </div>
+                        )}
+                        {perf && perf.gamesPlayed > 0 && !offchainPlay && (
                           <div>
                             <dt>Ledger</dt>
                             <dd className={`tabular${pnlClass(perf.netPnLGs)}`}>
@@ -895,7 +919,7 @@ export function DeployDashboard() {
                           </div>
                         )}
                       </>
-                    )}
+                    ) : null}
                     <div>
                       <dt>Max matches/run</dt>
                       <dd className="tabular">{config.MAX_MATCHES ?? "—"}</dd>

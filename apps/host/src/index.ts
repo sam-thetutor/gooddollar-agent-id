@@ -42,6 +42,7 @@ import {
   assertOwnerVouchedForAgent,
   type PipelineStatus,
 } from "@goodagent/runtime";
+import { isSkillDeployable } from "@goodagent/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { verifyDeployControl } from "./deploy-control-auth.js";
@@ -249,6 +250,9 @@ app.post("/deploy", async (c) => {
       if (!entry) {
         throw new Error(`skill_id not in registry: ${skillId}`);
       }
+      if (!isSkillDeployable(entry)) {
+        throw new Error(`skill_id not available for deploy: ${skillId}`);
+      }
       return { skillId: entry.skill_id, registryPath: entry.path };
     });
   } catch (err) {
@@ -308,9 +312,11 @@ app.get("/deploy/:id/status", async (c) => {
         playMode:
           skillConfig.PLAY_MODE === "onchain"
             ? "onchain"
-            : skillConfig.PLAY_MODE === "offchain"
-              ? "offchain"
-              : null,
+            : skillConfig.PLAY_MODE === "auto"
+              ? "auto"
+              : skillConfig.PLAY_MODE === "offchain"
+                ? "offchain"
+                : null,
         challengeAiUrl: skillConfig.CHALLENGE_AI_URL ?? null,
       });
     } catch (err) {
