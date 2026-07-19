@@ -5,6 +5,7 @@ import { Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 import { skillSpendPill } from "../lib/gamearena-config.js";
+import { filterListedSkills } from "../lib/skill-registry.js";
 
 const REGISTRY_URL =
   "https://raw.githubusercontent.com/sam-thetutor/goodagent-skills/main/registry.json";
@@ -17,6 +18,8 @@ interface SkillEntry {
   description: string;
   chain: string;
   spends_tokens: boolean;
+  listed?: boolean;
+  enabled?: boolean;
   modes?: string[];
   token?: string;
   game?: string;
@@ -133,7 +136,8 @@ export function Skills() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const count = data?.skills.length ?? 0;
+  const listed = filterListedSkills(data?.skills ?? []);
+  const count = listed.length;
 
   return (
     <>
@@ -170,7 +174,7 @@ export function Skills() {
         )}
 
         <div className="skills-grid">
-          {data?.skills.map((skill) => (
+          {listed.map((skill) => (
             <SkillCard key={skill.skill_id} skill={skill} />
           ))}
         </div>
