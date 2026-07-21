@@ -5,9 +5,13 @@ function isLocalhostUrl(url: string): boolean {
   return /localhost|127\.0\.0\.1/.test(url);
 }
 
-/** Production builds always use same-origin /host (Vercel rewrite). */
+/** Production uses same-origin /host (nginx → localhost:3010). Never bake dev localhost into prod. */
 function resolveHostBase(): string {
   if (import.meta.env.PROD) {
+    const configured = import.meta.env.VITE_HOST_BASE_URL?.trim();
+    if (configured && !isLocalhostUrl(configured)) {
+      return configured.replace(/\/$/, "");
+    }
     return "/host";
   }
   const configured = import.meta.env.VITE_HOST_BASE_URL?.trim();
@@ -23,7 +27,7 @@ const HOST_BASE = resolveHostBase();
 function resolveHostListBase(): string {
   const configured = import.meta.env.VITE_HOST_LIST_BASE_URL?.trim();
   if (configured && !isLocalhostUrl(configured)) {
-    return configured;
+    return configured.replace(/\/$/, "");
   }
   return HOST_BASE;
 }
@@ -150,13 +154,35 @@ async function hostFetch<T>(
   init?: RequestInit,
   base: string = HOST_BASE,
 ): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  const method = (init?.method ?? "GET").toUpperCase();
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  if (method !== "GET" && method !== "HEAD" && !headers["content-type"]) {
+    headers["content-type"] = "application/json";
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Host API timed out after 60s — try again in a moment.");
+    }
+    throw new Error(
+      `Host API unreachable (${base}${path}). Check your connection and refresh.`,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(
@@ -204,7 +230,17 @@ export function runDeployPipeline(
   );
 }
 
-export function getDeployStatus(deployId: string) {
+export async function getDeployStatus(deployId: string) {
+  const prefetch = window.__deployStatusPrefetch;
+  if (prefetch) {
+    window.__deployStatusPrefetch = undefined;
+    try {
+      const data = await prefetch;
+      if (data?.id === deployId) return data as DeployStatusResponse;
+    } catch {
+      // fall through to normal fetch
+    }
+  }
   return hostFetch<DeployStatusResponse>(`/deploy/${deployId}/status`);
 }
 
@@ -243,6 +279,20 @@ export function setDeployBaseline(
     {
       method: "POST",
       body: JSON.stringify({ balanceGs, ...auth }),
+    },
+  );
+}
+
+export function updateDeployConfiguration(
+  deployId: string,
+  configuration: SkillConfiguration,
+  auth: DeployControlAuth,
+) {
+  return hostFetch<{ agent: DeployAgent; restarted: boolean }>(
+    `/deploy/${deployId}/configuration`,
+    {
+      method: "POST",
+      body: JSON.stringify({ configuration, ...auth }),
     },
   );
 }

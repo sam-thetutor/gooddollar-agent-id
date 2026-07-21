@@ -135,6 +135,7 @@ export function buildBalaioEnv(
   const verifyBase =
     config.GOODAGENT_VERIFY_BASE ??
     `${apiBase.replace(/\/$/, "")}/agent/verify?agent=`;
+  const escrowBudget = estimateBalaioEscrowBudgetGs(config);
   return {
     PRIVATE_KEY: agentPrivateKey,
     AGENT_ADDRESS: agentAddress,
@@ -146,12 +147,48 @@ export function buildBalaioEnv(
       config.BALAIO_SUPABASE_URL ?? "https://lazawtajbpzhplvtujej.supabase.co",
     BALAIO_SUPABASE_ANON_KEY:
       config.BALAIO_SUPABASE_ANON_KEY ?? BALAIO_SUPABASE_ANON_KEY,
+    ENABLE_WORKER: config.ENABLE_WORKER ?? "1",
+    ENABLE_CREATE: config.ENABLE_CREATE ?? "0",
+    ENABLE_APPROVE: config.ENABLE_APPROVE ?? "0",
     SCAN_INTERVAL_SECONDS: config.SCAN_INTERVAL_SECONDS ?? "300",
     MIN_REWARD: config.MIN_REWARD ?? "1",
     REWARD_TOKENS: config.REWARD_TOKENS ?? "G$,USDC,CELO,cUSD",
     MAX_TASKS_PER_RUN: config.MAX_TASKS_PER_RUN ?? "1",
+    CREATE_TASK_ID: config.CREATE_TASK_ID ?? "",
+    CREATE_TITLE: config.CREATE_TITLE ?? "",
+    CREATE_DESCRIPTION: config.CREATE_DESCRIPTION ?? "",
+    CREATE_REWARD: config.CREATE_REWARD ?? "",
+    CREATE_SLOTS: config.CREATE_SLOTS ?? "1",
+    CREATE_TOKEN: config.CREATE_TOKEN ?? "G$",
+    CREATE_VISIBILITY: config.CREATE_VISIBILITY ?? "public",
+    APPROVER_ADDRESS: config.APPROVER_ADDRESS ?? agentAddress,
+    MAX_ESCROW_GS: config.MAX_ESCROW_GS ?? "500",
+    MIN_WALLET_RESERVE_GS: config.MIN_WALLET_RESERVE_GS ?? "10",
+    CREATE_ONCE: config.CREATE_ONCE ?? "1",
+    CREATE_ESCROW_BUDGET_GS:
+      config.CREATE_ESCROW_BUDGET_GS ??
+      (escrowBudget > 0 ? String(escrowBudget) : ""),
+    APPROVE_TASK_IDS: config.APPROVE_TASK_IDS ?? "",
     GOODAGENT_VERIFY_BASE: verifyBase,
   };
+}
+
+/** Escrow budget in G$ for creator-mode deploy funding (reward × slots × 1.02 incl. claim fee). */
+export function estimateBalaioEscrowBudgetGs(config: SkillConfiguration): number {
+  if (config.ENABLE_CREATE !== "1") return 0;
+  const explicit = Number(config.CREATE_ESCROW_BUDGET_GS ?? 0);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const reward = Number(config.CREATE_REWARD ?? 0);
+  const slots = Math.max(1, Number(config.CREATE_SLOTS ?? 1));
+  if (!Number.isFinite(reward) || reward <= 0) return 0;
+  return Math.ceil(reward * slots * 1.02 * 100) / 100;
+}
+
+export function computeBalaioFundingGs(
+  config: SkillConfiguration,
+  baseGs: number,
+): number {
+  return baseGs + estimateBalaioEscrowBudgetGs(config);
 }
 
 export function buildSkillEnv(

@@ -342,7 +342,7 @@ export async function getDeployStats(opts: {
   skillId: string | null;
   rpcUrl: string;
   configBaselineGs?: string | null;
-  playMode?: "offchain" | "onchain" | null;
+  playMode?: "offchain" | "onchain" | "auto" | null;
   challengeAiUrl?: string | null;
   persistedMatches?: MatchRecord[];
   persistedLogTail?: string | null;

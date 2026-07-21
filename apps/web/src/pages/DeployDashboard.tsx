@@ -10,10 +10,18 @@ import {
   setDeployBaseline,
   startDeploy,
   stopDeploy,
+  updateDeployConfiguration,
   type DeployStatusResponse,
+  type SkillConfiguration,
 } from "../lib/host.js";
 import { isDeployOwner, signDeployControl } from "../lib/deploy-control.js";
 import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
+import { GamearenaConfigFields } from "../components/GamearenaConfigFields.js";
+import { BalaioConfigFields } from "../components/BalaioConfigFields.js";
+import {
+  balaioRoleSummary,
+  isBalaioSkill,
+} from "../lib/balaio-config.js";
 import {
   isGamearenaSkill,
   parsePlayMode,
@@ -151,6 +159,9 @@ export function DeployDashboard() {
   const [showBaselineForm, setShowBaselineForm] = useState(false);
   const [baselineInput, setBaselineInput] = useState("");
   const [matchesPage, setMatchesPage] = useState(0);
+  const [editingConfig, setEditingConfig] = useState(false);
+  const [draftConfig, setDraftConfig] = useState<SkillConfiguration>({});
+  const [configBusy, setConfigBusy] = useState(false);
   const refreshInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -177,6 +188,20 @@ export function DeployDashboard() {
     const t = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (!editingConfig) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !configBusy) setEditingConfig(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editingConfig, configBusy]);
+
+  const closeSettingsModal = () => {
+    if (configBusy) return;
+    setEditingConfig(false);
+  };
 
   const health = useMemo(
     () => (status ? processHealth(status) : "unknown"),
@@ -220,7 +245,9 @@ export function DeployDashboard() {
   const canControl = isDeployOwner(address, status?.ownerWallet);
 
   const signControl = useCallback(
-    async (action: "pause" | "resume" | "baseline" | "run-pipeline") => {
+    async (
+      action: "pause" | "resume" | "baseline" | "configuration" | "run-pipeline",
+    ) => {
       if (!id || !address) {
         throw new Error("Connect the owner wallet to control this agent.");
       }
@@ -293,6 +320,26 @@ export function DeployDashboard() {
     }
   };
 
+  const beginEditConfig = () => {
+    setDraftConfig({ ...config });
+    setEditingConfig(true);
+  };
+
+  const submitConfig = async () => {
+    if (!id) return;
+    setConfigBusy(true);
+    try {
+      const auth = await signControl("configuration");
+      await updateDeployConfiguration(id, draftConfig, auth);
+      setEditingConfig(false);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfigBusy(false);
+    }
+  };
+
   if (!id) {
     return (
       <>
@@ -345,6 +392,19 @@ export function DeployDashboard() {
               <span className="deploy-console-sticky-balance tabular">
                 {gBalance} G$
               </span>
+              {canControl &&
+                (isGamearenaSkill(status?.skillId) ||
+                  isBalaioSkill(status?.skillId)) &&
+                isConnected && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={configBusy}
+                    onClick={beginEditConfig}
+                  >
+                    Edit
+                  </button>
+                )}
               {canControl && health === "live" ? (
                 <button
                   type="button"
@@ -435,8 +495,22 @@ export function DeployDashboard() {
         )}
 
         {!status ? (
-          <div className="deploy-console deploy-console-loading">
-            <p className="muted">Loading agent dashboard…</p>
+          <div className="deploy-console">
+            <header className="deploy-console-header">
+              <div className="deploy-console-header-main">
+                <Link to="/deployments" className="deploy-console-back">
+                  ← All deployments
+                </Link>
+                <h1>Agent {id.slice(0, 8)}…</h1>
+                <p className="deploy-console-subtitle muted">Loading live status…</p>
+              </div>
+            </header>
+            <section className="deploy-console-hero deploy-console-skeleton" aria-hidden>
+              <div className="deploy-hero-primary deploy-skeleton-block" />
+              <div className="deploy-hero-stat deploy-skeleton-block" />
+              <div className="deploy-hero-stat deploy-skeleton-block" />
+              <div className="deploy-hero-stat deploy-skeleton-block" />
+            </section>
           </div>
         ) : (
           <div className="deploy-console">
@@ -849,7 +923,7 @@ export function DeployDashboard() {
                   </dl>
                 </section>
 
-                <section className="deploy-console-aside-block">
+                <section className="deploy-console-aside-block deploy-play-settings">
                   <h3>Play settings</h3>
                   <dl className="deploy-aside-dl">
                     {isGamearenaSkill(status?.skillId) && (
@@ -862,6 +936,22 @@ export function DeployDashboard() {
                           <dt>Strategy</dt>
                           <dd>{strategyLabelFromConfig(config)}</dd>
                         </div>
+                      </>
+                    )}
+                    {isBalaioSkill(status?.skillId) && (
+                      <>
+                        <div>
+                          <dt>Roles</dt>
+                          <dd>{balaioRoleSummary(config)}</dd>
+                        </div>
+                        {config.CREATE_TASK_ID && (
+                          <div>
+                            <dt>Creator task</dt>
+                            <dd>
+                              <code>{config.CREATE_TASK_ID}</code>
+                            </dd>
+                          </div>
+                        )}
                       </>
                     )}
                     {offchainPlay || autoGamearena ? (
@@ -963,6 +1053,82 @@ export function DeployDashboard() {
           </div>
         )}
       </main>
+
+      {editingConfig &&
+        (isGamearenaSkill(status?.skillId) || isBalaioSkill(status?.skillId)) && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={closeSettingsModal}
+        >
+          <div
+            className="modal-panel deploy-settings-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deploy-settings-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="modal-header">
+              <div>
+                <h2 id="deploy-settings-modal-title">
+                  {isBalaioSkill(status?.skillId)
+                    ? "Balaio settings"
+                    : "Play settings"}
+                </h2>
+                <p className="muted">
+                  Changes apply after you sign and the agent restarts.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                aria-label="Close"
+                disabled={configBusy}
+                onClick={closeSettingsModal}
+              >
+                ×
+              </button>
+            </header>
+            <div className="modal-body form">
+              {isGamearenaSkill(status?.skillId) && (
+                <GamearenaConfigFields
+                  config={draftConfig}
+                  onChange={(key, value) =>
+                    setDraftConfig((prev) => ({ ...prev, [key]: value }))
+                  }
+                />
+              )}
+              {isBalaioSkill(status?.skillId) && (
+                <BalaioConfigFields
+                  config={draftConfig}
+                  onChange={(key, value) =>
+                    setDraftConfig((prev) => ({ ...prev, [key]: value }))
+                  }
+                />
+              )}
+            </div>
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={configBusy}
+                onClick={closeSettingsModal}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={configBusy || !isConnected}
+                onClick={() => void submitConfig()}
+              >
+                {configBusy ? "Saving…" : "Save & restart"}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </>
   );

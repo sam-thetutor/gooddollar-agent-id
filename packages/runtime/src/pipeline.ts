@@ -18,7 +18,14 @@ import {
   writeEcosystemConfig,
 } from "./provision.js";
 import { fetchSkillsRegistry, findRegistrySkill } from "./registry.js";
-import { buildSkillEnv, type SkillConfiguration, writeSkillEnv } from "./skill-env.js";
+import { isSkillDeployable } from "@goodagent/shared";
+import {
+  buildSkillEnv,
+  BALAIO_WORKER_SKILL_ID,
+  computeBalaioFundingGs,
+  type SkillConfiguration,
+  writeSkillEnv,
+} from "./skill-env.js";
 import { installSkillFromRegistry } from "./skill-install.js";
 import { writeBaselineIfAbsent } from "./baseline-balance.js";
 import {
@@ -95,6 +102,9 @@ export async function runDeployPipeline(
     if (!skill) {
       throw new Error(`skill_id not in registry: ${skillId}`);
     }
+    if (!isSkillDeployable(skill)) {
+      throw new Error(`skill_id not available for deploy: ${skillId}`);
+    }
 
     await hooks.onStatus("provisioning");
 
@@ -126,7 +136,12 @@ export async function runDeployPipeline(
     });
 
     await fundAgentCelo(config, agentAddress);
-    await fundAgentGDollar(config, agentAddress);
+    const skillConfig = input.skillConfiguration ?? {};
+    const gsTarget =
+      skillId === BALAIO_WORKER_SKILL_ID
+        ? computeBalaioFundingGs(skillConfig, config.agentInitialGs)
+        : config.agentInitialGs;
+    await fundAgentGDollar(config, agentAddress, gsTarget);
     writeBaselineIfAbsent(
       config.agentsRoot,
       deployId,
@@ -149,13 +164,16 @@ export async function runDeployPipeline(
       deployId,
       agentAddress,
       agentPrivateKey:
-        skill.spends_tokens || skillId === "gaming/wagering/gamearena_1v1"
+        skill.spends_tokens ||
+        skillId === "gaming/wagering/gamearena_1v1" ||
+        skillId === BALAIO_WORKER_SKILL_ID
           ? agentPrivateKey
           : null,
       rpcUrl: config.rpcUrl,
       displayName,
       config: input.skillConfiguration ?? {},
       telegramBotToken: input.telegramBotToken ?? null,
+      apiBase: config.apiBase,
     });
     writeSkillEnv(skillDir, skillEnv);
 
@@ -272,18 +290,38 @@ export interface Pm2ProcessSnapshot {
   restarts?: number;
 }
 
-export function pm2ProcessSnapshot(processName: string): Pm2ProcessSnapshot | null {
+const PM2_LIST_CACHE_MS = 3_000;
+let pm2ListCache: { at: number; list: Pm2ProcessRow[] } | null = null;
+
+type Pm2ProcessRow = {
+  name: string;
+  pm2_env?: {
+    status?: string;
+    restart_time?: number;
+    pm_uptime?: number;
+  };
+  monit?: { memory?: number; cpu?: number };
+};
+
+function readPm2ProcessList(): Pm2ProcessRow[] | null {
+  const now = Date.now();
+  if (pm2ListCache && now - pm2ListCache.at < PM2_LIST_CACHE_MS) {
+    return pm2ListCache.list;
+  }
   try {
     const raw = execSync("pm2 jlist", { encoding: "utf8" });
-    const list = JSON.parse(raw) as Array<{
-      name: string;
-      pm2_env?: {
-        status?: string;
-        restart_time?: number;
-        pm_uptime?: number;
-      };
-      monit?: { memory?: number; cpu?: number };
-    }>;
+    const list = JSON.parse(raw) as Pm2ProcessRow[];
+    pm2ListCache = { at: now, list };
+    return list;
+  } catch {
+    return pm2ListCache?.list ?? null;
+  }
+}
+
+export function pm2ProcessSnapshot(processName: string): Pm2ProcessSnapshot | null {
+  try {
+    const list = readPm2ProcessList();
+    if (!list) return null;
     const proc = list.find((p) => p.name === processName);
     if (!proc) return null;
     const env = proc.pm2_env ?? {};

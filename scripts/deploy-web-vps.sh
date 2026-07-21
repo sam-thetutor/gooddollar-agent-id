@@ -7,10 +7,13 @@ REMOTE="${REMOTE:-geinz-vps}"
 WEB_ROOT="/var/www/goodagentids"
 STAGING="/home/geinz/goodagent-web-dist"
 
-echo "==> build web locally"
+echo "==> build web locally (production host = same-origin /host)"
 cd "${ROOT}"
-pnpm --filter @goodagent/shared build
-pnpm --filter @goodagent/web build
+# Local .env often sets VITE_HOST_BASE_URL=http://localhost:3002 for dev — must not ship in prod bundle.
+env -u VITE_HOST_BASE_URL -u VITE_HOST_LIST_BASE_URL -u VITE_HOST_USE_LOCAL \
+  pnpm --filter @goodagent/shared build
+env -u VITE_HOST_BASE_URL -u VITE_HOST_LIST_BASE_URL -u VITE_HOST_USE_LOCAL \
+  pnpm --filter @goodagent/web build
 
 echo "==> rsync dist to ${REMOTE}:${STAGING}"
 ssh "${REMOTE}" "rm -rf ${STAGING} && mkdir -p ${STAGING}"

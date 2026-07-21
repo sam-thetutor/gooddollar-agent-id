@@ -39,6 +39,7 @@ import {
   startDeployedAgent,
   stopDeployedAgent,
   setDeployBaselineBalance,
+  applyDeployConfiguration,
   assertOwnerVouchedForAgent,
   type PipelineStatus,
 } from "@goodagent/runtime";
@@ -291,18 +292,19 @@ app.get("/deploy/:id/status", async (c) => {
   if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
 
   const pm2 = agent.pm2Name ? pm2ProcessSnapshot(agent.pm2Name) : null;
-  const verify = agent.agentAddress
-    ? await fetchVerifyStatus(agent.agentAddress)
-    : null;
 
-  let stats = null;
-  if (agent.agentAddress) {
+  const verifyPromise = agent.agentAddress
+    ? fetchVerifyStatus(agent.agentAddress)
+    : Promise.resolve(null);
+
+  const statsPromise = (async () => {
+    if (!agent.agentAddress) return null;
     try {
       loadRuntimeEnv();
       const config = getRuntimeConfig();
       const skillConfig = parseDeployConfiguration(agent);
 
-      stats = await getDeployStats({
+      return await getDeployStats({
         agentsRoot: config.agentsRoot,
         deployId: agent.id,
         agentAddress: agent.agentAddress as `0x${string}`,
@@ -321,8 +323,11 @@ app.get("/deploy/:id/status", async (c) => {
       });
     } catch (err) {
       console.warn(`[host] stats for ${agent.id}:`, err);
+      return null;
     }
-  }
+  })();
+
+  const [verify, stats] = await Promise.all([verifyPromise, statsPromise]);
 
   return c.json({
     id: agent.id,
@@ -714,6 +719,70 @@ app.post("/deploy/:id/baseline", async (c) => {
   });
 
   return c.json({ ok: true, balanceGs });
+});
+
+app.post("/deploy/:id/configuration", async (c) => {
+  const id = c.req.param("id");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const body = await c.req.json<{
+    configuration?: Record<string, string>;
+  } & Record<string, unknown>>();
+  const authErr = await verifyDeployControl(
+    "configuration",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  const patch = body.configuration;
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    return c.json({ error: "configuration object required" }, 400);
+  }
+
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (typeof value === "string") sanitized[key] = value;
+  }
+  if (!Object.keys(sanitized).length) {
+    return c.json({ error: "configuration must include at least one field" }, 400);
+  }
+
+  loadRuntimeEnv();
+  let runtimeConfig;
+  try {
+    runtimeConfig = getRuntimeConfig();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "HOST_CONFIG", message }, 500);
+  }
+
+  try {
+    const { merged, restarted } = applyDeployConfiguration(
+      runtimeConfig,
+      {
+        id: agent.id,
+        displayName: agent.displayName,
+        agentAddress: agent.agentAddress,
+        walletDerivationIndex: agent.walletDerivationIndex,
+        configuration: agent.configuration,
+        skills: agent.skills.map((s) => ({
+          skillId: s.skillId,
+          registryPath: s.registryPath,
+        })),
+      },
+      sanitized,
+    );
+    const updated = await updateDeployedAgent(id, {
+      configuration: JSON.stringify(merged),
+    });
+    return c.json({ agent: updated, restarted });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "CONFIG_APPLY_FAILED", message }, 500);
+  }
 });
 
 console.log(`[host] listening on :${HOST_PORT}`);

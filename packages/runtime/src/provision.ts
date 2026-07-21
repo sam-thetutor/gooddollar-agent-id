@@ -73,8 +73,23 @@ export function pm2Stop(processName: string): void {
   });
 }
 
+export function pm2ReloadEcosystem(
+  ecosystemPath: string,
+  processName: string,
+): void {
+  try {
+    execSync(`pm2 delete ${JSON.stringify(processName)}`, {
+      stdio: "inherit",
+      encoding: "utf8",
+    });
+  } catch {
+    // not running
+  }
+  pm2Start(ecosystemPath);
+}
+
 export function pm2Restart(processName: string): void {
-  execSync(`pm2 restart ${JSON.stringify(processName)}`, {
+  execSync(`pm2 restart ${JSON.stringify(processName)} --update-env`, {
     stdio: "inherit",
     encoding: "utf8",
   });

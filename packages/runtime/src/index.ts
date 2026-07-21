@@ -40,6 +40,11 @@ export {
   SKILLS_REPO_URL,
 } from "./registry.js";
 export type { RegistrySkill, SkillsRegistry } from "./registry.js";
+export {
+  isSkillDeployable,
+  isSkillListed,
+  filterListedSkills,
+} from "@goodagent/shared";
 
 export {
   installSkillFromRegistry,
@@ -52,10 +57,18 @@ export {
   buildGamearenaEnv,
   buildActionorderEnv,
   buildUbiReminderEnv,
+  buildBalaioEnv,
   UBI_REMINDER_SKILL_ID,
+  BALAIO_WORKER_SKILL_ID,
   writeSkillEnv,
 } from "./skill-env.js";
 export type { SkillConfiguration } from "./skill-env.js";
+
+export {
+  applyDeployConfiguration,
+  mergeDeployConfiguration,
+} from "./apply-config.js";
+export type { DeployAgentRecord } from "./apply-config.js";
 
 export {
   runDeployPipeline,

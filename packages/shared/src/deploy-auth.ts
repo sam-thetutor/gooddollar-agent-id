@@ -2,6 +2,7 @@ export type DeployControlAction =
   | "pause"
   | "resume"
   | "baseline"
+  | "configuration"
   | "run-pipeline"
   | "confirm-vouch";
 

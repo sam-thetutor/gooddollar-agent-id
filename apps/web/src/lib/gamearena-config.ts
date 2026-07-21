@@ -90,6 +90,9 @@ export function skillSpendPill(skill: {
   if (skill.skill_id === GAMEARENA_SKILL_ID) {
     return { label: "G$ ticket refills · capped", variant: "warn" };
   }
+  if (skill.skill_id === "work/marketplace/balaio_worker") {
+    return { label: "G$ escrow when creating tasks", variant: "warn" };
+  }
   if (skill.spends_tokens) {
     return {
       label: `Spends ${skill.token ?? "G$"} · capped`,

@@ -15,3 +15,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface Window {
+  /** Started from index.html before the React bundle loads (dashboard routes). */
+  __deployStatusPrefetch?: Promise<DeployStatusResponse>;
+}

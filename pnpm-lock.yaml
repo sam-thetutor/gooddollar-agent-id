@@ -270,6 +270,12 @@ importers:
       '@goodagent/agent-id':
         specifier: workspace:*
         version: link:../agent-id
+      '@goodagent/db':
+        specifier: workspace:*
+        version: link:../db
+      '@goodagent/shared':
+        specifier: workspace:*
+        version: link:../shared
       dotenv:
         specifier: ^16.5.0
         version: 16.6.1

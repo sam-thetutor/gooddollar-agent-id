@@ -3134,6 +3134,27 @@ a:hover {
   border-bottom: 1px solid var(--border);
 }
 
+.deploy-console-skeleton .deploy-skeleton-block {
+  min-height: 4.5rem;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: deploy-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes deploy-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 .deploy-hero-primary {
   grid-column: 1 / -1;
   border-bottom: 1px solid var(--border);
@@ -3528,6 +3549,191 @@ a:hover {
 
 .deploy-console-aside-block .deploy-section-head a:hover {
   color: var(--text);
+}
+
+.deploy-play-settings .deploy-settings-hint {
+  font-size: 0.8125rem;
+  margin: 0 0 0.65rem;
+  line-height: 1.45;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.modal-panel {
+  width: min(100%, 42rem);
+  max-height: min(90vh, 720px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.35);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.modal-header p {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.modal-close {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-close:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--border) 50%, transparent);
+  color: var(--text);
+}
+
+.modal-body {
+  padding: 1rem 1.25rem;
+}
+
+.modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  padding: 0.85rem 1.25rem 1.1rem;
+  border-top: 1px solid var(--border);
+}
+
+.gamearena-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+}
+
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.config-section + .config-section {
+  padding-top: 1.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.config-section-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.config-section-note {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.config-row-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  align-items: start;
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.config-field > span {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.config-field input,
+.config-field select {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(7, 10, 14, 0.7);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 0.72rem 0.85rem;
+  font-size: 0.9375rem;
+  font-family: inherit;
+}
+
+.config-field input:focus,
+.config-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(230, 178, 60, 0.15);
+}
+
+.config-field .input-suffix {
+  width: 100%;
+}
+
+.config-field-spacer {
+  min-height: 1px;
+}
+
+.deploy-settings-modal {
+  width: min(100%, 36rem);
+}
+
+.deploy-settings-modal .chips {
+  gap: 0.45rem;
+}
+
+.deploy-settings-modal .chip {
+  padding: 0.5rem 0.85rem;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 540px) {
+  .config-row-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .config-field-spacer {
+    display: none;
+  }
+}
+
+.deploy-settings-modal .deploy-config-grid {
+  gap: 0.85rem;
 }
 
 .deploy-console-details {

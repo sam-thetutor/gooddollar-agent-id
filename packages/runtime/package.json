@@ -15,10 +15,14 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "tsc --noEmit",
-    "deploy:spike": "tsx scripts/deploy-spike.mts"
+    "deploy:spike": "tsx scripts/deploy-spike.mts",
+    "deploy:balaio-local": "tsx scripts/deploy-balaio-local.mts",
+    "deploy:gamearena-cli": "tsx scripts/deploy-gamearena-cli.mts"
   },
   "dependencies": {
     "@goodagent/agent-id": "workspace:*",
+    "@goodagent/db": "workspace:*",
+    "@goodagent/shared": "workspace:*",
     "dotenv": "^16.5.0",
     "viem": "^2.31.3"
   },
