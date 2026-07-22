@@ -1,8 +1,29 @@
 {
   "name": "@goodagent/widget",
   "version": "0.1.0",
-  "description": "Embeddable GoodAgent widget — deploy, vouch, and monitor GameArena agents on partner sites",
+  "description": "Embeddable GoodAgent widget — deploy, vouch, and monitor autonomous agents on partner sites",
   "type": "module",
+  "keywords": [
+    "goodagent",
+    "gooddollar",
+    "widget",
+    "react",
+    "ai-agents",
+    "gamearena",
+    "celo",
+    "embed",
+    "privy",
+    "wagmi"
+  ],
+  "homepage": "https://github.com/sam-thetutor/gooddollar-agent-id/tree/main/packages/widget#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sam-thetutor/gooddollar-agent-id.git",
+    "directory": "packages/widget"
+  },
+  "bugs": {
+    "url": "https://github.com/sam-thetutor/gooddollar-agent-id/issues"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,12 +35,20 @@
     "./styles.css": "./dist/widget.css"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "vite build && tsc --emitDeclarationOnly",
     "dev": "vite build --watch",
     "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
     "demo": "vite --config vite.demo.config.ts"
   },
   "peerDependencies": {
@@ -33,7 +62,6 @@
     }
   },
   "dependencies": {
-    "@goodagent/shared": "workspace:*",
     "@goodsdks/citizen-sdk": "^1.2.5",
     "viem": "^2.31.3"
   },

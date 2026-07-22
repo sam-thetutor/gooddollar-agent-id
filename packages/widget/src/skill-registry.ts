@@ -1,5 +1,3 @@
-import { filterListedSkills } from "@goodagent/shared";
-
 export const DEFAULT_REGISTRY_URL =
   "https://raw.githubusercontent.com/sam-thetutor/goodagent-skills/main/registry.json";
 
@@ -21,6 +19,17 @@ export interface RegistrySkillEntry {
 export interface SkillRegistry {
   version: number;
   skills: RegistrySkillEntry[];
+}
+
+function isSkillListed(skill: {
+  listed?: boolean;
+  enabled?: boolean;
+}): boolean {
+  return skill.listed !== false && skill.enabled !== false;
+}
+
+function filterListedSkills<T extends RegistrySkillEntry>(skills: T[]): T[] {
+  return skills.filter((s) => isSkillListed(s));
 }
 
 export async function fetchSkillRegistry(

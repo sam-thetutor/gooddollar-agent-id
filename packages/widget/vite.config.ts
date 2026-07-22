@@ -22,7 +22,6 @@ export default defineConfig({
         "react/jsx-runtime",
         "viem",
         "viem/chains",
-        "@goodagent/shared",
         "@goodsdks/citizen-sdk",
         "@privy-io/react-auth",
       ],

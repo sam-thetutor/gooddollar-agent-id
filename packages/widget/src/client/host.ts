@@ -1,8 +1,8 @@
-import type { DeployControlAuth } from "@goodagent/shared";
 import {
   buildDeployControlMessage,
   type DeployControlAction,
-} from "@goodagent/shared";
+  type DeployControlAuth,
+} from "../deploy-auth.js";
 import type { GoodAgentWalletAdapter } from "../types.js";
 import type { SkillConfiguration } from "../types.js";
 import type { DeployTemplate } from "../skill-config.js";

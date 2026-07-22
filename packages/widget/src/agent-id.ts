@@ -1,4 +1,4 @@
-import { CELO_CHAIN_ID } from "@goodagent/shared";
+import { CELO_CHAIN_ID } from "./public-urls.js";
 import type { Address } from "viem";
 
 export const AGENT_VAULT_ADDRESS =

@@ -10,7 +10,7 @@ import {
   type PublicClient,
 } from "viem";
 import { celo } from "viem/chains";
-import { GOODAGENT_SITE_ORIGIN } from "@goodagent/shared";
+import { GOODAGENT_SITE_ORIGIN } from "./public-urls.js";
 import type { GoodAgentWalletAdapter, GoodAgentWidgetConfig } from "./types.js";
 
 export function buildFvCallbackUrl(explicit?: string): string {

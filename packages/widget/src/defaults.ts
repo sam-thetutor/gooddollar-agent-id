@@ -2,7 +2,7 @@ import {
   GOODAGENT_API_URL,
   GOODAGENT_HOST_URL,
   GOODAGENT_SITE_ORIGIN,
-} from "@goodagent/shared";
+} from "./public-urls.js";
 import type { GoodAgentWidgetConfig } from "./types.js";
 
 export {
