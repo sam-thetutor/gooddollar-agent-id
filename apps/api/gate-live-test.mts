@@ -17,11 +17,12 @@ import {
   buildAgentAuth,
   signAgentAuth,
 } from "@goodagent/agent-id";
+import { GOODAGENT_API_URL } from "@goodagent/shared";
 
 const PK = process.env.PRIVATE_KEY as `0x${string}`;
 if (!PK) throw new Error("PRIVATE_KEY missing");
 const operator = privateKeyToAccount(PK);
-const API = process.env.API_BASE ?? "https://gcopilot-api.geinz.lol";
+const API = process.env.API_BASE ?? GOODAGENT_API_URL;
 const ATTESTED_AGENT = "0xE8b726e2b481Ab39DE783c50906d96f3D703E2cc" as const; // attested earlier
 
 function step(name: string, ok: boolean, extra = "") {

@@ -28,7 +28,7 @@ const lines = [
   "# --- Autonomous agent deploy ---",
   "AGENTS_ROOT=/home/geinz/goodagent/agents",
   "TELEGRAM_BOT_APP_PATH=/home/geinz/gcopilot/apps/telegram-bot",
-  "API_BASE=https://gcopilot-api.geinz.lol",
+  "API_BASE=https://goodagentids.xyz/api",
   "HOST_PORT=3010",
   "HOST_DEV_SKIP_PAYMENT=1",
 ];

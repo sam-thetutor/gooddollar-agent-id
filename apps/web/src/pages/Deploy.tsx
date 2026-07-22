@@ -494,7 +494,10 @@ export function Deploy() {
   });
 
   const deployableSkills = useMemo(
-    () => filterListedSkills(registry?.skills ?? []),
+    () =>
+      filterListedSkills(registry?.skills ?? []).filter(
+        (s) => s.skill_id === GAMEARENA_SKILL_ID,
+      ),
     [registry],
   );
 
@@ -659,43 +662,47 @@ export function Deploy() {
                   </label>
                 </section>
 
-                <section className="card">
-                  <h2 className="card-title">2 · Pick a skill</h2>
-                  <p className="muted hint deploy-section-hint">
-                    Skills are open-source playbooks from the{" "}
-                    <Link to="/skills">GoodAgent registry</Link>. Caps are
-                    enforced in your config below.
-                  </p>
-                  <div className="deploy-skill-grid">
-                    {deployableSkills.map((skill) => (
-                      <SkillPickCard
-                        key={skill.skill_id}
-                        skill={skill}
-                        selected={skill.skill_id === skillId}
-                        onSelect={() => setSkillId(skill.skill_id)}
-                      />
-                    ))}
-                  </div>
-                  {selectedSkill?.game_url && (
-                    <p className="deploy-game-link">
-                      <a
-                        href={selectedSkill.game_url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Play {selectedSkill.game} ↗
-                      </a>
+                {deployableSkills.length > 1 && (
+                  <section className="card">
+                    <h2 className="card-title">2 · Pick a skill</h2>
+                    <p className="muted hint deploy-section-hint">
+                      Skills are open-source playbooks from the{" "}
+                      <Link to="/skills">GoodAgent registry</Link>. Caps are
+                      enforced in your config below.
                     </p>
-                  )}
-                </section>
+                    <div className="deploy-skill-grid">
+                      {deployableSkills.map((skill) => (
+                        <SkillPickCard
+                          key={skill.skill_id}
+                          skill={skill}
+                          selected={skill.skill_id === skillId}
+                          onSelect={() => setSkillId(skill.skill_id)}
+                        />
+                      ))}
+                    </div>
+                    {selectedSkill?.game_url && (
+                      <p className="deploy-game-link">
+                        <a
+                          href={selectedSkill.game_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Play {selectedSkill.game} ↗
+                        </a>
+                      </p>
+                    )}
+                  </section>
+                )}
 
                 <section className="card form">
                   <h2 className="card-title">
-                    {skillId === UBI_REMINDER_SKILL_ID
-                      ? "3 · Bot settings"
-                      : balaioSkill
-                        ? "3 · Balaio settings"
-                        : "3 · Play settings"}
+                    {deployableSkills.length > 1
+                      ? skillId === UBI_REMINDER_SKILL_ID
+                        ? "3 · Bot settings"
+                        : balaioSkill
+                          ? "3 · Balaio settings"
+                          : "3 · Play settings"
+                      : "2 · Play settings"}
                   </h2>
                   {skillId === GAMEARENA_SKILL_ID ? (
                     <GamearenaDeployHint />

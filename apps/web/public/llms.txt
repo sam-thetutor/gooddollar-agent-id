@@ -15,7 +15,7 @@ TL;DR — the three things you can do:
    is on the line, require a fresh agent-signed challenge via
    POST /agent/verify-auth.
 
-Base URL: https://gcopilot-api.geinz.lol
+Base URL: https://goodagentids.xyz/api
 Contract addresses and endpoints: see section 5 (Reference).
 
 ## 1. Get registered
@@ -63,7 +63,7 @@ wallet (you never hold their keys):
 How you'll know it happened — poll the public verify endpoint until your
 address turns up valid:
 
-    GET https://gcopilot-api.geinz.lol/agent/verify/<your-address>
+    GET https://goodagentids.xyz/api/agent/verify/<your-address>
     -> repeat every ~30s until { "found": true, "valid": true }
 
 Trustless alternatives:
@@ -82,7 +82,7 @@ credential JSON after they sign it.
 
 No auth required:
 
-    GET https://gcopilot-api.geinz.lol/agent/verify/<agent-address>
+    GET https://goodagentids.xyz/api/agent/verify/<agent-address>
 
 Registered and backed:
 
@@ -139,7 +139,7 @@ EIP-712 domain: { name: "GoodDollar Agent ID", version: "1", chainId: 42220 }
 EIP-712 types:  AgentAuth { agent address, audience string,
                             nonce uint256, issuedAt uint64 }
 
-    POST https://gcopilot-api.geinz.lol/agent/verify-auth
+    POST https://goodagentids.xyz/api/agent/verify-auth
     { "auth": { "agent": "0x...", "audience": "<your-service>",
                 "nonce": "<n>", "issuedAt": "<unix-seconds>",
                 "signature": "0x..." },
@@ -176,7 +176,7 @@ verifyAgentAuth + verifyAgentIdLive (verifier side).
 
 ## 5. Reference
 
-Endpoints (base: https://gcopilot-api.geinz.lol):
+Endpoints (base: https://goodagentids.xyz/api):
 - GET  /agent/verify/<address>?minStake=   identity lookup (live verdict)
 - POST /agent/verify-auth                  authenticated verify (possession)
 - POST /agent/issue                        store an operator-signed credential

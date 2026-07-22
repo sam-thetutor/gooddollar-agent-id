@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
+import { GOODAGENT_API_URL } from "@goodagent/shared";
 
 const pkgRoot = dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = resolve(pkgRoot, "../../..");
@@ -78,7 +79,7 @@ export function getRuntimeConfig(): RuntimeConfig {
     operatorPrivateKey: operatorPk ?? null,
     agentInitialGs,
     agentInitialCelo,
-    apiBase: process.env.API_BASE ?? "https://gcopilot-api.geinz.lol",
+    apiBase: process.env.API_BASE ?? GOODAGENT_API_URL,
     rpcUrl: process.env.CELO_RPC_URL ?? "https://forno.celo.org",
     databaseUrl: process.env.DATABASE_URL ?? null,
     encryptionSecret: process.env.ENCRYPTION_SECRET ?? null,

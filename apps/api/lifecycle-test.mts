@@ -9,8 +9,9 @@
  * Run: PK=0x... npx tsx lifecycle-test.mts
  */
 import { privateKeyToAccount } from "viem/accounts";
+import { GOODAGENT_API_URL } from "@goodagent/shared";
 
-const API = process.env.API_URL ?? "https://gcopilot-api.geinz.lol";
+const API = process.env.API_URL ?? GOODAGENT_API_URL;
 const account = privateKeyToAccount(process.env.PK as `0x${string}`);
 const agent = "0xe1643a041D98228ddEB388353889BFc13d9a84C1";
 

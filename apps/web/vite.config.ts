@@ -2,10 +2,13 @@ import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 
+const GOODAGENT_ORIGIN = "https://goodagentids.xyz";
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, resolve(__dirname, "../../"), "");
   const apiProxyTarget =
-    env.VITE_API_PROXY_TARGET || "https://gcopilot-api.geinz.lol";
+    env.VITE_API_PROXY_TARGET || GOODAGENT_ORIGIN;
+  const usesCanonicalSite = apiProxyTarget.includes("goodagentids.xyz");
   const isProd = mode === "production";
 
   return {
@@ -50,10 +53,12 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: apiProxyTarget,
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/api/, ""),
+          ...(usesCanonicalSite
+            ? {}
+            : { rewrite: (p) => p.replace(/^\/api/, "") }),
         },
         "/host": {
-          target: apiProxyTarget,
+          target: usesCanonicalSite ? GOODAGENT_ORIGIN : apiProxyTarget,
           changeOrigin: true,
         },
       },

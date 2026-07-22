@@ -7,7 +7,7 @@
  * Env:
  *   OPERATOR_PRIVATE_KEY  — GoodDollar-verified human with >= 250 G$ on Celo
  *   DEMO_AGENT_ADDRESS    — agent to register (default: canonical demo)
- *   API_BASE              — default https://gcopilot-api.geinz.lol
+ *   API_BASE              — default https://goodagentids.xyz/api
  *
  * Run from apps/api:
  *   OPERATOR_PRIVATE_KEY=0x… npx tsx register-demo-agent.mts
@@ -22,8 +22,9 @@ import {
   buildAgentId,
   isAgentAttested,
 } from "@goodagent/agent-id";
+import { GOODAGENT_API_URL } from "@goodagent/shared";
 
-const API = process.env.API_BASE ?? "https://gcopilot-api.geinz.lol";
+const API = process.env.API_BASE ?? GOODAGENT_API_URL;
 const DEMO_AGENT =
   (process.env.DEMO_AGENT_ADDRESS as `0x${string}` | undefined) ??
   ("0xBd4495328ac79B2E4A4B488Eb0D4b3548833Ad2A" as const);

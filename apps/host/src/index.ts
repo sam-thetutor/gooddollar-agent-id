@@ -43,7 +43,7 @@ import {
   assertOwnerVouchedForAgent,
   type PipelineStatus,
 } from "@goodagent/runtime";
-import { isSkillDeployable } from "@goodagent/shared";
+import { isSkillDeployable, GOODAGENT_API_URL } from "@goodagent/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { verifyDeployControl } from "./deploy-control-auth.js";
@@ -54,7 +54,7 @@ loadEnv({ path: existsSync(rootEnv) ? rootEnv : undefined, override: true });
 
 const HOST_PORT = Number(process.env.HOST_PORT ?? 3002);
 const HOST_INTERNAL_SECRET = process.env.HOST_INTERNAL_SECRET?.trim() ?? "";
-const API_BASE = process.env.API_BASE ?? "https://gcopilot-api.geinz.lol";
+const API_BASE = process.env.API_BASE ?? GOODAGENT_API_URL;
 const DEV_SKIP_PAYMENT = process.env.HOST_DEV_SKIP_PAYMENT === "1";
 
 const app = new Hono();

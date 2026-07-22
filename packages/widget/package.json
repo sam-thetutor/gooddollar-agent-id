@@ -1,0 +1,51 @@
+{
+  "name": "@goodagent/widget",
+  "version": "0.1.0",
+  "description": "Embeddable GoodAgent widget — deploy, vouch, and monitor GameArena agents on partner sites",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/widget.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build && tsc --emitDeclarationOnly",
+    "dev": "vite build --watch",
+    "lint": "tsc --noEmit",
+    "demo": "vite --config vite.demo.config.ts"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "@privy-io/react-auth": "^2.0.0 || ^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@privy-io/react-auth": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@goodagent/shared": "workspace:*",
+    "@goodsdks/citizen-sdk": "^1.2.5",
+    "viem": "^2.31.3"
+  },
+  "devDependencies": {
+    "@privy-io/react-auth": "^2.25.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "license": "MIT"
+}

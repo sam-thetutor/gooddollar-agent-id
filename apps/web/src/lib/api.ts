@@ -1,11 +1,11 @@
-// Default to same-origin "/api" (Vite proxy in dev). Override with an absolute
-// URL via VITE_API_BASE_URL when the API is hosted separately.
+// Default to same-origin "/api" in production (nginx → localhost:3009).
+// Dev: goodagentids.xyz/api unless VITE_API_BASE_URL overrides.
+import { GOODAGENT_API_URL } from "@goodagent/shared";
+
 const API_BASE = (
   import.meta.env.VITE_API_BASE_URL as string | undefined
 )?.trim() ||
-  (import.meta.env.DEV
-    ? "https://gcopilot-api.geinz.lol"
-    : "/api");
+  (import.meta.env.DEV ? GOODAGENT_API_URL : "/api");
 
 // ---------------------------------------------------------------------------
 // Wallet overview — GoodDollar identity status for a Celo address.

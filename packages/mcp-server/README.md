@@ -71,7 +71,7 @@ the agent's live G$ bond in the `AgentVault` still meets the vault minimum
 
 > Looking up a stored credential by agent address (without holding the
 > credential) is served by the hosted REST API:
-> `GET https://gcopilot-api.geinz.lol/agent/verify/:address`.
+> `GET https://goodagentids.xyz/api/agent/verify/:address`.
 
 ## Verify in code instead
 

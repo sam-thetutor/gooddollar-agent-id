@@ -211,3 +211,18 @@ Everything stays measurable the way season 4 scores things anyway: users helped,
 On "even if we had agents it would only be a few" — honestly a few is all I wouldd need at this stage. Not asking for a market, just a handful of design partners. If a few show up during the season I will build around what they actually need, and if they don't, the plan above doesn't depend on them at all.
 
 And if the numbers aren't there by mid season, cut my stream. That's what the streaming model is for. Rather be judged on what I ship to existing users than on my predictions.
+
+
+
+
+
+
+
+
+Before joining GoodBuilders, I had ideas and the drive to build, but the program gave me the structure, mentorship, and community I needed to grow as a founder. Throughout the journey, I learned how to think more strategically about product development, validate ideas, and build with users in mind rather than assumptions.
+
+One of the biggest things I gained was confidence. The encouragement, honest feedback, and willingness of mentors and fellow founders to share their experiences helped me push through challenges that every startup faces. GoodBuilders became a place where I could learn, experiment, and keep improving.
+
+During the program, I had the opportunity to build GoodAgent, which has benefited tremendously from the insights, mentorship, and supportive environment the community provided. Those experiences didn't just help me build better products,they helped me become a better founder.
+
+I'm genuinely grateful to be part of the GoodBuilders community, and I'd recommend the program to anyone serious about building meaningful technology and growing alongside an incredible network of founders.

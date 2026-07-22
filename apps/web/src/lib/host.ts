@@ -1,5 +1,5 @@
-/** Host supervisor API (autonomous deploy). */
 import type { DeployControlAuth } from "@goodagent/shared";
+import { GOODAGENT_HOST_URL } from "@goodagent/shared";
 
 function isLocalhostUrl(url: string): boolean {
   return /localhost|127\.0\.0\.1/.test(url);
@@ -19,7 +19,7 @@ function resolveHostBase(): string {
   if (configured && (useLocal || !isLocalhostUrl(configured))) {
     return configured;
   }
-  return "https://gcopilot-api.geinz.lol/host";
+  return GOODAGENT_HOST_URL;
 }
 
 const HOST_BASE = resolveHostBase();

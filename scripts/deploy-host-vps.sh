@@ -86,7 +86,7 @@ if ! grep -q "$MARKER" "$REMOTE_ENV" 2>/dev/null; then
 fi
 
 append_or_replace AGENTS_ROOT "$AGENTS_ROOT" "$REMOTE_ENV"
-append_or_replace API_BASE "https://gcopilot-api.geinz.lol" "$REMOTE_ENV"
+append_or_replace API_BASE "https://goodagentids.xyz/api" "$REMOTE_ENV"
 append_or_replace HOST_PORT "3010" "$REMOTE_ENV"
 append_or_replace HOST_DEV_SKIP_PAYMENT "1" "$REMOTE_ENV"
 append_or_replace AGENT_INITIAL_GS "200" "$REMOTE_ENV"

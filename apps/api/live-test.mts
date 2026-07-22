@@ -6,8 +6,9 @@
  * Run: npx tsx scripts/live-test.mts
  */
 import { privateKeyToAccount } from "viem/accounts";
+import { GOODAGENT_API_URL } from "@goodagent/shared";
 
-const API = process.env.API_URL ?? "https://gcopilot-api.geinz.lol";
+const API = process.env.API_URL ?? GOODAGENT_API_URL;
 const PK = process.env.PRIVATE_KEY as `0x${string}`;
 if (!PK) throw new Error("PRIVATE_KEY not set");
 const account = privateKeyToAccount(PK);

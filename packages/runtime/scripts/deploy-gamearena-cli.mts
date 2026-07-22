@@ -4,7 +4,7 @@
  *
  * Env (monorepo root .env):
  *   OPERATOR_PRIVATE_KEY — owner wallet (must match ownerWallet)
- *   HOST_BASE            — default https://gcopilot-api.geinz.lol/host
+ *   HOST_BASE            — default https://goodagentids.xyz/host
  *   WEB_ORIGIN           — default https://goodagentids.xyz
  *
  * Usage:
@@ -23,17 +23,12 @@ import {
   buildAgentId,
   isAgentAttested,
 } from "@goodagent/agent-id";
-import { buildDeployControlMessage } from "@goodagent/shared";
+import { buildDeployControlMessage, GOODAGENT_API_URL, GOODAGENT_HOST_URL } from "@goodagent/shared";
 
 loadEnv({ path: resolve(process.cwd(), "../../.env") });
 
-const HOST_BASE = (
-  process.env.HOST_BASE ?? "https://gcopilot-api.geinz.lol/host"
-).replace(/\/$/, "");
-const API_BASE = (process.env.API_BASE ?? "https://gcopilot-api.geinz.lol").replace(
-  /\/$/,
-  "",
-);
+const HOST_BASE = (process.env.HOST_BASE ?? GOODAGENT_HOST_URL).replace(/\/$/, "");
+const API_BASE = (process.env.API_BASE ?? GOODAGENT_API_URL).replace(/\/$/, "");
 const WEB_ORIGIN = (
   process.env.WEB_ORIGIN ?? "https://goodagentids.xyz"
 ).replace(/\/$/, "");

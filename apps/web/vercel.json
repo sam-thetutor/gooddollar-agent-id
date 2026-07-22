@@ -10,8 +10,8 @@
     }
   },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://gcopilot-api.geinz.lol/:path*" },
-    { "source": "/host/:path*", "destination": "https://gcopilot-api.geinz.lol/host/:path*" },
+    { "source": "/api/:path*", "destination": "https://goodagentids.xyz/api/:path*" },
+    { "source": "/host/:path*", "destination": "https://goodagentids.xyz/host/:path*" },
     { "source": "/((?!assets/|llms.txt|.*\\.\\w+$).*)", "destination": "/index.html" }
   ]
 }

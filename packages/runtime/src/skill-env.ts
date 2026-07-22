@@ -1,6 +1,7 @@
 import { chmodSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Address } from "viem";
+import { GOODAGENT_API_URL } from "@goodagent/shared";
 import { resolveGamearenaProxy } from "./gamearena-proxy.js";
 
 export type SkillConfiguration = Record<string, string>;
@@ -228,7 +229,7 @@ export function buildSkillEnv(
       opts.rpcUrl,
       opts.config,
       opts.agentAddress,
-      opts.apiBase ?? "https://gcopilot-api.geinz.lol",
+      opts.apiBase ?? GOODAGENT_API_URL,
     );
   } else {
     throw new Error(`Unsupported skill_id for env: ${skillId}`);

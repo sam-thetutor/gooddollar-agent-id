@@ -14,15 +14,21 @@ jobs:
     steps:
       - name: API /health
         run: |
-          body=$(curl -sS --max-time 15 --fail https://gcopilot-api.geinz.lol/health)
+          body=$(curl -sS --max-time 15 --fail https://goodagentids.xyz/api/health)
           echo "$body"
           echo "$body" | grep -q '"ok":true' || { echo "API unhealthy"; exit 1; }
+
+      - name: Host /health
+        run: |
+          body=$(curl -sS --max-time 15 --fail https://goodagentids.xyz/host/health)
+          echo "$body"
+          echo "$body" | grep -q '"ok":true' || { echo "Host unhealthy"; exit 1; }
 
       - name: Web app
         run: curl -sS --max-time 15 --fail -o /dev/null https://goodagentids.xyz/
 
       - name: Verify endpoint end-to-end
         run: |
-          body=$(curl -sS --max-time 20 --fail "https://gcopilot-api.geinz.lol/agent/verify/0x0000000000000000000000000000000000000001")
+          body=$(curl -sS --max-time 20 --fail "https://goodagentids.xyz/api/agent/verify/0x0000000000000000000000000000000000000001")
           echo "$body"
           echo "$body" | grep -q '"found"' || { echo "verify endpoint broken"; exit 1; }

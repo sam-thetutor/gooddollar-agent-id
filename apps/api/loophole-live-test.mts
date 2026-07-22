@@ -18,12 +18,13 @@ import {
   verifyAgentIdLive,
   credentialFromWire,
 } from "@goodagent/agent-id";
+import { GOODAGENT_API_URL } from "@goodagent/shared";
 
 const PK = process.env.PRIVATE_KEY as `0x${string}`;
 if (!PK) throw new Error("PRIVATE_KEY missing");
 const operator = privateKeyToAccount(PK);
 const AGENT = "0xe1643a041D98228ddEB388353889BFc13d9a84C1" as const;
-const API = process.env.API_BASE ?? "https://gcopilot-api.geinz.lol";
+const API = process.env.API_BASE ?? GOODAGENT_API_URL;
 
 const pub = createPublicClient({ chain: celo, transport: http("https://forno.celo.org") });
 const wallet = createWalletClient({ account: operator, chain: celo, transport: http("https://forno.celo.org") });

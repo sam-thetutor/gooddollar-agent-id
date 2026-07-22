@@ -4,7 +4,7 @@
 > human-backed, bond-backed GoodAgent identity on Celo mainnet.
 
 **Live site:** https://goodagentids.xyz  
-**API:** https://gcopilot-api.geinz.lol  
+**API:** https://goodagentids.xyz/api  
 **Demo agent:** `0xBd4495328ac79B2E4A4B488Eb0D4b3548833Ad2A` (attested on mainnet)
 
 ---
@@ -63,7 +63,7 @@ await relayAgentAttestation(relayerWalletClient, signed);
 **Check attestation:**
 
 ```bash
-curl https://gcopilot-api.geinz.lol/agent/verify/0xYOUR_AGENT
+curl https://goodagentids.xyz/api/agent/verify/0xYOUR_AGENT
 # agentProven: true once attested (even before full registration)
 ```
 
@@ -98,7 +98,7 @@ Set `DEMO_AGENT_ADDRESS` to your agent if not using the canonical demo.
 ## Step 4 — Agent: poll until live
 
 ```bash
-curl https://gcopilot-api.geinz.lol/agent/verify/0xYOUR_AGENT
+curl https://goodagentids.xyz/api/agent/verify/0xYOUR_AGENT
 ```
 
 Success:
@@ -118,7 +118,7 @@ Success:
 Or poll in code:
 
 ```ts
-const url = "https://gcopilot-api.geinz.lol/agent/verify/0xYOUR_AGENT";
+const url = "https://goodagentids.xyz/api/agent/verify/0xYOUR_AGENT";
 for (;;) {
   const r = await (await fetch(url)).json();
   if (r.found && r.valid) break;
@@ -134,7 +134,7 @@ Three equivalent surfaces:
 
 ```bash
 # REST (by address — no credential needed)
-curl https://gcopilot-api.geinz.lol/agent/verify/0xAGENT
+curl https://goodagentids.xyz/api/agent/verify/0xAGENT
 ```
 
 ```ts
@@ -170,7 +170,7 @@ Tools: `gooddollar_verify_agent`, `gooddollar_check_attestation`,
 | Name | GoodAgent Demo |
 | Address | `0xBd4495328ac79B2E4A4B488Eb0D4b3548833Ad2A` |
 | Attestation | On-chain (`AgentAttestation` registry) |
-| Verify | https://gcopilot-api.geinz.lol/agent/verify/0xBd4495328ac79B2E4A4B488Eb0D4b3548833Ad2A |
+| Verify | https://goodagentids.xyz/api/agent/verify/0xBd4495328ac79B2E4A4B488Eb0D4b3548833Ad2A |
 | Profile | https://goodagentids.xyz/explore/agent/0xBd4495328ac79B2E4A4B488Eb0D4b3548833Ad2A |
 | Vouch (operator) | https://goodagentids.xyz/issue?agent=0xBd4495328ac79B2E4A4B488Eb0D4b3548833Ad2A |
 
