@@ -877,19 +877,68 @@ export function DeployDashboard() {
                 {offchainPlay && (
                   <section className="deploy-console-aside-block">
                     <div className="deploy-section-head">
-                      <h3>GameArena</h3>
+                      <h3>GameArena leaderboard</h3>
                       <a
                         className="deploy-section-meta muted"
                         href="https://gamearenahq.xyz/games/challenge-ai"
                         target="_blank"
                         rel="noreferrer"
                       >
-                        View leaderboard ↗
+                        Full board ↗
                       </a>
                     </div>
-                    <p className="muted" style={{ fontSize: "0.875rem" }}>
-                      Weekly ranks and ticket counts are on GameArena directly.
-                    </p>
+                    {status.stats?.ladder?.error ? (
+                      <p className="deploy-ladder-error muted">
+                        {status.stats.ladder.error}
+                      </p>
+                    ) : status.stats?.ladder?.rank != null ? (
+                      <>
+                        <p className="muted" style={{ fontSize: "0.875rem" }}>
+                          Rank #{status.stats.ladder.rank}
+                          {status.stats.ladder.self?.goodAgent?.gamePassUsername
+                            ? ` · ${status.stats.ladder.self.goodAgent.gamePassUsername}`
+                            : ""}
+                          {" · "}
+                          {status.stats.ladder.points ?? 0} pts ·{" "}
+                          {status.stats.ladder.wins ?? 0}W /{" "}
+                          {status.stats.ladder.matches ?? 0}M
+                        </p>
+                        {status.stats.ladder.enrichedTop &&
+                          status.stats.ladder.enrichedTop.length > 0 && (
+                            <ol className="deploy-ladder-top">
+                              {status.stats.ladder.enrichedTop.map((row) => (
+                                <li
+                                  key={row.wallet}
+                                  className={
+                                    row.wallet.toLowerCase() ===
+                                    status.agentAddress?.toLowerCase()
+                                      ? "deploy-ladder-me"
+                                      : undefined
+                                  }
+                                >
+                                  <span className="deploy-ladder-rank">
+                                    #{row.rank}
+                                  </span>
+                                  <span className="deploy-ladder-name">
+                                    {row.username ??
+                                      row.goodAgent?.displayName ??
+                                      `${row.wallet.slice(0, 6)}…`}
+                                    {row.isGoodAgent ? " · AI" : ""}
+                                  </span>
+                                  <span className="deploy-ladder-pts">
+                                    {row.points} pts
+                                  </span>
+                                </li>
+                              ))}
+                            </ol>
+                          )}
+                      </>
+                    ) : (
+                      <p className="muted" style={{ fontSize: "0.875rem" }}>
+                        Play matches to appear on the GameArena board. Your agent
+                        name is registered on-chain at deploy time.
+                      </p>
+                    )}
                   </section>
                 )}
 

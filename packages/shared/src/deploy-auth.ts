@@ -3,6 +3,7 @@ export type DeployControlAction =
   | "resume"
   | "baseline"
   | "configuration"
+  | "display-name"
   | "run-pipeline"
   | "confirm-vouch";
 

@@ -4,14 +4,28 @@
 **Goal:** Let your users deploy autonomous agents that play the **free offchain Markov AI** game (`challenge-ai` / rock-paper-scissors vs MARKOV).  
 **Backend:** GoodAgent hosts provisioning and gameplay — **you do not run agent servers**.
 
-**Widget package:** `@goodagent/widget@0.1.6`  
+**Widget package:** `@goodagent/widget@0.1.12`  
 **GoodAgent APIs:** `https://goodagentids.xyz/host` + `https://goodagentids.xyz/api` (filled in automatically — do not configure in your app)
+
+---
+
+## What’s new in 0.1.12
+
+| Area | Change |
+|------|--------|
+| **Dashboard** | Command deck: agent dropdown, Live/Stop/Start bar, stats ribbon, inline links |
+| **Settings** | Edit name + strategy/caps after deploy via Settings drawer (2×2 grid) |
+| **Deploy** | Progress loader + faster lite polling; list updates without refresh |
+| **Verify** | Horizontal step cards + agent dropdown picker |
+| **Flow** | Auto-switch to Verify after deploy; Dashboard no longer hijacks tabs |
+
+**Note:** Saving agent **display name** on Dashboard requires GoodAgent host with `POST /deploy/:id/display-name` deployed. Strategy/caps use the existing configuration endpoint.
 
 ---
 
 ## TL;DR (fastest path)
 
-1. `pnpm add @goodagent/widget@0.1.6`
+1. `pnpm add @goodagent/widget@0.1.12`
 2. Drop in the widget on an `/agents` (or similar) page
 3. Use **`partnerId: "gamearena"`** so deploys are attributed to you
 4. Users **name their agent** and **tune bot settings** on the Deploy tab (strategy, caps, interval)
@@ -27,7 +41,7 @@ Done — users connect wallet → deploy → vouch → agent plays automatically
 |------|-----|-------------|--------------|
 | 1 | **Deploy** | Name agent + tune settings + deploy | GoodAgent creates a **play wallet**, registers GameArena username, installs skill |
 | 2 | **Verify** | GoodDollar verify + G$ bond + Agent ID | User’s **connected wallet** signs; agent becomes verifiable on GoodAgent |
-| 3 | **Dashboard** | Monitor / Stop / Start | Live status, match stats, controls |
+| 3 | **Dashboard** | Pick agent → monitor stats → Stop/Start → **Settings** | Live G$/CELO, record, controls; edit name/strategy after deploy |
 
 **Important:** The user’s wallet **owns** the agent. The **play wallet** runs on GoodAgent servers — keys are never exported to your frontend.
 
@@ -51,7 +65,7 @@ GoodAgent fills in host API, main API, RPC, vault, and base skill defaults. You 
 ## Install
 
 ```bash
-pnpm add @goodagent/widget@0.1.6 react react-dom
+pnpm add @goodagent/widget@0.1.12 react react-dom
 
 # If you already use Privy (recommended for GameArena / MiniPay / WalletConnect):
 pnpm add @privy-io/react-auth
@@ -282,7 +296,8 @@ Use a **fresh Celo wallet** on staging/production:
 - [ ] **Verify** — complete GoodDollar face verification (returns to `fvCallbackUrl`)
 - [ ] **Verify** — post G$ bond (on-chain tx from user wallet)
 - [ ] **Verify** — issue Agent ID (sign + tx)
-- [ ] **Dashboard** — agent shows **Running**, record/today update
+- [ ] **Dashboard** — pick agent from dropdown → **Running**, G$/record/today visible
+- [ ] **Settings** — change strategy or name → Save (strategy works today; name needs host update)
 - [ ] **Stop** then **Start** — controls work for wallet owner
 - [ ] Agent appears on [goodagentids.xyz/explore](https://goodagentids.xyz/explore) after verify
 
@@ -315,6 +330,21 @@ Users must return to a page that still mounts the widget (Verify tab) so the flo
 
 ---
 
+## Dashboard (0.1.12 command deck)
+
+After Verify, users land on **Dashboard** with:
+
+1. **Agent dropdown** — switch between deployed agents (same pattern as Verify)
+2. **Command bar** — agent name, Live badge, Stop/Start, Settings toggle
+3. **Stats ribbon** — G$, CELO, win/loss record, matches today
+4. **Status strip** — online indicator, Agent ID ✓, Celoscan / Profile / Verify links
+5. **Settings drawer** (collapsed by default) — rename agent, tune strategy/caps in a compact 2×2 grid
+6. **Logs** — collapsed `<details>` at the bottom
+
+Recommend wrapping the widget in a card on your `/agents` page; the widget max-width is ~720px.
+
+---
+
 ## Styling on GameArena
 
 The widget ships self-contained CSS. Minimal wrapper:
@@ -335,9 +365,10 @@ Class prefix: `ga-widget-*`. Override in your CSS if needed; don’t strip the i
 |---------|-----|
 | Unstyled widget | Add `import "@goodagent/widget/styles.css"` |
 | MetaMask sign never pops | Use `usePrivyWalletAdapter({ preferExternal: true })` or wagmi adapter |
-| Deploy stuck on “provisioning” | User may need to sign “start pipeline”; check `/host/health` |
+| Deploy stuck on “provisioning” | Progress bar shows step; user may need to sign “start pipeline”; check `/host/health` |
 | Verify redirect loses state | `fvCallbackUrl` must match your agents page URL |
-| Dashboard empty | User must complete Verify tab first |
+| Dashboard empty | Complete Verify first; use agent dropdown if you have multiple agents |
+| Name save fails (404) | GoodAgent host needs `display-name` endpoint on production |
 | Agent not playing | Confirm `PLAY_MODE: "offchain"` and agent status **Running** on Dashboard |
 
 ---

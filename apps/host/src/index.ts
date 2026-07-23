@@ -11,6 +11,7 @@ import {
   listActiveSubscribers,
   listChatSubscriptions,
   listDeployedAgentsByOwner,
+  listGamearenaDeployedAgents,
   markReminded,
   maxWalletDerivationIndex,
   parseDeployConfiguration,
@@ -41,6 +42,9 @@ import {
   setDeployBaselineBalance,
   applyDeployConfiguration,
   assertOwnerVouchedForAgent,
+  buildGamearenaRegistryFromAgents,
+  enrichGamearenaLadder,
+  fetchGamearenaLadder,
   type PipelineStatus,
 } from "@goodagent/runtime";
 import { isSkillDeployable, GOODAGENT_API_URL } from "@goodagent/shared";
@@ -60,7 +64,13 @@ const DEV_SKIP_PAYMENT = process.env.HOST_DEV_SKIP_PAYMENT === "1";
 const app = new Hono();
 const runningPipelines = new Set<string>();
 const VERIFY_CACHE_MS = 60_000;
-const verifyCache = new Map<string, { at: number; data: unknown }>();
+type VerifyStatus = {
+  valid?: boolean;
+  agentProven?: boolean;
+  reason?: string;
+};
+
+const verifyCache = new Map<string, { at: number; data: VerifyStatus }>();
 
 app.use("*", cors({ origin: "*" }));
 
@@ -165,7 +175,9 @@ function publicAgent<T extends { telegramBotTokenEnc?: string | null }>(
   return rest;
 }
 
-async function fetchVerifyStatus(agentAddress: string): Promise<unknown | null> {
+async function fetchVerifyStatus(
+  agentAddress: string,
+): Promise<VerifyStatus | null> {
   const cached = verifyCache.get(agentAddress);
   if (cached && Date.now() - cached.at < VERIFY_CACHE_MS) {
     return cached.data;
@@ -175,7 +187,7 @@ async function fetchVerifyStatus(agentAddress: string): Promise<unknown | null> 
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) return null;
-    const data = await res.json();
+    const data: VerifyStatus = (await res.json()) as VerifyStatus;
     verifyCache.set(agentAddress, { at: Date.now(), data });
     return data;
   } catch {
@@ -190,6 +202,66 @@ app.get("/health", (c) =>
     pm2: process.env.PM2_HOME ? "configured" : "local",
   }),
 );
+
+/** GameArena challenge-ai ladder with GoodAgent wallet metadata for filtering. */
+app.get("/leaderboard/gamearena", async (c) => {
+  const agentsOnly = c.req.query("agentsOnly") === "1";
+  try {
+    loadRuntimeEnv();
+    const config = getRuntimeConfig();
+    const skillConfig = parseDeployConfiguration({
+      configuration: c.req.query("challengeAiUrl")
+        ? JSON.stringify({ CHALLENGE_AI_URL: c.req.query("challengeAiUrl") })
+        : null,
+    });
+    const agents = await listGamearenaDeployedAgents();
+    const withWallet = agents.filter((row) => row.agentAddress);
+    if (!withWallet.length) {
+      return c.json({ ladder: null, goodAgentCount: 0 });
+    }
+
+    const registry = await buildGamearenaRegistryFromAgents({
+      agentsRoot: config.agentsRoot,
+      agents: withWallet.map((row) => ({
+        id: row.id,
+        displayName: row.displayName,
+        agentAddress: row.agentAddress!,
+        skillId: row.skills[0]?.skillId ?? null,
+      })),
+    });
+
+    const sampleWallet = withWallet[0]!.agentAddress as `0x${string}`;
+    const raw = await fetchGamearenaLadder(
+      sampleWallet,
+      skillConfig.CHALLENGE_AI_URL ?? undefined,
+    );
+    if (!raw) {
+      return c.json({ error: "LADDER_UNAVAILABLE" }, 502);
+    }
+
+    const enriched = enrichGamearenaLadder(raw, registry, sampleWallet);
+    return c.json({
+      ladder: agentsOnly
+        ? {
+            ...enriched,
+            enrichedTop: enriched.goodAgentTop,
+            top: enriched.goodAgentTop.map(({ rank, wallet, points, matches, wins, username }) => ({
+              rank,
+              wallet,
+              points,
+              matches,
+              wins,
+              username,
+            })),
+          }
+        : enriched,
+      goodAgentCount: Object.keys(registry).length,
+    });
+  } catch (err) {
+    console.warn("[host] gamearena leaderboard:", err);
+    return c.json({ error: "LADDER_FAILED" }, 500);
+  }
+});
 
 app.get("/deploy", async (c) => {
   const ownerWallet = c.req.query("ownerWallet");
@@ -292,10 +364,34 @@ app.get("/deploy/:id/status", async (c) => {
   if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
 
   const pm2 = agent.pm2Name ? pm2ProcessSnapshot(agent.pm2Name) : null;
+  const lite = c.req.query("lite") === "1";
+  const includeLadder = c.req.query("ladder") === "1";
 
   const verifyPromise = agent.agentAddress
     ? fetchVerifyStatus(agent.agentAddress)
     : Promise.resolve(null);
+
+  if (lite) {
+    const verify = await verifyPromise;
+    return c.json({
+      id: agent.id,
+      displayName: agent.displayName,
+      template: agent.template,
+      skillId: agent.skills[0]?.skillId ?? null,
+      configuration: agent.configuration,
+      status: agent.status,
+      ownerWallet: agent.ownerWallet,
+      agentAddress: agent.agentAddress,
+      pm2Name: agent.pm2Name,
+      lastHeartbeatAt: agent.lastHeartbeatAt,
+      lastError: agent.lastError,
+      deployedAt: agent.deployedAt,
+      pipelineRunning: runningPipelines.has(agent.id),
+      pm2,
+      verify,
+      stats: null,
+    });
+  }
 
   const statsPromise = (async () => {
     if (!agent.agentAddress) return null;
@@ -303,6 +399,40 @@ app.get("/deploy/:id/status", async (c) => {
       loadRuntimeEnv();
       const config = getRuntimeConfig();
       const skillConfig = parseDeployConfiguration(agent);
+
+      let agentRegistry: Awaited<
+        ReturnType<typeof buildGamearenaRegistryFromAgents>
+      > | undefined;
+
+      if (includeLadder) {
+        const gamearenaAgents = await listGamearenaDeployedAgents();
+        agentRegistry = await buildGamearenaRegistryFromAgents({
+          agentsRoot: config.agentsRoot,
+          agents: gamearenaAgents
+            .filter((row) => row.agentAddress)
+            .map((row) => ({
+              id: row.id,
+              displayName: row.displayName,
+              agentAddress: row.agentAddress!,
+              skillId: row.skills[0]?.skillId ?? null,
+              verified: false,
+            })),
+        });
+        if (agent.agentAddress) {
+          const key = agent.agentAddress.toLowerCase();
+          agentRegistry[key] = {
+            ...(agentRegistry[key] ?? {
+              deployId: agent.id,
+              displayName: agent.displayName,
+              agentAddress: agent.agentAddress,
+              skillId: agent.skills[0]?.skillId ?? "gaming/wagering/gamearena_1v1",
+              gamePassUsername: null,
+              verified: false,
+              source: "goodagent",
+            }),
+          };
+        }
+      }
 
       return await getDeployStats({
         agentsRoot: config.agentsRoot,
@@ -320,6 +450,9 @@ app.get("/deploy/:id/status", async (c) => {
                 ? "offchain"
                 : null,
         challengeAiUrl: skillConfig.CHALLENGE_AI_URL ?? null,
+        displayName: agent.displayName,
+        agentRegistry,
+        includeLadder,
       });
     } catch (err) {
       console.warn(`[host] stats for ${agent.id}:`, err);
@@ -328,6 +461,16 @@ app.get("/deploy/:id/status", async (c) => {
   })();
 
   const [verify, stats] = await Promise.all([verifyPromise, statsPromise]);
+
+  if (stats?.ladder && agent.agentAddress && verify?.valid) {
+    const key = agent.agentAddress.toLowerCase();
+    if (stats.ladder.agentRegistry[key]) {
+      stats.ladder.agentRegistry[key].verified = true;
+    }
+    if (stats.ladder.self?.goodAgent) {
+      stats.ladder.self.goodAgent.verified = true;
+    }
+  }
 
   return c.json({
     id: agent.id,
@@ -783,6 +926,31 @@ app.post("/deploy/:id/configuration", async (c) => {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: "CONFIG_APPLY_FAILED", message }, 500);
   }
+});
+
+app.post("/deploy/:id/display-name", async (c) => {
+  const id = c.req.param("id");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const body = await c.req.json<{
+    displayName?: string;
+  } & Record<string, unknown>>();
+  const authErr = await verifyDeployControl(
+    "display-name",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  const displayName = body.displayName?.trim();
+  if (!displayName) {
+    return c.json({ error: "displayName is required" }, 400);
+  }
+
+  const updated = await updateDeployedAgent(id, { displayName });
+  return c.json({ agent: publicAgent(updated) });
 });
 
 console.log(`[host] listening on :${HOST_PORT}`);

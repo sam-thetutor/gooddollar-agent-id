@@ -12,11 +12,13 @@ import {
   UBI_REMINDER_SKILL_ID,
 } from "../skill-config.js";
 import type { SkillConfiguration } from "../types.js";
+import { isDeployProvisioning } from "../lib/deploy-progress.js";
 
 export function useDeployFlow(opts?: {
   deployId?: string;
   onDeployId?: (id: string) => void;
   onAwaitingVouch?: (status: DeployStatusResponse) => void;
+  onStatusChange?: (status: DeployStatusResponse | null) => void;
 }) {
   const { config, wallet, host } = useWidget();
   const skillId = config.skillId;
@@ -38,6 +40,10 @@ export function useDeployFlow(opts?: {
 
   const onAwaitingVouchRef = useRef(opts?.onAwaitingVouch);
   onAwaitingVouchRef.current = opts?.onAwaitingVouch;
+  const onStatusChangeRef = useRef(opts?.onStatusChange);
+  onStatusChangeRef.current = opts?.onStatusChange;
+  const displayNameDirtyRef = useRef(false);
+  const vouchNotifiedForDeployRef = useRef("");
 
   const basePollMs = config.statusPollMs ?? 4000;
   const pollMs =
@@ -53,16 +59,22 @@ export function useDeployFlow(opts?: {
       ...defaultConfigForSkill(skillId),
       ...config.skillConfiguration,
     });
-    setDisplayName(
-      config.defaultDisplayName ?? defaultDisplayNameForSkill(skillId),
-    );
+    if (!displayNameDirtyRef.current) {
+      setDisplayName(
+        config.defaultDisplayName ?? defaultDisplayNameForSkill(skillId),
+      );
+    }
     setTelegramBotToken(config.telegramBotToken ?? "");
-  }, [skillId, config.skillConfiguration, config.defaultDisplayName, config.telegramBotToken]);
+  }, [skillId, config.defaultDisplayName, config.telegramBotToken]);
+
+  useEffect(() => {
+    onStatusChangeRef.current?.(status);
+  }, [status]);
 
   const poll = useCallback(async () => {
     if (!deployId) return null;
     try {
-      const s = await host.getDeployStatus(deployId);
+      const s = await host.getDeployStatus(deployId, { lite: true });
       setStatus(s);
       setError(null);
       return s;
@@ -77,6 +89,8 @@ export function useDeployFlow(opts?: {
     if (!opts?.deployId) {
       setStatus(null);
       setError(null);
+      displayNameDirtyRef.current = false;
+      vouchNotifiedForDeployRef.current = "";
     }
   }, [opts?.deployId]);
 
@@ -88,13 +102,20 @@ export function useDeployFlow(opts?: {
   }, [deployId, poll, pollMs]);
 
   useEffect(() => {
-    if (status && deployNeedsUserVouch(status)) {
-      onAwaitingVouchRef.current?.(status);
-    }
-  }, [status]);
+    if (!status || !deployId) return;
+    if (!deployNeedsUserVouch(status)) return;
+    if (vouchNotifiedForDeployRef.current === deployId) return;
+    vouchNotifiedForDeployRef.current = deployId;
+    onAwaitingVouchRef.current?.(status);
+  }, [status, deployId]);
 
   const updateConfig = useCallback((key: string, value: string) => {
     setConfigValues((c) => ({ ...c, [key]: value }));
+  }, []);
+
+  const setDisplayNameSafe = useCallback((value: string) => {
+    displayNameDirtyRef.current = true;
+    setDisplayName(value);
   }, []);
 
   const deploy = useCallback(async () => {
@@ -191,7 +212,8 @@ export function useDeployFlow(opts?: {
     skillId,
     deployId,
     displayName,
-    setDisplayName,
+    setDisplayName: setDisplayNameSafe,
+    provisioning: isDeployProvisioning(status, deployId),
     configValues,
     updateConfig,
     telegramBotToken,

@@ -126,6 +126,27 @@ export interface DeployStats {
   ladder?: GamearenaLadder | null;
 }
 
+export interface GoodAgentLadderMeta {
+  deployId: string;
+  displayName: string;
+  gamePassUsername: string | null;
+  agentAddress: string;
+  verified: boolean;
+  skillId: string;
+  source: "goodagent";
+}
+
+export interface EnrichedLadderRow {
+  rank: number;
+  wallet: string;
+  points: number;
+  matches: number;
+  wins: number;
+  username: string | null;
+  isGoodAgent: boolean;
+  goodAgent: GoodAgentLadderMeta | null;
+}
+
 export interface GamearenaLadder {
   rank: number | null;
   points: number | null;
@@ -141,6 +162,10 @@ export interface GamearenaLadder {
     username: string | null;
   }>;
   error: string | null;
+  agentRegistry?: Record<string, GoodAgentLadderMeta>;
+  enrichedTop?: EnrichedLadderRow[];
+  goodAgentTop?: EnrichedLadderRow[];
+  self?: EnrichedLadderRow | null;
 }
 
 export function getDeploy(deployId: string) {
@@ -241,7 +266,7 @@ export async function getDeployStatus(deployId: string) {
       // fall through to normal fetch
     }
   }
-  return hostFetch<DeployStatusResponse>(`/deploy/${deployId}/status`);
+  return hostFetch<DeployStatusResponse>(`/deploy/${deployId}/status?ladder=1`);
 }
 
 export function listDeploysByOwner(ownerWallet: string) {

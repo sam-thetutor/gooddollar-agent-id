@@ -34,7 +34,12 @@ import {
   deriveAgentPrivateKey,
   writeAgentMeta,
   agentDir,
+  readAgentMeta,
 } from "./wallet.js";
+import {
+  GAMEARENA_SKILL_ID,
+  registerGamePassUsername,
+} from "./gamearena-pass.js";
 
 export type PipelineStatus =
   | "provisioning"
@@ -86,6 +91,7 @@ export interface RunPipelineResult {
   skillDir: string;
   verifyUrl?: string;
   identityIssued: boolean;
+  gamePassUsername?: string | null;
 }
 
 export async function runDeployPipeline(
@@ -136,6 +142,21 @@ export async function runDeployPipeline(
     });
 
     await fundAgentCelo(config, agentAddress);
+    let gamePassUsername: string | null = null;
+    if (skillId === GAMEARENA_SKILL_ID) {
+      const pass = await registerGamePassUsername({
+        rpcUrl: config.rpcUrl,
+        account: account as LocalAccount,
+        displayName,
+        deployId,
+      });
+      gamePassUsername = pass.username;
+      writeAgentMeta(config.agentsRoot, {
+        ...readAgentMeta(config.agentsRoot, deployId),
+        gamePassUsername,
+        gamePassRegisteredAt: new Date().toISOString(),
+      });
+    }
     const skillConfig = input.skillConfiguration ?? {};
     const gsTarget =
       skillId === BALAIO_WORKER_SKILL_ID
@@ -177,10 +198,25 @@ export async function runDeployPipeline(
     });
     writeSkillEnv(skillDir, skillEnv);
 
+    if (gamePassUsername && skillId === GAMEARENA_SKILL_ID) {
+      writeSkillEnv(skillDir, {
+        ...skillEnv,
+        PLAYER_NAME: gamePassUsername,
+        GAME_PASS_USERNAME: gamePassUsername,
+      });
+    }
+
     const ecosystemPath = writeEcosystemConfig(config, {
       deployId,
       skillDir,
-      env: skillEnv,
+      env:
+        gamePassUsername && skillId === GAMEARENA_SKILL_ID
+          ? {
+              ...skillEnv,
+              PLAYER_NAME: gamePassUsername,
+              GAME_PASS_USERNAME: gamePassUsername,
+            }
+          : skillEnv,
     });
 
     const verifyUrl = `${config.apiBase}/agent/verify/${agentAddress}`;
@@ -214,6 +250,7 @@ export async function runDeployPipeline(
       skillDir,
       verifyUrl,
       identityIssued: false,
+      gamePassUsername,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -114,6 +114,7 @@ export function updateDeployedAgent(
     deployPaymentTx: string;
     configuration: string;
     telegramBotTokenEnc: string;
+    displayName: string;
   }>,
 ): Promise<DeployedAgent> {
   return prisma.deployedAgent.update({ where: { id }, data });
@@ -171,6 +172,22 @@ export async function maxWalletDerivationIndex(): Promise<number> {
     _max: { walletDerivationIndex: true },
   });
   return row._max.walletDerivationIndex ?? -1;
+}
+
+const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1";
+
+/** All GameArena deploys with a provisioned play wallet (for leaderboard enrichment). */
+export function listGamearenaDeployedAgents(): Promise<
+  (DeployedAgent & { skills: SkillInstall[] })[]
+> {
+  return prisma.deployedAgent.findMany({
+    where: {
+      agentAddress: { not: null },
+      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+    },
+    orderBy: { createdAt: "desc" },
+    include: { skills: true },
+  });
 }
 
 export function parseDeployConfiguration(

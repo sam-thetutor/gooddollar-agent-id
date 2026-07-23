@@ -24,20 +24,27 @@ export function SkillConfigFields({
   onChange,
   telegramBotToken,
   onTelegramBotTokenChange,
+  compact = false,
 }: {
   skillId: string;
   config: SkillConfiguration;
   onChange: (key: string, value: string) => void;
   telegramBotToken?: string;
   onTelegramBotTokenChange?: (value: string) => void;
+  compact?: boolean;
 }) {
+  const gridClass = compact ? " ga-widget-config-grid" : "";
+  const fieldClass = compact ? "ga-widget-field" : "ga-widget-field";
+  const inputClass = compact ? "ga-widget-input ga-widget-input-compact" : "ga-widget-input";
+  const selectClass = compact ? "ga-widget-select ga-widget-input-compact" : "ga-widget-input";
+
   if (skillId === GAMEARENA_SKILL_ID) {
     return (
-      <>
-        <label className="ga-widget-field">
-          <span>Strategy vs MARKOV</span>
+      <div className={`ga-widget-config-fields${gridClass}`}>
+        <label className={fieldClass}>
+          <span>Strategy</span>
           <select
-            className="ga-widget-input"
+            className={selectClass}
             value={config.MARKOV_STRATEGY ?? "random"}
             onChange={(e) => onChange("MARKOV_STRATEGY", e.target.value)}
           >
@@ -47,40 +54,10 @@ export function SkillConfigFields({
             <option value="counter">Counter last</option>
           </select>
         </label>
-        <label className="ga-widget-field">
-          <span>Daily match cap</span>
-          <input
-            className="ga-widget-input"
-            type="number"
-            min={1}
-            value={config.DAILY_MATCH_CAP ?? "50"}
-            onChange={(e) => onChange("DAILY_MATCH_CAP", e.target.value)}
-          />
-        </label>
-        <label className="ga-widget-field">
-          <span>Max matches per run</span>
-          <input
-            className="ga-widget-input"
-            type="number"
-            min={1}
-            value={config.MAX_MATCHES ?? "10"}
-            onChange={(e) => onChange("MAX_MATCHES", e.target.value)}
-          />
-        </label>
-        <label className="ga-widget-field">
-          <span>Pause between matches (sec)</span>
-          <input
-            className="ga-widget-input"
-            type="number"
-            min={1}
-            value={config.MATCH_INTERVAL_SECONDS ?? "300"}
-            onChange={(e) => onChange("MATCH_INTERVAL_SECONDS", e.target.value)}
-          />
-        </label>
-        <label className="ga-widget-field">
+        <label className={fieldClass}>
           <span>Play mode</span>
           <select
-            className="ga-widget-input"
+            className={selectClass}
             value={config.PLAY_MODE ?? "offchain"}
             onChange={(e) => onChange("PLAY_MODE", e.target.value)}
           >
@@ -89,7 +66,37 @@ export function SkillConfigFields({
             <option value="auto">Auto</option>
           </select>
         </label>
-      </>
+        <label className={fieldClass}>
+          <span>Daily cap</span>
+          <input
+            className={inputClass}
+            type="number"
+            min={1}
+            value={config.DAILY_MATCH_CAP ?? "50"}
+            onChange={(e) => onChange("DAILY_MATCH_CAP", e.target.value)}
+          />
+        </label>
+        <label className={fieldClass}>
+          <span>Max / run</span>
+          <input
+            className={inputClass}
+            type="number"
+            min={1}
+            value={config.MAX_MATCHES ?? "10"}
+            onChange={(e) => onChange("MAX_MATCHES", e.target.value)}
+          />
+        </label>
+        <label className={`${fieldClass} ga-widget-config-grid-span2`}>
+          <span>Pause (sec)</span>
+          <input
+            className={inputClass}
+            type="number"
+            min={1}
+            value={config.MATCH_INTERVAL_SECONDS ?? "300"}
+            onChange={(e) => onChange("MATCH_INTERVAL_SECONDS", e.target.value)}
+          />
+        </label>
+      </div>
     );
   }
 

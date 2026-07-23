@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WidgetProvider, useWidget } from "../context.js";
+import { deployNeedsUserVouch } from "../client/host.js";
+import type { DeployStatusResponse } from "../client/host.js";
 import { resolveWidgetConfig } from "../defaults.js";
 import { useDeployFlow } from "../hooks/useDeployFlow.js";
 import { useOwnerDeploys } from "../hooks/useOwnerDeploys.js";
 import { parseFvCallback } from "../gooddollar.js";
+import { isDeployProvisioning } from "../lib/deploy-progress.js";
 import {
   loadWidgetSession,
   saveWidgetSession,
@@ -27,6 +30,25 @@ function pickDefaultDashboardDeploy(
   const awaiting = withAddress.find((a) => a.status === "awaiting_vouch");
   if (awaiting) return awaiting.id;
   return withAddress[0]?.id ?? agents[0]?.id ?? "";
+}
+
+function countPendingVouch(
+  agents: Array<{ status: string; agentAddress: string | null }>,
+  deployStatus: DeployStatusResponse | null,
+): number {
+  const ids = new Set<string>();
+  for (const a of agents) {
+    if (a.agentAddress && a.status === "awaiting_vouch") {
+      ids.add(a.agentAddress.toLowerCase());
+    }
+  }
+  if (
+    deployStatus?.agentAddress &&
+    deployNeedsUserVouch(deployStatus)
+  ) {
+    ids.add(deployStatus.agentAddress.toLowerCase());
+  }
+  return ids.size;
 }
 
 function GoodAgentWidgetBody({
@@ -60,21 +82,22 @@ function GoodAgentWidgetBody({
       ? loadWidgetSession(config.partnerId, wallet.address)
       : null;
 
-  /** Deploy tab — current provisioning job only. */
   const [deployActiveId, setDeployActiveId] = useState(
     saved?.deployActiveId ?? "",
   );
-  /** Verify tab — independent vouch target. */
   const [vouchDeployId, setVouchDeployId] = useState(
     initialVouchDeployId ?? saved?.vouchDeployId ?? "",
   );
   const [vouchAgentAddress, setVouchAgentAddress] = useState(
     initialVouchAgent ?? saved?.vouchAgentAddress ?? "",
   );
-  /** Dashboard tab — independent monitor target. */
   const [dashboardDeployId, setDashboardDeployId] = useState(
     saved?.dashboardDeployId ?? "",
   );
+  const [deployStatus, setDeployStatus] = useState<DeployStatusResponse | null>(
+    null,
+  );
+  const autoSwitchedForDeployRef = useRef("");
   const [tab, setTab] = useState<Tab>(() => {
     if (mode === "vouch") return "vouch";
     if (mode === "dashboard") return "dashboard";
@@ -84,6 +107,8 @@ function GoodAgentWidgetBody({
   const [hydrated, setHydrated] = useState(false);
 
   const showTabs = mode === "full";
+  const provisioningActive = isDeployProvisioning(deployStatus, deployActiveId);
+  const pendingVouchCount = countPendingVouch(ownerDeploys, deployStatus);
 
   const selectVouchTarget = useCallback(
     (id: string, agent: string) => {
@@ -102,14 +127,20 @@ function GoodAgentWidgetBody({
     [onDashboardSelect],
   );
 
-  // Resolve vouch agent from deploy list when we have id but no address yet.
+  const handleDeployStatus = useCallback(
+    (status: DeployStatusResponse | null) => {
+      setDeployStatus(status);
+      if (status?.agentAddress) void refreshDeploys();
+    },
+    [refreshDeploys],
+  );
+
   useEffect(() => {
     if (!wallet.address || vouchAgentAddress || !vouchDeployId) return;
     const match = ownerDeploys.find((d) => d.id === vouchDeployId);
     if (match?.agentAddress) setVouchAgentAddress(match.agentAddress);
   }, [wallet.address, vouchDeployId, vouchAgentAddress, ownerDeploys]);
 
-  // Hydrate dashboard default once — does not affect Verify or Deploy tabs.
   useEffect(() => {
     if (!wallet.address || hydrated) return;
 
@@ -129,10 +160,10 @@ function GoodAgentWidgetBody({
         if (match?.agentAddress) setVouchAgentAddress(match.agentAddress);
         else if (vouchDeployId) {
           try {
-            const s = await host.getDeployStatus(vouchDeployId);
+            const s = await host.getDeployStatus(vouchDeployId, { lite: true });
             if (s.agentAddress) setVouchAgentAddress(s.agentAddress);
           } catch {
-            // keep empty — user picks from list on Verify tab
+            // user picks from Verify list
           }
         }
       }
@@ -149,6 +180,14 @@ function GoodAgentWidgetBody({
     vouchDeployId,
     vouchAgentAddress,
   ]);
+
+  useEffect(() => {
+    if (!wallet.address || dashboardDeployId || ownerDeploys.length === 0) {
+      return;
+    }
+    const dashId = pickDefaultDashboardDeploy(ownerDeploys);
+    if (dashId) setDashboardDeployId(dashId);
+  }, [wallet.address, dashboardDeployId, ownerDeploys]);
 
   useEffect(() => {
     if (!wallet.address) return;
@@ -168,6 +207,32 @@ function GoodAgentWidgetBody({
     wallet.address,
     config.partnerId,
   ]);
+
+  useEffect(() => {
+    if (tab === "vouch" || tab === "dashboard") {
+      void refreshDeploys();
+    }
+  }, [tab, refreshDeploys]);
+
+  useEffect(() => {
+    if (!deployActiveId || !provisioningActive) return;
+    void refreshDeploys();
+    const t = setInterval(() => void refreshDeploys(), 5000);
+    return () => clearInterval(t);
+  }, [deployActiveId, provisioningActive, refreshDeploys]);
+
+  const tabLabels = useMemo(
+    () =>
+      ({
+        deploy: "Deploy",
+        vouch:
+          pendingVouchCount > 0
+            ? `Verify (${pendingVouchCount})`
+            : "Verify",
+        dashboard: "Dashboard",
+      }) as const,
+    [pendingVouchCount],
+  );
 
   return (
     <div className={`ga-widget ${className ?? ""}`.trim()}>
@@ -194,10 +259,14 @@ function GoodAgentWidgetBody({
               type="button"
               role="tab"
               aria-selected={tab === t}
-              className={`ga-widget-tab ${tab === t ? "ga-widget-tab-active" : ""}`}
+              className={`ga-widget-tab ${tab === t ? "ga-widget-tab-active" : ""}${
+                t === "vouch" && pendingVouchCount > 0
+                  ? " ga-widget-tab-attention"
+                  : ""
+              }`}
               onClick={() => setTab(t)}
             >
-              {t === "deploy" ? "Deploy" : t === "vouch" ? "Verify" : "Dashboard"}
+              {tabLabels[t]}
             </button>
           ))}
         </div>
@@ -215,20 +284,33 @@ function GoodAgentWidgetBody({
           <DeployPanel
             deployId={deployActiveId}
             renderSkillConfig={renderSkillConfig}
+            onStatusChange={handleDeployStatus}
             onDeployId={(id) => {
+              autoSwitchedForDeployRef.current = "";
               setDeployActiveId(id);
               onDeployId?.(id);
+              void refreshDeploys();
             }}
             onAwaitingVouch={(agent, id) => {
               selectVouchTarget(id, agent);
               void refreshDeploys();
+              if (
+                showTabs &&
+                tab === "deploy" &&
+                autoSwitchedForDeployRef.current !== id
+              ) {
+                autoSwitchedForDeployRef.current = id;
+                setTab("vouch");
+              }
             }}
             onGoToVerify={() => {
-              if (vouchDeployId) void refreshDeploys();
+              void refreshDeploys();
               if (showTabs) setTab("vouch");
             }}
             onStartNew={() => {
+              autoSwitchedForDeployRef.current = "";
               setDeployActiveId("");
+              setDeployStatus(null);
             }}
           />
         </div>

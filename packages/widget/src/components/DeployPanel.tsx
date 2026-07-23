@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
 import { useDeployFlow } from "../hooks/useDeployFlow.js";
 import { useWidget } from "../context.js";
+import { isDeployProvisioning } from "../lib/deploy-progress.js";
 import {
   deployHintForSkill,
   skillShortLabel,
 } from "../skill-config.js";
 import { SkillConfigFields } from "./SkillConfigFields.js";
+import { DeployProgressLoader } from "./DeployProgressLoader.js";
+import type { DeployStatusResponse } from "../client/host.js";
 
 export function DeployPanel({
   deployId: initialDeployId,
@@ -13,6 +16,7 @@ export function DeployPanel({
   onAwaitingVouch,
   onGoToVerify,
   onStartNew,
+  onStatusChange,
   renderSkillConfig,
 }: {
   deployId?: string;
@@ -20,6 +24,7 @@ export function DeployPanel({
   onAwaitingVouch?: (agentAddress: string, deployId: string) => void;
   onGoToVerify?: () => void;
   onStartNew?: () => void;
+  onStatusChange?: (status: DeployStatusResponse | null) => void;
   renderSkillConfig?: (props: {
     skillId: string;
     config: Record<string, string>;
@@ -32,17 +37,14 @@ export function DeployPanel({
   const flow = useDeployFlow({
     deployId: initialDeployId,
     onDeployId,
+    onStatusChange,
     onAwaitingVouch: (s) => {
       if (s.agentAddress) onAwaitingVouch?.(s.agentAddress, s.id);
     },
   });
 
   const step = flow.status?.status ?? (flow.deployId ? "provisioning" : "idle");
-  const provisioning =
-    flow.status?.pipelineRunning ||
-    step === "provisioning" ||
-    step === "installing" ||
-    step === "starting";
+  const provisioning = isDeployProvisioning(flow.status, flow.deployId);
   const skillLabel =
     config.skillLabel ?? skillShortLabel(flow.skillId);
   const hint = config.deployHint ?? deployHintForSkill(flow.skillId);
@@ -96,29 +98,31 @@ export function DeployPanel({
 
       {flow.deployId && (
         <div className="ga-widget-status">
-          <p>
-            <strong>Deploy:</strong> {flow.deployId.slice(0, 12)}…
+          <DeployProgressLoader
+            status={flow.status}
+            deployId={flow.deployId}
+            provisioning={provisioning}
+          />
+
+          <p className="ga-widget-muted ga-widget-deploy-meta">
+            Deploy ID: {flow.deployId.slice(0, 12)}…
+            {flow.status?.agentAddress
+              ? ` · Agent ${flow.status.agentAddress.slice(0, 10)}…`
+              : ""}
           </p>
-          <p>
-            <strong>Status:</strong> {step}
-            {provisioning ? " (updating live…)" : ""}
-          </p>
-          {provisioning && (
-            <p className="ga-widget-muted">
-              Server is provisioning your agent wallet and skill. This usually
-              takes 1–3 minutes — no refresh needed.
+
+          {provisioning && !flow.error && (
+            <p className="ga-widget-muted ga-widget-step-hint">
+              Provisioning on GoodAgent servers — usually 1–3 minutes. You can
+              switch to the Verify tab once setup completes.
             </p>
           )}
-          {flow.status?.agentAddress && (
-            <p>
-              <strong>Agent:</strong>{" "}
-              <code>{flow.status.agentAddress.slice(0, 10)}…</code>
-            </p>
-          )}
+
           {flow.needsVouch && (
-            <div className="ga-widget-stack">
+            <div className="ga-widget-stack ga-widget-deploy-next">
               <p className="ga-widget-warn">
-                Provisioning complete — vouch required before the agent can run.
+                Next step: verify your agent (GoodDollar + bond + Agent ID) before
+                it can play.
               </p>
               {onGoToVerify && (
                 <button
@@ -132,17 +136,22 @@ export function DeployPanel({
             </div>
           )}
           {flow.status?.verify?.valid && !flow.isLive && (
-            <button
-              type="button"
-              className="ga-widget-btn ga-widget-btn-primary"
-              disabled={flow.busy}
-              onClick={() => void flow.startAgent()}
-            >
-              {flow.busy ? "Starting…" : "Start agent"}
-            </button>
+            <div className="ga-widget-stack ga-widget-deploy-next">
+              <p className="ga-widget-ok">Verified — start your agent when ready.</p>
+              <button
+                type="button"
+                className="ga-widget-btn ga-widget-btn-primary"
+                disabled={flow.busy}
+                onClick={() => void flow.startAgent()}
+              >
+                {flow.busy ? "Starting…" : "Start agent"}
+              </button>
+            </div>
           )}
           {flow.isLive && (
-            <p className="ga-widget-ok">Agent is live.</p>
+            <p className="ga-widget-ok">
+              Agent is live — open the Dashboard tab to monitor matches.
+            </p>
           )}
           {step === "failed" && flow.status?.lastError && (
             <p className="ga-widget-error">{flow.status.lastError}</p>
@@ -160,7 +169,7 @@ export function DeployPanel({
           <button
             type="button"
             className="ga-widget-btn"
-            disabled={flow.busy}
+            disabled={flow.busy || provisioning}
             onClick={() => onStartNew?.()}
           >
             Start new deploy

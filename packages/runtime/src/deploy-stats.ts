@@ -16,9 +16,17 @@ import {
 } from "./baseline-balance.js";
 import {
   type GamearenaLadder,
+  fetchGamearenaLadder,
 } from "./gamearena-ladder.js";
+import {
+  buildGoodAgentRegistry,
+  enrichGamearenaLadder,
+  type EnrichedGamearenaLadder,
+  type GoodAgentLadderMeta,
+} from "./gamearena-leaderboard.js";
+import { readGamePassProfile, GAMEARENA_SKILL_ID } from "./gamearena-pass.js";
 
-export type { BaselineSource, GamearenaLadder };
+export type { BaselineSource, GamearenaLadder, EnrichedGamearenaLadder, GoodAgentLadderMeta };
 
 const G_DOLLAR = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A" as const;
 
@@ -95,7 +103,7 @@ export interface DeployStats {
   performance: GamePerformance | null;
   walletPnL: WalletPnL | null;
   logTail: string | null;
-  ladder: GamearenaLadder | null;
+  ladder: EnrichedGamearenaLadder | null;
 }
 
 function readLogTail(path: string, lines = 8): string | null {
@@ -346,6 +354,12 @@ export async function getDeployStats(opts: {
   challengeAiUrl?: string | null;
   persistedMatches?: MatchRecord[];
   persistedLogTail?: string | null;
+  displayName?: string | null;
+  agentVerified?: boolean;
+  /** All known GoodAgent play wallets for ladder enrichment (defaults to this deploy only). */
+  agentRegistry?: Record<string, GoodAgentLadderMeta>;
+  /** When false (default), skip GameArena ladder HTTP fetch — much faster for dashboard status. */
+  includeLadder?: boolean;
 }): Promise<DeployStats> {
   const balances = opts.agentAddress
     ? await fetchAgentBalances(opts.agentAddress, opts.rpcUrl).catch(() => null)
@@ -358,7 +372,7 @@ export async function getDeployStats(opts: {
   let performance: GamePerformance | null = null;
   let logTail: string | null = null;
   let ledgerDeltaGs: number | null = null;
-  let ladder: GamearenaLadder | null = null;
+  let ladder: EnrichedGamearenaLadder | null = null;
 
   if (opts.skillId?.includes("gamearena")) {
     const ga = readGamearenaStats(opts.agentsRoot, opts.deployId);
@@ -398,6 +412,50 @@ export async function getDeployStats(opts: {
         recentMatches: [],
       };
       ledgerDeltaGs = 0;
+    }
+
+    if (opts.includeLadder && opts.agentAddress) {
+      let gamePassUsername: string | null = null;
+      try {
+        const metaPath = resolve(agentDir(opts.agentsRoot, opts.deployId), "meta.json");
+        if (existsSync(metaPath)) {
+          const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
+            gamePassUsername?: string | null;
+          };
+          gamePassUsername = meta.gamePassUsername ?? null;
+        }
+      } catch {
+        // ignore
+      }
+      if (!gamePassUsername) {
+        try {
+          const profile = await readGamePassProfile(opts.agentAddress, opts.rpcUrl);
+          gamePassUsername = profile.username || null;
+        } catch {
+          // ignore
+        }
+      }
+
+      const registry =
+        opts.agentRegistry ??
+        buildGoodAgentRegistry([
+          {
+            id: opts.deployId,
+            displayName: opts.displayName ?? "Agent",
+            agentAddress: opts.agentAddress,
+            skillId: opts.skillId ?? GAMEARENA_SKILL_ID,
+            gamePassUsername,
+            verified: opts.agentVerified ?? false,
+          },
+        ]);
+
+      const raw = await fetchGamearenaLadder(
+        opts.agentAddress,
+        opts.challengeAiUrl ?? undefined,
+      );
+      if (raw) {
+        ladder = enrichGamearenaLadder(raw, registry, opts.agentAddress);
+      }
     }
   }
 

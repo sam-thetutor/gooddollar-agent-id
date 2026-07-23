@@ -2,17 +2,27 @@
 
 Embeddable GoodAgent UI for **any listed skill** on [goodagentids.xyz/skills](https://goodagentids.xyz/skills). Partners embed deploy → vouch → dashboard on their site using the **user’s wallet** — no private key export.
 
-**Latest:** `@goodagent/widget@0.1.6` (npm)  
+**Latest:** `@goodagent/widget@0.1.12` (npm)  
 **Backend:** `https://goodagentids.xyz/host` + `https://goodagentids.xyz/api` (hosted by GoodAgent — you do not run this yourself)
 
 **Partner guide:** [GameArena integration](./GAMEARENA_INTEGRATION.md)
 
 ---
 
+## What’s new in 0.1.12
+
+- **Dashboard command deck** — agent dropdown, Live/Stop/Start bar, stats ribbon first, inline status + links
+- **Dashboard settings** — edit agent name and strategy/caps after deploy (Settings drawer, 2×2 grid)
+- **Deploy progress** — horizontal loader with step labels; owner list refreshes without page reload
+- **Verify tab** — compact horizontal steps; agent picker dropdown
+- **Tab flow** — auto-switch to Verify after deploy; no more Dashboard hijack while monitoring
+
+---
+
 ## Quick start (GameArena)
 
 ```bash
-pnpm add @goodagent/widget@0.1.6 react react-dom
+pnpm add @goodagent/widget@0.1.12 react react-dom
 ```
 
 ```tsx
@@ -197,7 +207,7 @@ createGameArenaWidgetConfig({
 
 1. **Deploy** — name + tune settings → deploy → sign pipeline if prompted  
 2. **Verify** — GoodDollar face verify → G$ bond → Agent ID  
-3. **Dashboard** — balances, record, Stop/Start  
+3. **Dashboard** — pick agent from dropdown → stats, Stop/Start, Settings (name + strategy)  
 
 ```bash
 curl https://goodagentids.xyz/host/health
@@ -269,7 +279,9 @@ curl https://goodagentids.xyz/host/health
 |-------|-----|
 | Unstyled widget | `import "@goodagent/widget/styles.css"` |
 | Signing hangs (MetaMask) | `usePrivyWalletAdapter({ preferExternal: true })` or wagmi adapter |
-| Deploy stuck provisioning | Check `/host/health`; user signs pipeline start |
+| Deploy stuck provisioning | Progress bar + lite polling; user signs pipeline start; check `/host/health` |
+| Dashboard empty / stale | Agent dropdown; tab refresh on open; complete Verify first |
+| Name save 404 | Host must expose `POST /deploy/:id/display-name` (GoodAgent production deploy) |
 | Verify redirect fails | Set `fvCallbackUrl` to your agents page URL |
 | Dashboard slow | Host serves lite status first; full stats follow |
 

@@ -210,7 +210,7 @@ export function buildSkillEnv(
     env = buildGamearenaEnv(
       opts.agentPrivateKey,
       opts.rpcUrl,
-      opts.config,
+      { ...opts.config, PLAYER_NAME: opts.config.PLAYER_NAME ?? opts.displayName },
       opts.agentAddress,
     );
   } else if (skillId === "gaming/card-fighter/actionorder_vshouse") {

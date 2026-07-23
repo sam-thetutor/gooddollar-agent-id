@@ -178,6 +178,36 @@ export function createHostClient(hostBaseUrl: string) {
         `/deploy?ownerWallet=${encodeURIComponent(ownerWallet)}`,
       );
     },
+
+    updateConfiguration(
+      deployId: string,
+      auth: DeployControlAuth,
+      configuration: Record<string, string>,
+    ) {
+      return hostFetch<{ agent: DeployAgent; restarted?: boolean }>(
+        base,
+        `/deploy/${deployId}/configuration`,
+        {
+          method: "POST",
+          body: JSON.stringify({ ...auth, configuration }),
+        },
+      );
+    },
+
+    updateDisplayName(
+      deployId: string,
+      auth: DeployControlAuth,
+      displayName: string,
+    ) {
+      return hostFetch<{ agent: DeployAgent }>(
+        base,
+        `/deploy/${deployId}/display-name`,
+        {
+          method: "POST",
+          body: JSON.stringify({ ...auth, displayName }),
+        },
+      );
+    },
   };
 }
 

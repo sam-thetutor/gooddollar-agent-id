@@ -57,6 +57,9 @@ export interface AgentWalletMeta {
   address: Address;
   derivationIndex: number;
   createdAt: string;
+  /** Registered GameArena Pass username on Celo (GamePass contract). */
+  gamePassUsername?: string | null;
+  gamePassRegisteredAt?: string | null;
 }
 
 export function agentDir(agentsRoot: string, deployId: string): string {

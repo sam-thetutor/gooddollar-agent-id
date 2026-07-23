@@ -1,6 +1,6 @@
 {
   "name": "@goodagent/widget",
-  "version": "0.1.6",
+  "version": "0.1.12",
   "description": "Embeddable GoodAgent widget — deploy, vouch, and monitor autonomous agents on partner sites",
   "type": "module",
   "keywords": [
@@ -36,7 +36,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "GAMEARENA_INTEGRATION.md"
   ],
   "sideEffects": [
     "**/*.css"

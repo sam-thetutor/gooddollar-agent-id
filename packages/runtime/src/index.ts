@@ -98,8 +98,33 @@ export type {
   GamePerformance,
   WalletPnL,
   MatchRecord,
-  GamearenaLadder,
 } from "./deploy-stats.js";
+export type {
+  GamearenaLadder,
+  EnrichedGamearenaLadder,
+  GoodAgentLadderMeta,
+  EnrichedLadderEntry,
+} from "./gamearena-leaderboard.js";
+export { fetchGamearenaLadder } from "./gamearena-ladder.js";
+export type { LadderTopEntry } from "./gamearena-ladder.js";
+
+export {
+  GAME_PASS_ADDRESS,
+  GAMEARENA_CHALLENGE_AI_GAME_TYPE,
+  GAMEARENA_SKILL_ID,
+  sanitizeGamePassUsername,
+  readGamePassProfile,
+  registerGamePassUsername,
+} from "./gamearena-pass.js";
+export type { GamePassProfile, RegisterGamePassResult } from "./gamearena-pass.js";
+
+export {
+  buildGoodAgentRegistry,
+  enrichGamearenaLadder,
+  enrichLadderEntry,
+  fetchEnrichedGamearenaLadder,
+  buildGamearenaRegistryFromAgents,
+} from "./gamearena-leaderboard.js";
 
 export {
   readBaseline,
