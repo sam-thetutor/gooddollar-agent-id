@@ -3,14 +3,12 @@
  *
  * @example
  * ```tsx
- * import { GoodAgentWidget, createWalletAdapterFromHooks } from "@goodagent/widget";
+ * import { GoodAgentWidget, createGameArenaWidgetConfig } from "@goodagent/widget";
  * import "@goodagent/widget/styles.css";
  *
  * <GoodAgentWidget
- *   config={createGoodAgentWidgetConfig("gaming/wagering/gamearena_1v1", {
- *     partnerId: "gamearena",
- *   })}
- *   wallet={createWalletAdapterFromHooks({ ...wagmiHooks })}
+ *   config={createGameArenaWidgetConfig({ partnerId: "gamearena" })}
+ *   wallet={wallet}
  *   mode="full"
  * />
  * ```
@@ -19,6 +17,7 @@
 export { GoodAgentWidget } from "./components/GoodAgentWidget.js";
 export { DeployPanel } from "./components/DeployPanel.js";
 export { VouchPanel } from "./components/VouchPanel.js";
+export { AgentDetailPanel } from "./components/AgentDetailPanel.js";
 export { DashboardPanel } from "./components/DashboardPanel.js";
 
 export { WidgetProvider, useWidget } from "./context.js";
@@ -72,7 +71,10 @@ export type { RegistrySkillEntry, SkillRegistry } from "./skill-registry.js";
 
 export {
   createGoodAgentWidgetConfig,
+  createGameArenaWidgetConfig,
+  resolveWidgetConfig,
   DEFAULT_WIDGET_API,
+  DEFAULT_WIDGET_RPC,
   GOODAGENT_API_URL,
   GOODAGENT_HOST_URL,
   GOODAGENT_SITE_ORIGIN,
@@ -80,6 +82,7 @@ export {
 
 export type {
   GoodAgentWidgetConfig,
+  GoodAgentWidgetPartnerConfig,
   GoodAgentWidgetProps,
   GoodAgentWidgetMode,
   GoodAgentWalletAdapter,

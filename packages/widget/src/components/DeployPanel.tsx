@@ -11,11 +11,15 @@ export function DeployPanel({
   deployId: initialDeployId,
   onDeployId,
   onAwaitingVouch,
+  onGoToVerify,
+  onStartNew,
   renderSkillConfig,
 }: {
   deployId?: string;
   onDeployId?: (id: string) => void;
   onAwaitingVouch?: (agentAddress: string, deployId: string) => void;
+  onGoToVerify?: () => void;
+  onStartNew?: () => void;
   renderSkillConfig?: (props: {
     skillId: string;
     config: Record<string, string>;
@@ -34,6 +38,11 @@ export function DeployPanel({
   });
 
   const step = flow.status?.status ?? (flow.deployId ? "provisioning" : "idle");
+  const provisioning =
+    flow.status?.pipelineRunning ||
+    step === "provisioning" ||
+    step === "installing" ||
+    step === "starting";
   const skillLabel =
     config.skillLabel ?? skillShortLabel(flow.skillId);
   const hint = config.deployHint ?? deployHintForSkill(flow.skillId);
@@ -92,7 +101,14 @@ export function DeployPanel({
           </p>
           <p>
             <strong>Status:</strong> {step}
+            {provisioning ? " (updating live…)" : ""}
           </p>
+          {provisioning && (
+            <p className="ga-widget-muted">
+              Server is provisioning your agent wallet and skill. This usually
+              takes 1–3 minutes — no refresh needed.
+            </p>
+          )}
           {flow.status?.agentAddress && (
             <p>
               <strong>Agent:</strong>{" "}
@@ -100,9 +116,20 @@ export function DeployPanel({
             </p>
           )}
           {flow.needsVouch && (
-            <p className="ga-widget-warn">
-              Vouch required — complete verification in the next step.
-            </p>
+            <div className="ga-widget-stack">
+              <p className="ga-widget-warn">
+                Provisioning complete — vouch required before the agent can run.
+              </p>
+              {onGoToVerify && (
+                <button
+                  type="button"
+                  className="ga-widget-btn ga-widget-btn-primary"
+                  onClick={onGoToVerify}
+                >
+                  Continue to Verify →
+                </button>
+              )}
+            </div>
           )}
           {flow.status?.verify?.valid && !flow.isLive && (
             <button
@@ -117,6 +144,27 @@ export function DeployPanel({
           {flow.isLive && (
             <p className="ga-widget-ok">Agent is live.</p>
           )}
+          {step === "failed" && flow.status?.lastError && (
+            <p className="ga-widget-error">{flow.status.lastError}</p>
+          )}
+          {step === "failed" && (
+            <button
+              type="button"
+              className="ga-widget-btn ga-widget-btn-primary"
+              disabled={flow.busy}
+              onClick={() => void flow.retryPipeline()}
+            >
+              {flow.busy ? "Retrying…" : "Retry provisioning"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="ga-widget-btn"
+            disabled={flow.busy}
+            onClick={() => onStartNew?.()}
+          >
+            Start new deploy
+          </button>
         </div>
       )}
 

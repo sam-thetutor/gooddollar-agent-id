@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   deployNeedsUserVouch,
   signDeployControl,
@@ -36,7 +36,17 @@ export function useDeployFlow(opts?: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const pollMs = config.statusPollMs ?? 4000;
+  const onAwaitingVouchRef = useRef(opts?.onAwaitingVouch);
+  onAwaitingVouchRef.current = opts?.onAwaitingVouch;
+
+  const basePollMs = config.statusPollMs ?? 4000;
+  const pollMs =
+    status?.pipelineRunning ||
+    status?.status === "provisioning" ||
+    status?.status === "installing" ||
+    status?.status === "starting"
+      ? 2000
+      : basePollMs;
 
   useEffect(() => {
     setConfigValues({
@@ -51,13 +61,23 @@ export function useDeployFlow(opts?: {
 
   const poll = useCallback(async () => {
     if (!deployId) return null;
-    const s = await host.getDeployStatus(deployId);
-    setStatus(s);
-    return s;
+    try {
+      const s = await host.getDeployStatus(deployId);
+      setStatus(s);
+      setError(null);
+      return s;
+    } catch (e) {
+      setError((e as Error).message);
+      return null;
+    }
   }, [deployId, host]);
 
   useEffect(() => {
-    if (opts?.deployId) setDeployId(opts.deployId);
+    setDeployId(opts?.deployId ?? "");
+    if (!opts?.deployId) {
+      setStatus(null);
+      setError(null);
+    }
   }, [opts?.deployId]);
 
   useEffect(() => {
@@ -69,9 +89,9 @@ export function useDeployFlow(opts?: {
 
   useEffect(() => {
     if (status && deployNeedsUserVouch(status)) {
-      opts?.onAwaitingVouch?.(status);
+      onAwaitingVouchRef.current?.(status);
     }
-  }, [status, opts]);
+  }, [status]);
 
   const updateConfig = useCallback((key: string, value: string) => {
     setConfigValues((c) => ({ ...c, [key]: value }));
@@ -132,8 +152,33 @@ export function useDeployFlow(opts?: {
       await host.startDeploy(deployId, auth);
       await poll();
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setError(
+        message === "OWNER_MISMATCH"
+          ? "Connected wallet does not own this deploy. Switch to the owner wallet or deploy a new agent."
+          : message,
+      );
       throw e;
+    } finally {
+      setBusy(false);
+    }
+  }, [deployId, wallet, host, poll]);
+
+  const retryPipeline = useCallback(async () => {
+    if (!deployId || !wallet.address) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const auth = await signDeployControl(wallet, "run-pipeline", deployId);
+      await host.runDeployPipeline(deployId, auth);
+      await poll();
+    } catch (e) {
+      const message = (e as Error).message;
+      setError(
+        message === "OWNER_MISMATCH"
+          ? "Connected wallet does not own this deploy. Switch to the owner wallet or deploy a new agent."
+          : message,
+      );
     } finally {
       setBusy(false);
     }
@@ -156,6 +201,7 @@ export function useDeployFlow(opts?: {
     error,
     deploy,
     startAgent,
+    retryPipeline,
     poll,
     needsVouch: deployNeedsUserVouch(status),
     isLive: status?.status === "running",

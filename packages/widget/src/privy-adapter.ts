@@ -61,6 +61,8 @@ export function createWalletAdapterFromPrivy(input: {
   authenticated: boolean;
   login?: () => void | Promise<void>;
   wallet: PrivyConnectedWalletLike | undefined;
+  /** Used when Privy wallet list is briefly empty after signing (wagmi drop). */
+  fallbackAddress?: Address;
   signMessage: (message: string, walletAddress: Address) => Promise<Hex>;
   signTypedData: (
     params: {
@@ -81,7 +83,9 @@ export function createWalletAdapterFromPrivy(input: {
   const chainId = input.chainId ?? celo.id;
   const address = input.wallet?.address
     ? (getAddress(input.wallet.address) as Address)
-    : undefined;
+    : input.fallbackAddress
+      ? (getAddress(input.fallbackAddress) as Address)
+      : undefined;
 
   return {
     address,
@@ -139,6 +143,23 @@ export function usePrivyWalletAdapter(
     [wallets, opts.preferExternal, opts.address],
   );
 
+  const connectedWallet = useMemo(() => {
+    if (!opts.address) return wallet;
+    return (
+      wallets.find(
+        (w) => w.address.toLowerCase() === opts.address!.toLowerCase(),
+      ) ?? wallet
+    );
+  }, [wallets, opts.address, wallet]);
+
+  const effectiveWallet = useMemo((): PrivyConnectedWalletLike | undefined => {
+    if (connectedWallet) return connectedWallet;
+    if (opts.address && authenticated) {
+      return { address: opts.address, walletClientType: "external" };
+    }
+    return undefined;
+  }, [connectedWallet, opts.address, authenticated]);
+
   const publicClient = useMemo(
     () => createPublicClient({ chain: celo, transport: http(rpcUrl) }),
     [rpcUrl],
@@ -150,24 +171,36 @@ export function usePrivyWalletAdapter(
         ready,
         authenticated,
         login,
-        wallet,
+        wallet: effectiveWallet,
+        fallbackAddress: opts.address,
         signMessage: async (message, walletAddress) => {
           const { signature } = await signMessage({ message }, { address: walletAddress });
           return signature as Hex;
         },
         signTypedData: async (params, walletAddress) => {
-          const { signature } = await signTypedData(
-            {
-              domain: params.domain,
-              types: params.types as Record<
-                string,
-                Array<{ name: string; type: string }>
-              >,
-              primaryType: params.primaryType,
-              message: params.message,
-            },
-            { address: walletAddress },
+          const typed = {
+            domain: params.domain,
+            types: params.types as Record<
+              string,
+              Array<{ name: string; type: string }>
+            >,
+            primaryType: params.primaryType,
+            message: params.message,
+          };
+          const matched = wallets.find(
+            (w) => w.address.toLowerCase() === walletAddress.toLowerCase(),
           );
+          if (
+            matched &&
+            "signTypedData" in matched &&
+            typeof matched.signTypedData === "function"
+          ) {
+            const { signature } = await matched.signTypedData(typed);
+            return signature as Hex;
+          }
+          const { signature } = await signTypedData(typed, {
+            address: walletAddress,
+          });
           return signature as Hex;
         },
         sendTransaction: async (tx, walletAddress) => {
@@ -189,7 +222,9 @@ export function usePrivyWalletAdapter(
       ready,
       authenticated,
       login,
-      wallet,
+      effectiveWallet,
+      opts.address,
+      wallets,
       signMessage,
       signTypedData,
       sendTransaction,

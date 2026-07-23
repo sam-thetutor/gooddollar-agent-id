@@ -58,6 +58,26 @@ export function SkillConfigFields({
           />
         </label>
         <label className="ga-widget-field">
+          <span>Max matches per run</span>
+          <input
+            className="ga-widget-input"
+            type="number"
+            min={1}
+            value={config.MAX_MATCHES ?? "10"}
+            onChange={(e) => onChange("MAX_MATCHES", e.target.value)}
+          />
+        </label>
+        <label className="ga-widget-field">
+          <span>Pause between matches (sec)</span>
+          <input
+            className="ga-widget-input"
+            type="number"
+            min={1}
+            value={config.MATCH_INTERVAL_SECONDS ?? "300"}
+            onChange={(e) => onChange("MATCH_INTERVAL_SECONDS", e.target.value)}
+          />
+        </label>
+        <label className="ga-widget-field">
           <span>Play mode</span>
           <select
             className="ga-widget-input"

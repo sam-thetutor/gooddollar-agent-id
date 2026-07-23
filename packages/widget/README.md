@@ -2,7 +2,7 @@
 
 Embeddable GoodAgent UI for **any listed skill** on [goodagentids.xyz/skills](https://goodagentids.xyz/skills). Partners embed deploy → vouch → dashboard on their site using the **user’s wallet** — no private key export.
 
-**Latest:** `@goodagent/widget@0.1.3`  
+**Latest:** `@goodagent/widget@0.1.5`  
 **Backend:** `https://goodagentids.xyz/host` + `https://goodagentids.xyz/api` (hosted by GoodAgent — you do not run this yourself)
 
 **Partner guides:** [GameArena integration](./GAMEARENA_INTEGRATION.md) (offchain Markov agents)
@@ -120,13 +120,15 @@ function useGoodAgentWallet() {
 
 ### Step 5 — Add the widget component
 
-Create a page or panel component:
+You only pass **what varies** (`partnerId`, skill, optional overrides). API URLs, RPC, vault, registry, skill defaults, and face-verify callback are filled in automatically.
+
+**GameArena (simplest):**
 
 ```tsx
 import {
   GoodAgentWidget,
-  createGoodAgentWidgetConfig,
-  GAMEARENA_SKILL_ID,
+  createGameArenaWidgetConfig,
+  usePrivyWalletAdapter,
 } from "@goodagent/widget";
 import "@goodagent/widget/styles.css";
 
@@ -137,25 +139,27 @@ export function AgentsPage() {
     <GoodAgentWidget
       mode="full"
       wallet={wallet}
-      config={createGoodAgentWidgetConfig(GAMEARENA_SKILL_ID, {
-        partnerId: "your-project-slug",
-        fvCallbackUrl: typeof window !== "undefined" ? window.location.href : undefined,
-      })}
+      config={createGameArenaWidgetConfig({ partnerId: "your-project-slug" })}
     />
   );
 }
 ```
 
-`createGoodAgentWidgetConfig` fills in the default GoodAgent API URLs. Override only if you self-host:
+**Any skill:**
 
 ```tsx
-config={{
-  hostBaseUrl: "https://goodagentids.xyz/host",
-  apiBaseUrl: "https://goodagentids.xyz/api",
-  skillId: GAMEARENA_SKILL_ID,
+import {
+  GoodAgentWidget,
+  createGoodAgentWidgetConfig,
+  GAMEARENA_SKILL_ID,
+} from "@goodagent/widget";
+
+config={createGoodAgentWidgetConfig(GAMEARENA_SKILL_ID, {
   partnerId: "your-project-slug",
-}}
+})}
 ```
+
+Advanced self-hosting only — then pass `hostBaseUrl` / `apiBaseUrl` overrides.
 
 ---
 
@@ -205,13 +209,7 @@ curl https://goodagentids.xyz/host/health
 ```tsx
 config={createGoodAgentWidgetConfig(GAMEARENA_SKILL_ID, {
   partnerId: "your-project-slug",
-  hideSkillConfig: true,
-  defaultDisplayName: "Arena Bot",
-  skillConfiguration: {
-    PLAY_MODE: "offchain",
-    MARKOV_STRATEGY: "random",
-    DAILY_MATCH_CAP: "50",
-  },
+  // hideSkillConfig: true,  // optional — lock settings for name-only deploy
 })}
 ```
 
@@ -286,22 +284,22 @@ export default function AgentsPage() {
 
 ## Config reference
 
+Partners pass `GoodAgentWidgetPartnerConfig`. Static fields are resolved automatically.
+
 | Field | Required | Description |
 |-------|----------|-------------|
-| `hostBaseUrl` | yes | GoodAgent host API (default: `https://goodagentids.xyz/host`) |
-| `apiBaseUrl` | yes | GoodAgent main API (default: `https://goodagentids.xyz/api`) |
 | `skillId` | yes | Skill from registry |
-| `partnerId` | no | Attribution tag stored on deploy |
-| `skillConfiguration` | no | Env overrides merged onto skill defaults |
-| `defaultDisplayName` | no | Prefilled agent name |
+| `partnerId` | recommended | Attribution tag stored on deploy |
+| `skillConfiguration` | no | Overrides merged onto skill defaults |
+| `defaultDisplayName` | no | Prefilled agent name (skill default if omitted) |
 | `hideSkillConfig` | no | Hide settings form when pre-configured |
-| `deployTemplate` | no | `gaming` / `social` / `work` (auto from skillId) |
+| `deployHint` / `skillLabel` | no | Custom UI copy (skill defaults if omitted) |
 | `telegramBotToken` | no | Required for UBI reminder skill |
-| `skillLabel` / `deployHint` | no | Custom UI copy |
-| `fvCallbackUrl` | no | GoodDollar face-verify return URL (use current page URL) |
-| `rpcUrl` | no | Celo RPC for on-chain reads (default: public forno) |
+| `fvCallbackUrl` | no | GoodDollar return URL (current page if omitted) |
 
-Use `defaultConfigForSkill(skillId)` for env defaults matching goodagentids.xyz.
+**Filled automatically (omit unless self-hosting):** `hostBaseUrl`, `apiBaseUrl`, `rpcUrl`, `vaultAddress`, `registryUrl`, `goodDollarEnv`, `deployTemplate`, base `skillConfiguration`, `statusPollMs`.
+
+Use `createGameArenaWidgetConfig({ partnerId })` for the GameArena offchain preset.
 
 ---
 

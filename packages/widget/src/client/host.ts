@@ -12,21 +12,38 @@ export type { DeployControlAction, DeployControlAuth };
 export interface DeployAgent {
   id: string;
   displayName: string;
+  template?: string;
   status: string;
   agentAddress: string | null;
   ownerWallet: string | null;
   lastError: string | null;
+  createdAt?: string;
+  deployedAt?: string | null;
+  configuration?: string | null;
+  skills?: Array<{
+    skillId: string;
+    registryPath?: string;
+    status?: string;
+  }>;
 }
 
 export interface DeployStatusResponse {
   id: string;
   displayName?: string;
+  template?: string;
+  skillId?: string | null;
+  configuration?: string | null;
   status: string;
   ownerWallet?: string | null;
   agentAddress: string | null;
+  pm2Name?: string | null;
   lastError: string | null;
+  lastHeartbeatAt?: string | null;
+  deployedAt?: string | null;
+  createdAt?: string;
   pipelineRunning: boolean;
   verify: {
+    found?: boolean;
     valid?: boolean;
     agentProven?: boolean;
     reason?: string;
@@ -38,6 +55,8 @@ export interface DeployStatusResponse {
       losses: number;
       summary: string | null;
       matchesToday: number;
+      netPnLGs?: number;
+      playMode?: string;
     } | null;
     balances?: {
       gDollarFormatted: string;
@@ -74,6 +93,7 @@ async function hostFetch<T>(
   const res = await fetch(`${normalizeBase(base)}${path}`, {
     ...init,
     headers,
+    cache: "no-store",
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -124,8 +144,18 @@ export function createHostClient(hostBaseUrl: string) {
       );
     },
 
-    getDeployStatus(deployId: string) {
-      return hostFetch<DeployStatusResponse>(base, `/deploy/${deployId}/status`);
+    getDeployStatus(
+      deployId: string,
+      opts?: { lite?: boolean; ladder?: boolean },
+    ) {
+      const params = new URLSearchParams();
+      if (opts?.lite) params.set("lite", "1");
+      if (opts?.ladder) params.set("ladder", "1");
+      const qs = params.toString();
+      return hostFetch<DeployStatusResponse>(
+        base,
+        `/deploy/${deployId}/status${qs ? `?${qs}` : ""}`,
+      );
     },
 
     startDeploy(deployId: string, auth: DeployControlAuth) {

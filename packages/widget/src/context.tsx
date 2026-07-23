@@ -28,19 +28,26 @@ export function WidgetProvider({
   wallet: GoodAgentWalletAdapter;
   children: ReactNode;
 }) {
-  const value = useMemo<WidgetContextValue>(() => {
-    const vaultAddress =
-      config.vaultAddress ??
-      ("0x0409042B55e99Df8c0Feb7525A770838f3A47090" as `0x${string}`);
-    return {
+  const host = useMemo(
+    () => createHostClient(config.hostBaseUrl),
+    [config.hostBaseUrl],
+  );
+  const api = useMemo(
+    () => createApiClient(config.apiBaseUrl),
+    [config.apiBaseUrl],
+  );
+
+  const value = useMemo<WidgetContextValue>(
+    () => ({
       config,
       wallet,
-      host: createHostClient(config.hostBaseUrl),
-      api: createApiClient(config.apiBaseUrl),
-      vaultAddress,
-      rpcUrl: config.rpcUrl ?? "https://forno.celo.org",
-    };
-  }, [config, wallet]);
+      host,
+      api,
+      vaultAddress: config.vaultAddress,
+      rpcUrl: config.rpcUrl,
+    }),
+    [config, wallet, host, api],
+  );
 
   return (
     <WidgetContext.Provider value={value}>{children}</WidgetContext.Provider>

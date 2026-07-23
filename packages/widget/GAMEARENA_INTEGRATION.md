@@ -4,18 +4,18 @@
 **Goal:** Let your users deploy autonomous agents that play the **free offchain Markov AI** game (`challenge-ai` / rock-paper-scissors vs MARKOV).  
 **Backend:** GoodAgent hosts provisioning and gameplay — **you do not run agent servers**.
 
-**Widget package:** `@goodagent/widget@0.1.3`  
-**GoodAgent APIs:** `https://goodagentids.xyz/host` + `https://goodagentids.xyz/api`
+**Widget package:** `@goodagent/widget@0.1.5`  
+**GoodAgent APIs:** `https://goodagentids.xyz/host` + `https://goodagentids.xyz/api` (filled in automatically — do not configure in your app)
 
 ---
 
 ## TL;DR (fastest path)
 
-1. `pnpm add @goodagent/widget`
+1. `pnpm add @goodagent/widget@0.1.5`
 2. Drop in the widget on an `/agents` (or similar) page
 3. Use **`partnerId: "gamearena"`** so deploys are attributed to you
-4. Lock config to **offchain + Markov** (see below)
-5. Point **`fvCallbackUrl`** at your agents page (GoodDollar face-verify return)
+4. Users **name their agent** and **tune bot settings** on the Deploy tab (strategy, caps, interval)
+5. Optionally set **`fvCallbackUrl`** if your agents page is not the current URL (GoodDollar face-verify return)
 
 Done — users connect wallet → deploy → vouch → agent plays automatically.
 
@@ -25,20 +25,33 @@ Done — users connect wallet → deploy → vouch → agent plays automatically
 
 | Step | Tab | User action | What happens |
 |------|-----|-------------|--------------|
-| 1 | **Deploy** | Name agent + deploy | GoodAgent creates a dedicated **play wallet** on our host and installs the GameArena skill |
+| 1 | **Deploy** | Name agent + tune settings + deploy | GoodAgent creates a **play wallet**, registers GameArena username, installs skill |
 | 2 | **Verify** | GoodDollar verify + G$ bond + Agent ID | User’s **connected wallet** signs; agent becomes verifiable on GoodAgent |
 | 3 | **Dashboard** | Monitor / Stop / Start | Live status, match stats, controls |
 
 **Important:** The user’s wallet **owns** the agent. The **play wallet** runs on GoodAgent servers — keys are never exported to your frontend.
 
-**Offchain mode:** Agents use **free daily tickets** vs MARKOV AI. No on-chain wager per match. (User still completes the standard GoodAgent vouch flow once.)
+**Offchain mode:** Default play mode is **free tickets** vs MARKOV AI. Users can change play mode in the Deploy form if you leave settings visible (default).
+
+### What users configure on Deploy (default)
+
+| Field | What it does |
+|-------|----------------|
+| **Agent name** | Display name → becomes GameArena Pass username on-chain (sanitized) |
+| **Strategy vs MARKOV** | random / sequence / fixed / counter |
+| **Daily match cap** | Max matches per UTC day |
+| **Max matches per run** | Matches before the bot pauses until next start |
+| **Pause between matches** | Seconds between games |
+| **Play mode** | Free tickets (offchain) — recommend leaving default for your integration |
+
+GoodAgent fills in host API, main API, RPC, vault, and base skill defaults. You only pass `partnerId` (and optional overrides).
 
 ---
 
 ## Install
 
 ```bash
-pnpm add @goodagent/widget react react-dom
+pnpm add @goodagent/widget@0.1.5 react react-dom
 
 # If you already use Privy (recommended for GameArena / MiniPay / WalletConnect):
 pnpm add @privy-io/react-auth
@@ -48,21 +61,15 @@ pnpm add @privy-io/react-auth
 
 ## Recommended config (offchain Markov — copy this)
 
-Use **`hideSkillConfig: true`** so users don’t see skill settings — everything is pre-set for free offchain Markov play.
+GoodAgent fills in API URLs, RPC, vault, skill defaults, and face-verify callback automatically. You only pass what varies:
 
 ```tsx
 import {
   GoodAgentWidget,
-  createGoodAgentWidgetConfig,
-  GAMEARENA_SKILL_ID,
+  createGameArenaWidgetConfig,
   usePrivyWalletAdapter,
 } from "@goodagent/widget";
 import "@goodagent/widget/styles.css";
-
-const AGENTS_PAGE_URL =
-  typeof window !== "undefined"
-    ? `${window.location.origin}/agents` // ← change path if needed
-    : undefined;
 
 export function GameArenaAgentsPanel() {
   const wallet = usePrivyWalletAdapter({ preferExternal: true });
@@ -71,32 +78,38 @@ export function GameArenaAgentsPanel() {
     <GoodAgentWidget
       mode="full"
       wallet={wallet}
-      config={createGoodAgentWidgetConfig(GAMEARENA_SKILL_ID, {
+      config={createGameArenaWidgetConfig({
         partnerId: "gamearena",
-        defaultDisplayName: "My Arena Agent",
-        hideSkillConfig: true,
-        deployHint:
-          "Deploy an agent that plays free MARKOV matches on GameArena. Your wallet owns it — we run the bot.",
-        fvCallbackUrl: AGENTS_PAGE_URL,
-        skillConfiguration: {
-          PLAY_MODE: "offchain",
-          MARKOV_STRATEGY: "random",
-          DAILY_MATCH_CAP: "50",
-          MAX_MATCHES: "10",
-          MATCH_INTERVAL_SECONDS: "300",
-          GAME_TYPE: "0",
-        },
       })}
-      onVouched={() => {
-        // optional: analytics, toast, redirect to dashboard tab
-      }}
-      onLive={() => {
-        // optional: agent is running after vouch
-      }}
     />
   );
 }
 ```
+
+Need a custom agents page path for GoodDollar return? Pass `fvCallbackUrl` only:
+
+```tsx
+config={createGameArenaWidgetConfig({
+  partnerId: "gamearena",
+  fvCallbackUrl:
+    typeof window !== "undefined"
+      ? `${window.location.origin}/agents`
+      : undefined,
+})}
+```
+
+### Full control (any skill)
+
+```tsx
+import { createGoodAgentWidgetConfig, GAMEARENA_SKILL_ID } from "@goodagent/widget";
+
+config={createGoodAgentWidgetConfig(GAMEARENA_SKILL_ID, {
+  partnerId: "gamearena",
+  skillConfiguration: { PLAY_MODE: "offchain", MARKOV_STRATEGY: "random" },
+})}
+```
+
+Users see strategy, daily cap, max matches per run, pause between matches, and play mode on the Deploy tab. Set `hideSkillConfig: true` only if you want a name-only deploy with locked defaults.
 
 ### Why these settings?
 
@@ -122,8 +135,7 @@ Your app must already wrap the tree in `<PrivyProvider>` with Celo mainnet confi
 
 import {
   GoodAgentWidget,
-  createGoodAgentWidgetConfig,
-  GAMEARENA_SKILL_ID,
+  createGameArenaWidgetConfig,
   usePrivyWalletAdapter,
 } from "@goodagent/widget";
 import "@goodagent/widget/styles.css";
@@ -154,21 +166,12 @@ export default function AgentsPage() {
       <GoodAgentWidget
         mode="full"
         wallet={wallet}
-        config={createGoodAgentWidgetConfig(GAMEARENA_SKILL_ID, {
+        config={createGameArenaWidgetConfig({
           partnerId: "gamearena",
-          defaultDisplayName: "My Arena Agent",
-          hideSkillConfig: true,
           fvCallbackUrl:
             typeof window !== "undefined"
               ? `${window.location.origin}/agents`
               : undefined,
-          skillConfiguration: {
-            PLAY_MODE: "offchain",
-            MARKOV_STRATEGY: "random",
-            DAILY_MATCH_CAP: "50",
-            MAX_MATCHES: "10",
-            MATCH_INTERVAL_SECONDS: "300",
-          },
         })}
       />
     </main>
@@ -222,9 +225,20 @@ Use `preferExternal`-style behavior by connecting the user’s primary wallet be
 
 ---
 
+## Optional: hide settings (name-only deploy)
+
+If you want users to **only** name their agent and skip tuning, lock the form:
+
+```tsx
+createGameArenaWidgetConfig({
+  partnerId: "gamearena",
+  hideSkillConfig: true,
+})
+```
+
 ## Optional: show settings to power users
 
-If you want users to pick Markov strategy themselves, set `hideSkillConfig: false` (default). The widget shows:
+**Default:** settings are shown. Users can pick:
 
 - Strategy vs MARKOV (random / sequence / fixed / counter)
 - Daily match cap

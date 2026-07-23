@@ -26,59 +26,75 @@ export interface GoodAgentWalletAdapter {
 
 export type SkillConfiguration = Record<string, string>;
 
-export interface GoodAgentWidgetConfig {
-  /** Host supervisor API base (default: https://goodagentids.xyz/host). */
-  hostBaseUrl: string;
-  /** Main GoodAgent API base (default: https://goodagentids.xyz/api). */
-  apiBaseUrl: string;
-  /** Celo JSON-RPC for on-chain reads (vault, attestation). */
-  rpcUrl?: string;
-  /**
-   * Skill to deploy — any listed skill from the GoodAgent registry
-   * (https://goodagentids.xyz/skills). Required for partner embeds.
-   */
+/**
+ * Partner-facing config — only pass what varies for your embed.
+ * Static GoodAgent URLs, RPC, vault, registry, and skill defaults are filled in automatically.
+ */
+export interface GoodAgentWidgetPartnerConfig {
+  /** Skill from https://goodagentids.xyz/skills */
   skillId: string;
-  /** Initial skill env overrides (merged onto registry defaults). */
-  skillConfiguration?: SkillConfiguration;
-  /** Default agent display name in the deploy form. */
-  defaultDisplayName?: string;
-  /** Host deploy template (auto-detected from skillId when omitted). */
-  deployTemplate?: "gaming" | "social" | "work";
-  /** Telegram bot token — required for `social/reminder/ubi_claim_reminder`. */
-  telegramBotToken?: string;
-  /** Hide built-in skill settings (use when you pre-set skillConfiguration). */
-  hideSkillConfig?: boolean;
-  /** Override deploy panel subtitle. */
-  deployHint?: string;
-  /** Override skill label in UI (else derived from skillId). */
-  skillLabel?: string;
-  /** Partner attribution (stored on deploy when host supports it). */
+  /** Your project slug for deploy attribution. */
   partnerId?: string;
-  /** AgentVault on Celo mainnet. */
-  vaultAddress?: Address;
-  /** GoodDollar environment for face verification. */
-  goodDollarEnv?: "production" | "staging" | "development";
-  /** Face-verification return URL (defaults to current page URL). */
+  /** Overrides merged onto built-in skill defaults (PLAY_MODE, strategy, caps, …). */
+  skillConfiguration?: SkillConfiguration;
+  defaultDisplayName?: string;
+  hideSkillConfig?: boolean;
+  deployHint?: string;
+  skillLabel?: string;
+  telegramBotToken?: string;
+  /** Face-verify return URL (default: current page in the browser). */
   fvCallbackUrl?: string;
-  /** Poll interval for deploy status (ms). */
-  statusPollMs?: number;
-  /** Skill registry URL (for optional metadata fetch). */
+  /** Advanced — only when self-hosting GoodAgent infrastructure. */
+  hostBaseUrl?: string;
+  apiBaseUrl?: string;
+  rpcUrl?: string;
+  vaultAddress?: Address;
   registryUrl?: string;
+  goodDollarEnv?: "production" | "staging" | "development";
+  deployTemplate?: "gaming" | "social" | "work";
+  statusPollMs?: number;
+}
+
+/** Fully resolved config used inside the widget (after `resolveWidgetConfig`). */
+export interface GoodAgentWidgetConfig {
+  hostBaseUrl: string;
+  apiBaseUrl: string;
+  rpcUrl: string;
+  skillId: string;
+  skillConfiguration: SkillConfiguration;
+  defaultDisplayName: string;
+  deployTemplate: "gaming" | "social" | "work";
+  hideSkillConfig: boolean;
+  deployHint: string;
+  skillLabel: string;
+  partnerId?: string;
+  telegramBotToken?: string;
+  vaultAddress: Address;
+  goodDollarEnv: "production" | "staging" | "development";
+  fvCallbackUrl: string;
+  statusPollMs: number;
+  registryUrl: string;
 }
 
 export type GoodAgentWidgetMode = "deploy" | "vouch" | "dashboard" | "full";
 
 export interface GoodAgentWidgetProps {
-  config: GoodAgentWidgetConfig;
+  config: GoodAgentWidgetPartnerConfig;
   wallet: GoodAgentWalletAdapter;
   /** Which surface to show. `full` = tabbed deploy → vouch → dashboard. */
   mode?: GoodAgentWidgetMode;
-  /** Pre-selected deploy id (dashboard / resume). */
+  /** Pre-selected deploy on the Verify tab (legacy: also used as dashboard default). */
   deployId?: string;
-  /** Agent address for vouch step (from deploy status). */
+  /** Agent address for the Verify tab. */
   agentAddress?: string;
-  /** Called when deploy id is known (after create). */
+  /** Initial tab when mode is `full`. */
+  initialTab?: "deploy" | "vouch" | "dashboard";
+  /** Called when a new deploy job starts on the Deploy tab. */
   onDeployId?: (deployId: string) => void;
+  /** Called when the user picks an agent on the Verify tab. */
+  onVouchSelect?: (deployId: string, agentAddress: string) => void;
+  /** Called when the user picks a deploy on the Dashboard tab. */
+  onDashboardSelect?: (deployId: string) => void;
   /** Called after Agent ID is issued. */
   onVouched?: (agentAddress: string) => void;
   /** Called when agent reaches running status. */

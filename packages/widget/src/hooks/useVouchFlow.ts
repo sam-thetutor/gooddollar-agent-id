@@ -26,12 +26,31 @@ import { parseFvCallback, startGoodDollarFaceVerification } from "../gooddollar.
 
 type AgentSnapshot = readonly [Address, bigint, bigint];
 
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function useVouchFlow(agentAddress: string, ttlDays = 30) {
   const { wallet, api, config, vaultAddress, rpcUrl } = useWidget();
   const [identity, setIdentity] = useState<{
     verified: boolean;
     root: string | null;
   } | null>(null);
+  const [identityLoading, setIdentityLoading] = useState(true);
   const [identityError, setIdentityError] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,9 +111,11 @@ export function useVouchFlow(agentAddress: string, ttlDays = 30) {
   useEffect(() => {
     if (!wallet.address) {
       setIdentity(null);
+      setIdentityLoading(false);
       return;
     }
     setIdentityError(false);
+    setIdentityLoading(true);
     api
       .getWalletOverview(wallet.address)
       .then((d) =>
@@ -103,7 +124,8 @@ export function useVouchFlow(agentAddress: string, ttlDays = 30) {
           root: d.verify.root,
         }),
       )
-      .catch(() => setIdentityError(true));
+      .catch(() => setIdentityError(true))
+      .finally(() => setIdentityLoading(false));
   }, [wallet.address, api]);
 
   useEffect(() => {
@@ -193,12 +215,16 @@ export function useVouchFlow(agentAddress: string, ttlDays = 30) {
         humanRoot: getAddress(identity.root),
         ttlDays,
       });
-      const signature = await wallet.signTypedData({
-        domain: agentIdDomain,
-        types: agentIdTypes,
-        primaryType: "AgentID",
-        message: message as unknown as Record<string, unknown>,
-      });
+      const signature = await withTimeout(
+        wallet.signTypedData({
+          domain: agentIdDomain,
+          types: agentIdTypes,
+          primaryType: "AgentID",
+          message: message as unknown as Record<string, unknown>,
+        }),
+        120_000,
+        "Signing timed out — check MetaMask for a pending request, or reconnect your wallet and try again.",
+      );
       const result = await api.issueAgent({
         fields: messageToWire(message),
         signature,
@@ -217,6 +243,7 @@ export function useVouchFlow(agentAddress: string, ttlDays = 30) {
 
   return {
     identity,
+    identityLoading,
     identityError,
     fv,
     agentValid,
@@ -233,6 +260,7 @@ export function useVouchFlow(agentAddress: string, ttlDays = 30) {
     approve,
     stake,
     issue,
+    refresh: refreshChain,
     canIssue:
       wallet.isConnected &&
       identity?.verified &&
