@@ -12,6 +12,8 @@ import {
   type AgentBalanceDisplay,
 } from "../lib/agent-balances.js";
 
+export type DashboardControlBusy = "stopping" | "starting" | null;
+
 function mergeStatus(
   base: DeployStatusResponse,
   patch: Partial<DeployStatusResponse>,
@@ -25,13 +27,32 @@ function mergeStatus(
   };
 }
 
+function optimisticPaused(
+  prev: DeployStatusResponse | null,
+): Partial<DeployStatusResponse> {
+  const pm2 = prev?.pm2
+    ? { ...prev.pm2, online: false, status: "stopped" }
+    : { status: "stopped", online: false };
+  return { status: "paused", pm2 };
+}
+
+function optimisticRunning(
+  prev: DeployStatusResponse | null,
+): Partial<DeployStatusResponse> {
+  const pm2 = prev?.pm2
+    ? { ...prev.pm2, online: true, status: "online" }
+    : { status: "online", online: true };
+  return { status: "running", pm2 };
+}
+
 export function useDashboard(deployId: string, deploy?: DeployAgent) {
   const { wallet, host, api, rpcUrl } = useWidget();
   const [status, setStatus] = useState<DeployStatusResponse | null>(null);
   const [clientBalances, setClientBalances] =
     useState<AgentBalanceDisplay | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [controlBusy, setControlBusy] =
+    useState<DashboardControlBusy>(null);
   const [error, setError] = useState<string | null>(null);
 
   const agentAddress = status?.agentAddress ?? deploy?.agentAddress ?? null;
@@ -54,7 +75,7 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
     };
   }, [agentAddress, rpcUrl]);
 
-  const poll = useCallback(async () => {
+  const pollLite = useCallback(async () => {
     if (!deployId) return null;
     try {
       const lite = await host.getDeployStatus(deployId, { lite: true });
@@ -62,10 +83,20 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
         mergeStatus(lite, { stats: prev?.stats ?? null }),
       );
       setError(null);
+      return lite;
+    } catch (e) {
+      setError((e as Error).message);
+      return null;
+    }
+  }, [deployId, host]);
 
-      setStatsLoading(true);
+  const pollFull = useCallback(async () => {
+    if (!deployId) return null;
+    setStatsLoading(true);
+    try {
       const full = await host.getDeployStatus(deployId);
       setStatus(full);
+      setError(null);
       return full;
     } catch (e) {
       setError((e as Error).message);
@@ -74,6 +105,11 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
       setStatsLoading(false);
     }
   }, [deployId, host]);
+
+  const poll = useCallback(async () => {
+    await pollLite();
+    return pollFull();
+  }, [pollLite, pollFull]);
 
   useEffect(() => {
     if (!deployId) return;
@@ -91,34 +127,60 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
   );
 
   const pause = useCallback(async () => {
-    if (!isOwner || !wallet.address) return;
-    setBusy(true);
+    if (!isOwner || !wallet.address || controlBusy) return;
+    setControlBusy("stopping");
     setError(null);
+    setStatus((prev) =>
+      prev ? mergeStatus(prev, optimisticPaused(prev)) : prev,
+    );
     try {
       const auth = await signDeployControl(wallet, "pause", deployId);
       await host.stopDeploy(deployId, auth);
-      await poll();
+      await pollLite();
+      void pollFull();
     } catch (e) {
       setError((e as Error).message);
+      await pollLite();
     } finally {
-      setBusy(false);
+      setControlBusy(null);
     }
-  }, [isOwner, wallet, deployId, host, poll]);
+  }, [
+    isOwner,
+    wallet,
+    deployId,
+    host,
+    pollLite,
+    pollFull,
+    controlBusy,
+  ]);
 
   const resume = useCallback(async () => {
-    if (!isOwner || !wallet.address) return;
-    setBusy(true);
+    if (!isOwner || !wallet.address || controlBusy) return;
+    setControlBusy("starting");
     setError(null);
+    setStatus((prev) =>
+      prev ? mergeStatus(prev, optimisticRunning(prev)) : prev,
+    );
     try {
       const auth = await signDeployControl(wallet, "resume", deployId);
       await host.startDeploy(deployId, auth);
-      await poll();
+      await pollLite();
+      void pollFull();
     } catch (e) {
       setError((e as Error).message);
+      await pollLite();
     } finally {
-      setBusy(false);
+      setControlBusy(null);
     }
-  }, [isOwner, wallet, deployId, host, poll]);
+  }, [
+    isOwner,
+    wallet,
+    deployId,
+    host,
+    pollLite,
+    pollFull,
+    controlBusy,
+  ]);
 
   const verifyUrl =
     status?.agentAddress && status.verify?.valid
@@ -129,12 +191,15 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
     status,
     clientBalances,
     statsLoading,
-    busy,
+    controlBusy,
+    /** @deprecated use controlBusy */
+    busy: controlBusy !== null,
     error,
     isOwner,
     pause,
     resume,
     verifyUrl,
     poll,
+    pollLite,
   };
 }

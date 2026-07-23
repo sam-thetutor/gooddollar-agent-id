@@ -171,7 +171,8 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         await host.updateConfiguration(deploy.id, configAuth, patch);
       }
 
-      await d.poll();
+      await d.pollLite();
+      void d.poll();
       setSettingsNotice("Saved — agent picks this up on the next run.");
       setSettingsOpen(false);
     } catch (e) {
@@ -196,7 +197,12 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
   const hostBalances = status?.stats?.balances;
   const balances = hostBalances ?? d.clientBalances;
   const pm2 = status?.pm2;
-  const online = pm2?.online ?? status?.status === "running";
+  const online =
+    d.controlBusy === "starting"
+      ? true
+      : d.controlBusy === "stopping"
+        ? false
+        : (pm2?.online ?? status?.status === "running");
   const tone = statusTone(status?.status ?? deploy.status, online);
   const needsVouch = deployNeedsUserVouch(status);
   const agentAddress = status?.agentAddress ?? deploy.agentAddress;
@@ -225,7 +231,13 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         </div>
         <div className="ga-widget-dash-command-actions">
           <span className={`ga-widget-status-pill ga-widget-status-pill-${tone}`}>
-            {online ? "Live" : formatStatusLabel(status?.status ?? deploy.status)}
+            {d.controlBusy === "stopping"
+              ? "Stopping…"
+              : d.controlBusy === "starting"
+                ? "Starting…"
+                : online
+                  ? "Live"
+                  : formatStatusLabel(status?.status ?? deploy.status)}
           </span>
           {d.isOwner && (
             <>
@@ -233,19 +245,23 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
                 <button
                   type="button"
                   className="ga-widget-btn ga-widget-btn-compact"
-                  disabled={d.busy || !canControl}
+                  disabled={d.controlBusy !== null || !canControl}
                   onClick={() => void d.pause()}
                 >
-                  {d.busy ? "…" : "Stop"}
+                  {d.controlBusy === "stopping" ? "Stopping…" : "Stop"}
                 </button>
               ) : (
                 <button
                   type="button"
                   className="ga-widget-btn ga-widget-btn-primary ga-widget-btn-compact"
-                  disabled={d.busy || !canControl}
+                  disabled={d.controlBusy !== null || !canControl}
                   onClick={() => void d.resume()}
                 >
-                  {d.busy ? "…" : status?.status === "paused" ? "Resume" : "Start"}
+                  {d.controlBusy === "starting"
+                    ? "Starting…"
+                    : status?.status === "paused"
+                      ? "Resume"
+                      : "Start"}
                 </button>
               )}
               <button
@@ -299,11 +315,15 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
           className={`ga-widget-online-dot${online ? " ga-widget-online-dot-on" : ""}`}
         />
         <span className="ga-widget-muted">
-          {online
-            ? "Online and playing"
-            : status?.pipelineRunning
-              ? "Provisioning…"
-              : formatStatusLabel(status?.status ?? deploy.status)}
+          {d.controlBusy === "stopping"
+            ? "Stopping agent…"
+            : d.controlBusy === "starting"
+              ? "Starting agent…"
+              : online
+                ? "Online and playing"
+                : status?.pipelineRunning
+                  ? "Provisioning…"
+                  : formatStatusLabel(status?.status ?? deploy.status)}
         </span>
         {status?.verify?.valid && (
           <span className="ga-widget-dash-verified">Agent ID ✓</span>
@@ -390,7 +410,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         </details>
       )}
 
-      {!status && !d.statsLoading && !d.busy && (
+      {!status && !d.statsLoading && !d.controlBusy && (
         <p className="ga-widget-muted ga-widget-step-hint">Loading agent status…</p>
       )}
     </div>

@@ -1,6 +1,6 @@
 {
   "name": "@goodagent/widget",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Embeddable GoodAgent widget — deploy, vouch, and monitor autonomous agents on partner sites",
   "type": "module",
   "keywords": [
