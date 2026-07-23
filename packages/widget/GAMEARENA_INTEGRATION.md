@@ -4,14 +4,14 @@
 **Goal:** Let your users deploy autonomous agents that play the **free offchain Markov AI** game (`challenge-ai` / rock-paper-scissors vs MARKOV).  
 **Backend:** GoodAgent hosts provisioning and gameplay — **you do not run agent servers**.
 
-**Widget package:** `@goodagent/widget@0.1.5`  
+**Widget package:** `@goodagent/widget@0.1.6`  
 **GoodAgent APIs:** `https://goodagentids.xyz/host` + `https://goodagentids.xyz/api` (filled in automatically — do not configure in your app)
 
 ---
 
 ## TL;DR (fastest path)
 
-1. `pnpm add @goodagent/widget@0.1.5`
+1. `pnpm add @goodagent/widget@0.1.6`
 2. Drop in the widget on an `/agents` (or similar) page
 3. Use **`partnerId: "gamearena"`** so deploys are attributed to you
 4. Users **name their agent** and **tune bot settings** on the Deploy tab (strategy, caps, interval)
@@ -51,7 +51,7 @@ GoodAgent fills in host API, main API, RPC, vault, and base skill defaults. You 
 ## Install
 
 ```bash
-pnpm add @goodagent/widget@0.1.5 react react-dom
+pnpm add @goodagent/widget@0.1.6 react react-dom
 
 # If you already use Privy (recommended for GameArena / MiniPay / WalletConnect):
 pnpm add @privy-io/react-auth
