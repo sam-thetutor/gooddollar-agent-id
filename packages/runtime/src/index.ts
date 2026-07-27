@@ -67,6 +67,7 @@ export type { SkillConfiguration } from "./skill-env.js";
 export {
   applyDeployConfiguration,
   mergeDeployConfiguration,
+  syncAgentAfterPassRename,
 } from "./apply-config.js";
 export type { DeployAgentRecord } from "./apply-config.js";
 
@@ -113,10 +114,17 @@ export {
   GAMEARENA_CHALLENGE_AI_GAME_TYPE,
   GAMEARENA_SKILL_ID,
   sanitizeGamePassUsername,
+  resolvePassUsernameFromDisplayName,
   readGamePassProfile,
+  checkGamePassUsernameForAgent,
+  setGamePassUsername,
   registerGamePassUsername,
 } from "./gamearena-pass.js";
-export type { GamePassProfile, RegisterGamePassResult } from "./gamearena-pass.js";
+export type {
+  GamePassProfile,
+  RegisterGamePassResult,
+  GamePassUsernameCheck,
+} from "./gamearena-pass.js";
 
 export {
   buildGoodAgentRegistry,

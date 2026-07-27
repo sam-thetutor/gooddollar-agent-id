@@ -6,6 +6,10 @@ import {
   celoscanUrl,
   exploreAgentUrl,
   formatStatusLabel,
+  formatMatchWhen,
+  formatMatchId,
+  formatRelative,
+  matchResultLabel,
   parseConfigSummary,
   shortenAddress,
   skillIdForDeploy,
@@ -112,7 +116,7 @@ export function DashboardPanel({
 }
 
 function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
-  const { wallet, host } = useWidget();
+  const { wallet, host, config } = useWidget();
   const d = useDashboard(deploy.id, deploy);
   const status = d.status;
   const skillId =
@@ -213,6 +217,17 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
   const gamesPlayed =
     perf?.gamesPlayed ?? (perf ? perf.wins + perf.losses : 0);
   const displayName = status?.displayName ?? deploy.displayName;
+  const recentMatches = (
+    perf?.matches ??
+    perf?.recentMatches ??
+    []
+  ).slice(0, 5);
+  const recentWins = recentMatches.filter((m) => m.result === "won").length;
+  const recentLosses = recentMatches.filter((m) => m.result === "lost").length;
+  const offchainPlay =
+    perf?.playMode === "offchain" ||
+    parseConfigSummary(status?.configuration ?? deploy.configuration).PLAY_MODE ===
+      "offchain";
 
   return (
     <div className="ga-widget-dash-deck">
@@ -220,7 +235,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         <div className="ga-widget-dash-command-main">
           <h4 className="ga-widget-dash-title">{displayName}</h4>
           <p className="ga-widget-dash-sub">
-            {skillLabelForDeploy(deploy)}
+            {skillLabelForDeploy(deploy, config.skillLabel)}
             {agentAddress ? (
               <>
                 {" · "}
@@ -336,14 +351,80 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
             <a href={exploreAgentUrl(agentAddress)} target="_blank" rel="noreferrer">
               Profile ↗
             </a>
-            {d.verifyUrl && (
-              <a href={d.verifyUrl} target="_blank" rel="noreferrer">
-                Verify ↗
-              </a>
-            )}
           </span>
         )}
       </div>
+
+      {(status && (recentMatches.length > 0 || d.statsLoading)) && (
+        <div className="ga-widget-dash-matches">
+          <div className="ga-widget-dash-matches-head">
+            <h5 className="ga-widget-dash-matches-title">Recent matches</h5>
+            {recentMatches.length > 0 && (
+              <span className="ga-widget-dash-matches-meta">
+                Last {recentMatches.length}
+                {recentWins > 0 || recentLosses > 0
+                  ? ` · ${recentWins}W · ${recentLosses}L`
+                  : ""}
+              </span>
+            )}
+          </div>
+          {recentMatches.length > 0 ? (
+            <div className="ga-widget-match-table-wrap">
+              <table className="ga-widget-match-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Match</th>
+                    <th scope="col" className="ga-widget-match-col-result">
+                      Result
+                    </th>
+                    {!offchainPlay && (
+                      <th scope="col" className="ga-widget-match-col-wager">
+                        Wager
+                      </th>
+                    )}
+                    <th scope="col" className="ga-widget-match-col-time">
+                      When
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentMatches.map((m) => (
+                    <tr key={`${m.matchId}-${m.at}`}>
+                      <td>
+                        <code className="ga-widget-match-id" title={m.matchId}>
+                          {formatMatchId(m.matchId)}
+                        </code>
+                      </td>
+                      <td>
+                        <span
+                          className={`ga-widget-match-badge ga-widget-match-badge-${m.result}`}
+                        >
+                          {matchResultLabel(m.result)}
+                        </span>
+                      </td>
+                      {!offchainPlay && (
+                        <td className="ga-widget-match-wager ga-widget-match-col-wager">
+                          {m.wagerGs > 0 ? `${m.wagerGs} G$` : "—"}
+                        </td>
+                      )}
+                      <td className="ga-widget-match-time" title={m.at}>
+                        <span className="ga-widget-match-time-main">
+                          {formatMatchWhen(m.at)}
+                        </span>
+                        <span className="ga-widget-match-time-sub">
+                          {formatRelative(m.at)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <DashboardInlineLoader label="Loading matches…" />
+          )}
+        </div>
+      )}
 
       {needsVouch && d.isOwner && (
         <p className="ga-widget-warn ga-widget-dash-hint-bar">
@@ -410,9 +491,26 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         </details>
       )}
 
-      {!status && !d.statsLoading && !d.controlBusy && (
-        <p className="ga-widget-muted ga-widget-step-hint">Loading agent status…</p>
+      {!status && d.statsLoading && (
+        <DashboardInlineLoader label="Loading dashboard…" />
       )}
+
+      {!status && !d.statsLoading && !d.controlBusy && (
+        <p className="ga-widget-muted ga-widget-step-hint">Could not load agent status.</p>
+      )}
+    </div>
+  );
+}
+
+function DashboardInlineLoader({ label }: { label: string }) {
+  return (
+    <div className="ga-widget-dash-loader" role="status" aria-live="polite">
+      <div className="ga-widget-dash-loader-orbit" aria-hidden="true">
+        <span className="ga-widget-dash-loader-ring ga-widget-dash-loader-ring-outer" />
+        <span className="ga-widget-dash-loader-ring ga-widget-dash-loader-ring-inner" />
+        <span className="ga-widget-dash-loader-core" />
+      </div>
+      <p className="ga-widget-dash-loader-label">{label}</p>
     </div>
   );
 }

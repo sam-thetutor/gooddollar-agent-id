@@ -32,15 +32,6 @@ export {
 export type { DeployStatusResponse, DeployAgent } from "./client/host.js";
 
 export { createWalletAdapterFromHooks } from "./wallet-adapter.js";
-export {
-  createWalletAdapterFromPrivy,
-  pickPrivyWallet,
-  usePrivyWalletAdapter,
-} from "./privy-adapter.js";
-export type {
-  PrivyConnectedWalletLike,
-  PrivyWalletAdapterOptions,
-} from "./privy-adapter.js";
 
 export {
   buildFvCallbackUrl,

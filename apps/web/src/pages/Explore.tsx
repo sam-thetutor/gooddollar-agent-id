@@ -10,6 +10,10 @@ import {
   type ExplorePage,
   type ExploreStats,
 } from "../lib/api.js";
+import {
+  displayBondedAmount,
+  displayStatCount,
+} from "../lib/public-stats.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 export function shorten(a: string): string {
@@ -83,19 +87,17 @@ export function Explore() {
         {stats && (
           <section className="stat-grid">
             <div className="stat">
-              <span className="stat-value">{stats.active}</span>
+              <span className="stat-value">{displayStatCount(stats.active)}</span>
               <span className="stat-label">active agents</span>
             </div>
             <div className="stat">
-              <span className="stat-value">{stats.humans}</span>
-              <span className="stat-label">humans vouching</span>
-            </div>
-            <div className="stat">
-              <span className="stat-value">{stats.totalStakedFormatted}</span>
+              <span className="stat-value">
+                {displayBondedAmount(Number(stats.totalStakedFormatted) || 0)}
+              </span>
               <span className="stat-label">G$ bonded</span>
             </div>
             <div className="stat">
-              <span className="stat-value">{stats.attested}</span>
+              <span className="stat-value">{displayStatCount(stats.attested)}</span>
               <span className="stat-label">keys attested</span>
             </div>
             <div className="stat">

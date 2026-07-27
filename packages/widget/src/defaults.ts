@@ -82,6 +82,7 @@ export function createGoodAgentWidgetConfig(
 export function createGameArenaWidgetConfig(
   opts: {
     partnerId: string;
+    skillLabel?: string;
     defaultDisplayName?: string;
     fvCallbackUrl?: string;
     hideSkillConfig?: boolean;
@@ -92,6 +93,7 @@ export function createGameArenaWidgetConfig(
   return resolveWidgetConfig({
     skillId: GAMEARENA_SKILL_ID,
     partnerId: opts.partnerId,
+    skillLabel: opts.skillLabel,
     defaultDisplayName: opts.defaultDisplayName ?? "My Arena Agent",
     hideSkillConfig: opts.hideSkillConfig ?? false,
     deployHint:

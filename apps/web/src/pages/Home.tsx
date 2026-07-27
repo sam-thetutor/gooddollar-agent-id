@@ -10,6 +10,10 @@ import {
   type ActivityEvent,
   type ExploreStats,
 } from "../lib/api.js";
+import {
+  displayBondedAmount,
+  displayStatCount,
+} from "../lib/public-stats.js";
 
 const AGENT_PROMPT = `Read ${SITE_ORIGIN}/llms.txt and follow it to become a human-backed agent: attest your wallet key on Celo, then ask your human operator to vouch for you at ${SITE_ORIGIN}/issue`;
 
@@ -319,22 +323,21 @@ export function Home() {
           <div className="lp-stats lp-glass lp-reveal">
             <div className="lp-stat">
               <span className="lp-stat-value">
-                <CountUp value={stats?.active ?? 0} />
+                <CountUp value={displayStatCount(stats?.active ?? 0)} />
               </span>
               <span className="lp-stat-label">active agents</span>
             </div>
             <div className="lp-stat-sep" />
             <div className="lp-stat">
               <span className="lp-stat-value">
-                <CountUp value={stats?.humans ?? 0} />
-              </span>
-              <span className="lp-stat-label">humans vouching</span>
-            </div>
-            <div className="lp-stat-sep" />
-            <div className="lp-stat">
-              <span className="lp-stat-value">
                 <CountUp
-                  value={stats ? Number(stats.totalStakedFormatted) || 0 : 0}
+                  value={
+                    stats
+                      ? displayBondedAmount(
+                          Number(stats.totalStakedFormatted) || 0,
+                        )
+                      : 0
+                  }
                 />
                 <small> G$</small>
               </span>
@@ -343,7 +346,7 @@ export function Home() {
             <div className="lp-stat-sep" />
             <div className="lp-stat">
               <span className="lp-stat-value">
-                <CountUp value={stats?.attested ?? 0} />
+                <CountUp value={displayStatCount(stats?.attested ?? 0)} />
               </span>
               <span className="lp-stat-label">keys attested</span>
             </div>

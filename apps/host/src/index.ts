@@ -45,7 +45,13 @@ import {
   buildGamearenaRegistryFromAgents,
   enrichGamearenaLadder,
   fetchGamearenaLadder,
+  deriveAgentAccount,
+  checkGamePassUsernameForAgent,
+  setGamePassUsername,
+  syncAgentAfterPassRename,
+  GAMEARENA_SKILL_ID,
   type PipelineStatus,
+  type DeployAgentRecord,
 } from "@goodagent/runtime";
 import { isSkillDeployable, GOODAGENT_API_URL } from "@goodagent/shared";
 import { Hono } from "hono";
@@ -173,6 +179,37 @@ function publicAgent<T extends { telegramBotTokenEnc?: string | null }>(
 ): Omit<T, "telegramBotTokenEnc"> {
   const { telegramBotTokenEnc: _, ...rest } = agent;
   return rest;
+}
+
+function primarySkillId(
+  agent: Awaited<ReturnType<typeof getDeployedAgent>>,
+): string | null {
+  return agent?.skills[0]?.skillId ?? null;
+}
+
+function deployAgentRecord(
+  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
+  displayName: string,
+): DeployAgentRecord {
+  return {
+    id: agent.id,
+    displayName,
+    agentAddress: agent.agentAddress,
+    walletDerivationIndex: agent.walletDerivationIndex,
+    configuration: agent.configuration,
+    skills: agent.skills.map((s) => ({
+      skillId: s.skillId,
+      registryPath: s.registryPath,
+    })),
+  };
+}
+
+function gamePassTxErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/insufficient funds/i.test(message)) {
+    return "Agent wallet needs CELO for GameArena username gas (~0.03 CELO)";
+  }
+  return message;
 }
 
 async function fetchVerifyStatus(
@@ -928,6 +965,45 @@ app.post("/deploy/:id/configuration", async (c) => {
   }
 });
 
+app.get("/deploy/:id/gamepass-username", async (c) => {
+  const id = c.req.param("id");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const displayName = c.req.query("displayName")?.trim();
+  if (!displayName) {
+    return c.json({ error: "displayName query required" }, 400);
+  }
+
+  if (primarySkillId(agent) !== GAMEARENA_SKILL_ID) {
+    return c.json({ applicable: false });
+  }
+  if (!agent.agentAddress) {
+    return c.json({ applicable: true, provisioned: false });
+  }
+
+  loadRuntimeEnv();
+  let runtimeConfig;
+  try {
+    runtimeConfig = getRuntimeConfig();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "HOST_CONFIG", message }, 500);
+  }
+
+  try {
+    const check = await checkGamePassUsernameForAgent({
+      rpcUrl: runtimeConfig.rpcUrl,
+      agentAddress: agent.agentAddress as `0x${string}`,
+      displayName,
+    });
+    return c.json({ applicable: true, provisioned: true, ...check });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "GAMEPASS_CHECK_FAILED", message }, 502);
+  }
+});
+
 app.post("/deploy/:id/display-name", async (c) => {
   const id = c.req.param("id");
   const agent = await getDeployedAgent(id);
@@ -947,6 +1023,112 @@ app.post("/deploy/:id/display-name", async (c) => {
   const displayName = body.displayName?.trim();
   if (!displayName) {
     return c.json({ error: "displayName is required" }, 400);
+  }
+
+  if (displayName === agent.displayName) {
+    return c.json({ agent: publicAgent(agent) });
+  }
+
+  const gamearena = primarySkillId(agent) === GAMEARENA_SKILL_ID;
+  let gamePassUsername: string | undefined;
+  let gamePassTxHash: string | undefined;
+  let restarted = false;
+
+  if (gamearena) {
+    if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+      return c.json(
+        {
+          error: "AGENT_NOT_PROVISIONED",
+          message: "Agent wallet not ready for GameArena username update",
+        },
+        400,
+      );
+    }
+
+    loadRuntimeEnv();
+    let runtimeConfig;
+    try {
+      runtimeConfig = getRuntimeConfig();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ error: "HOST_CONFIG", message }, 500);
+    }
+
+    const check = await checkGamePassUsernameForAgent({
+      rpcUrl: runtimeConfig.rpcUrl,
+      agentAddress: agent.agentAddress as `0x${string}`,
+      displayName,
+    });
+    if (!check.available) {
+      return c.json(
+        {
+          error: "USERNAME_TAKEN",
+          message: `GameArena username "${check.candidate}" is not available`,
+          candidate: check.candidate,
+          currentOnChain: check.currentOnChain,
+        },
+        409,
+      );
+    }
+
+    const account = deriveAgentAccount(
+      runtimeConfig.deployMnemonic,
+      agent.walletDerivationIndex,
+    );
+
+    try {
+      const pass = await setGamePassUsername({
+        rpcUrl: runtimeConfig.rpcUrl,
+        account,
+        targetUsername: check.candidate,
+      });
+      gamePassUsername = pass.username;
+      gamePassTxHash = pass.txHash;
+    } catch (err) {
+      const message = gamePassTxErrorMessage(err);
+      return c.json({ error: "GAMEPASS_TX_FAILED", message }, 502);
+    }
+
+    try {
+      await updateDeployedAgent(id, { displayName });
+      const refreshed = (await getDeployedAgent(id)) ?? agent;
+      try {
+        const sync = syncAgentAfterPassRename(
+          runtimeConfig,
+          deployAgentRecord(refreshed, displayName),
+          gamePassUsername,
+        );
+        restarted = sync.restarted;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json(
+          {
+            error: "CONFIG_APPLY_FAILED",
+            message,
+            gamePassUsername,
+            gamePassTxHash,
+          },
+          500,
+        );
+      }
+      return c.json({
+        agent: publicAgent(refreshed),
+        gamePassUsername,
+        gamePassTxHash,
+        restarted,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json(
+        {
+          error: "DB_UPDATE_FAILED",
+          message,
+          gamePassUsername,
+          gamePassTxHash,
+        },
+        500,
+      );
+    }
   }
 
   const updated = await updateDeployedAgent(id, { displayName });

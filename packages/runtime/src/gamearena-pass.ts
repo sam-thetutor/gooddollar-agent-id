@@ -124,15 +124,77 @@ export async function readGamePassProfile(
   return { hasMinted, username };
 }
 
+function passUsernamePublicClient(rpcUrl: string) {
+  return createPublicClient({
+    chain: celo,
+    transport: http(rpcUrl, { timeout: 12_000 }),
+  });
+}
+
+function assertValidPassUsername(username: string): void {
+  if (username.length < 3 || username.length > 16) {
+    throw new Error(
+      "GameArena username must be 3–16 characters (a-z, 0-9, _)",
+    );
+  }
+}
+
+/** Primary Pass username derived from a display name (no auto-suffix). */
+export function resolvePassUsernameFromDisplayName(displayName: string): string {
+  return sanitizeGamePassUsername(displayName);
+}
+
+export interface GamePassUsernameCheck {
+  candidate: string;
+  currentOnChain: string;
+  hasMinted: boolean;
+  available: boolean;
+}
+
+/** Read-only check before rename (strict: primary sanitized name only). */
+export async function checkGamePassUsernameForAgent(opts: {
+  rpcUrl: string;
+  agentAddress: Address;
+  displayName: string;
+}): Promise<GamePassUsernameCheck> {
+  const candidate = resolvePassUsernameFromDisplayName(opts.displayName);
+  try {
+    assertValidPassUsername(candidate);
+  } catch {
+    return {
+      candidate,
+      currentOnChain: "",
+      hasMinted: false,
+      available: false,
+    };
+  }
+
+  const profile = await readGamePassProfile(opts.agentAddress, opts.rpcUrl);
+  const client = passUsernamePublicClient(opts.rpcUrl);
+  const globallyAvailable = await client.readContract({
+    address: GAME_PASS_ADDRESS,
+    abi: gamePassAbi,
+    functionName: "isUsernameAvailable",
+    args: [candidate],
+  });
+  const available =
+    globallyAvailable ||
+    (profile.hasMinted && profile.username === candidate);
+
+  return {
+    candidate,
+    currentOnChain: profile.username,
+    hasMinted: profile.hasMinted,
+    available,
+  };
+}
+
 async function pickAvailableUsername(
   displayName: string,
   deployId: string,
   rpcUrl: string,
 ): Promise<string> {
-  const client = createPublicClient({
-    chain: celo,
-    transport: http(rpcUrl, { timeout: 12_000 }),
-  });
+  const client = passUsernamePublicClient(rpcUrl);
   for (const candidate of buildUsernameCandidates(displayName, deployId)) {
     const available = await client.readContract({
       address: GAME_PASS_ADDRESS,
@@ -154,22 +216,19 @@ export interface RegisterGamePassResult {
 }
 
 /**
- * Register the agent's GameArena Pass username on-chain from the deploy display name.
+ * Mint or change GamePass to an exact username (no candidate fallback).
  * Requires CELO on the agent wallet for gas (~0.03 CELO).
  */
-export async function registerGamePassUsername(opts: {
+export async function setGamePassUsername(opts: {
   rpcUrl: string;
   account: LocalAccount;
-  displayName: string;
-  deployId: string;
+  targetUsername: string;
 }): Promise<RegisterGamePassResult> {
-  const { account, displayName, deployId, rpcUrl } = opts;
+  const { account, rpcUrl, targetUsername } = opts;
+  assertValidPassUsername(targetUsername);
   const wallet = account.address;
 
-  const publicClient = createPublicClient({
-    chain: celo,
-    transport: http(rpcUrl, { timeout: 12_000 }),
-  });
+  const publicClient = passUsernamePublicClient(rpcUrl);
   const walletClient = createWalletClient({
     account,
     chain: celo,
@@ -177,11 +236,6 @@ export async function registerGamePassUsername(opts: {
   });
 
   const profile = await readGamePassProfile(wallet, rpcUrl);
-  const targetUsername = await pickAvailableUsername(
-    displayName,
-    deployId,
-    rpcUrl,
-  );
 
   if (profile.hasMinted) {
     if (profile.username === targetUsername) {
@@ -205,4 +259,23 @@ export async function registerGamePassUsername(opts: {
   });
   await publicClient.waitForTransactionReceipt({ hash });
   return { username: targetUsername, action: "mint", txHash: hash };
+}
+
+/**
+ * Register the agent's GameArena Pass username on-chain from the deploy display name.
+ * Requires CELO on the agent wallet for gas (~0.03 CELO).
+ */
+export async function registerGamePassUsername(opts: {
+  rpcUrl: string;
+  account: LocalAccount;
+  displayName: string;
+  deployId: string;
+}): Promise<RegisterGamePassResult> {
+  const { account, displayName, deployId, rpcUrl } = opts;
+  const targetUsername = await pickAvailableUsername(
+    displayName,
+    deployId,
+    rpcUrl,
+  );
+  return setGamePassUsername({ rpcUrl, account, targetUsername });
 }

@@ -1,6 +1,6 @@
 {
   "name": "@goodagent/widget",
-  "version": "0.1.13",
+  "version": "0.1.18",
   "description": "Embeddable GoodAgent widget — deploy, vouch, and monitor autonomous agents on partner sites",
   "type": "module",
   "keywords": [
@@ -32,7 +32,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./styles.css": "./dist/widget.css"
+    "./styles.css": "./dist/widget.css",
+    "./privy": {
+      "types": "./dist/privy.d.ts",
+      "import": "./dist/privy.js"
+    }
   },
   "files": [
     "dist",

@@ -90,7 +90,7 @@ append_or_replace API_BASE "https://goodagentids.xyz/api" "$REMOTE_ENV"
 append_or_replace HOST_PORT "3010" "$REMOTE_ENV"
 append_or_replace HOST_DEV_SKIP_PAYMENT "1" "$REMOTE_ENV"
 append_or_replace AGENT_INITIAL_GS "200" "$REMOTE_ENV"
-append_or_replace AGENT_INITIAL_CELO "1" "$REMOTE_ENV"
+append_or_replace AGENT_INITIAL_CELO "0.5" "$REMOTE_ENV"
 REMOTE_SCRIPT
 
 # Copy secret values from local .env

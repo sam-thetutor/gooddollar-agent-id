@@ -125,6 +125,10 @@ for (const agentDir of fs.readdirSync(AGENTS_ROOT)) {
   }
   if (stateBackup) fs.writeFileSync(statePath, stateBackup);
 
+  // GameArena redeploys change Next-Action hashes; drop stale discovery.
+  const discoveryPath = path.join(skillDir, "gamearena-discovery.json");
+  if (fs.existsSync(discoveryPath)) fs.unlinkSync(discoveryPath);
+
   const envPath = path.join(skillDir, ".env");
   let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
   envContent = upsertEnvLine(envContent, "GAMEARENA_PROXY", proxy);
@@ -142,10 +146,6 @@ for (const agentDir of fs.readdirSync(AGENTS_ROOT)) {
   }
 
   execSync("npm ci", { cwd: skillDir, stdio: "inherit" });
-  count += 1;
-}
-console.log(`[proxy] patched ${count} gamearena agents`);
-NODE
 
 for eco in "$AGENTS_ROOT"/*/ecosystem.config.cjs; do
   deploy_id=$(basename "$(dirname "$eco")")

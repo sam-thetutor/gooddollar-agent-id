@@ -1158,6 +1158,211 @@
   margin-bottom: 10px;
 }
 
+.ga-widget-dash-matches {
+  margin: 0 0 12px;
+  border: 1px solid var(--ga-border);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+}
+
+.ga-widget-dash-matches-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ga-widget-dash-matches-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ga-muted);
+}
+
+.ga-widget-dash-matches-meta {
+  font-size: 11px;
+  color: var(--ga-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ga-widget-dash-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 132px;
+  padding: 28px 16px 32px;
+  text-align: center;
+}
+
+.ga-widget-dash-loader-orbit {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+}
+
+.ga-widget-dash-loader-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.ga-widget-dash-loader-ring-outer {
+  border-top-color: var(--ga-primary);
+  border-right-color: rgba(34, 197, 94, 0.35);
+  animation: ga-widget-spin 1s linear infinite;
+}
+
+.ga-widget-dash-loader-ring-inner {
+  inset: 9px;
+  border-bottom-color: #4ade80;
+  border-left-color: rgba(74, 222, 128, 0.25);
+  animation: ga-widget-spin 0.75s linear infinite reverse;
+}
+
+.ga-widget-dash-loader-core {
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(34, 197, 94, 0.4), transparent 70%);
+  animation: ga-widget-pulse 2s ease-in-out infinite;
+}
+
+.ga-widget-dash-loader-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ga-muted);
+}
+
+.ga-widget-match-table-wrap {
+  overflow-x: auto;
+}
+
+.ga-widget-match-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.ga-widget-match-table thead th {
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ga-muted);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.ga-widget-match-table tbody tr {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ga-widget-match-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ga-widget-match-table tbody td {
+  padding: 9px 12px;
+  vertical-align: middle;
+}
+
+.ga-widget-match-id {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: rgba(255, 255, 255, 0.88);
+  letter-spacing: 0.02em;
+}
+
+.ga-widget-match-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ga-widget-match-badge-won {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+}
+
+.ga-widget-match-badge-lost {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.24);
+}
+
+.ga-widget-match-badge-unresolved {
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.22);
+}
+
+.ga-widget-match-wager {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: nowrap;
+}
+
+.ga-widget-match-table thead th.ga-widget-match-col-time,
+.ga-widget-match-table tbody td.ga-widget-match-time {
+  text-align: right;
+  padding-right: 14px;
+  width: 1%;
+}
+
+.ga-widget-match-table thead th.ga-widget-match-col-result,
+.ga-widget-match-table tbody td:nth-child(2) {
+  text-align: center;
+}
+
+.ga-widget-match-time {
+  font-size: 11px;
+  color: var(--ga-muted);
+  line-height: 1.35;
+}
+
+.ga-widget-match-time-main {
+  display: block;
+  color: rgba(255, 255, 255, 0.82);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ga-widget-match-time-sub {
+  display: block;
+  font-size: 10px;
+  color: var(--ga-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .ga-widget-match-col-wager {
+    display: none;
+  }
+}
+
 .ga-widget-dash-links {
   display: flex;
   flex-wrap: wrap;

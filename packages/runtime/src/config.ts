@@ -31,7 +31,7 @@ export interface RuntimeConfig {
   operatorPrivateKey: `0x${string}` | null;
   /** G$ sent to each new agent play wallet (default 200). */
   agentInitialGs: number;
-  /** CELO sent to each new agent wallet for gas (default 1). */
+  /** CELO sent to each new agent wallet for gas (default 0.5). */
   agentInitialCelo: string;
   apiBase: string;
   rpcUrl: string;
@@ -70,7 +70,7 @@ export function getRuntimeConfig(): RuntimeConfig {
     throw new Error("AGENT_INITIAL_GS must be a non-negative number");
   }
 
-  const agentInitialCelo = process.env.AGENT_INITIAL_CELO?.trim() || "1";
+  const agentInitialCelo = process.env.AGENT_INITIAL_CELO?.trim() || "0.5";
 
   return {
     agentsRoot,

@@ -9,11 +9,11 @@ import {
   formatStatusLabel,
   formatWhen,
   parseConfigSummary,
+  resolvedSkillLabel,
   shortenAddress,
-  skillLabelForDeploy,
   statusTone,
 } from "../lib/agent-display.js";
-import { skillShortLabel } from "../skill-config.js";
+import { useWidget } from "../context.js";
 
 export function AgentDetailPanel({
   deploy,
@@ -22,6 +22,7 @@ export function AgentDetailPanel({
   deploy: DeployAgent;
   onBack?: () => void;
 }) {
+  const { config: widgetConfig } = useWidget();
   const detail = useDeployDetail(deploy.id);
   const status = detail.status;
   const [copied, setCopied] = useState(false);
@@ -29,7 +30,7 @@ export function AgentDetailPanel({
   const online = status?.pm2?.online ?? status?.status === "running";
   const tone = statusTone(status?.status ?? deploy.status, online);
   const skillId = status?.skillId ?? deploy.skills?.[0]?.skillId ?? null;
-  const skillLabel = skillId ? skillShortLabel(skillId) : skillLabelForDeploy(deploy);
+  const skillLabel = resolvedSkillLabel(skillId, deploy, widgetConfig.skillLabel);
   const config = parseConfigSummary(status?.configuration ?? deploy.configuration);
   const highlights = configHighlights(skillId, config);
   const perf = status?.stats?.performance;

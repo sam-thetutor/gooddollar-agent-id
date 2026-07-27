@@ -57,6 +57,22 @@ export interface DeployStatusResponse {
       matchesToday: number;
       netPnLGs?: number;
       playMode?: string;
+      matches?: Array<{
+        matchId: string;
+        gameType?: number;
+        wagerGs: number;
+        result: "won" | "lost" | "unresolved";
+        mode?: "offchain" | "onchain";
+        at: string;
+      }>;
+      recentMatches?: Array<{
+        matchId: string;
+        gameType?: number;
+        wagerGs: number;
+        result: "won" | "lost" | "unresolved";
+        mode?: "offchain" | "onchain";
+        at: string;
+      }>;
     } | null;
     balances?: {
       gDollarFormatted: string;

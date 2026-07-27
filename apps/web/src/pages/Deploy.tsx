@@ -734,7 +734,7 @@ export function Deploy() {
                     </p>
                   ) : selectedSkill?.spends_tokens ? (
                     <p className="muted hint deploy-section-hint">
-                      We fund your agent play wallet with 200 G$ + 1 CELO for
+                      We fund your agent play wallet with 200 G$ + 0.5 CELO for
                       gas. You vouch at /issue and lock a refundable 250 G$
                       bond in AgentVault before it can wager. Set conservative
                       limits below.

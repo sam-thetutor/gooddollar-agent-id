@@ -11,9 +11,12 @@ export default defineConfig({
   ],
   build: {
     lib: {
-      entry: resolve(__dirname, "src/index.ts"),
+      entry: {
+        index: resolve(__dirname, "src/index.ts"),
+        privy: resolve(__dirname, "src/privy.ts"),
+      },
       formats: ["es"],
-      fileName: "index",
+      fileName: (format, entryName) => `${entryName}.js`,
     },
     rollupOptions: {
       external: [

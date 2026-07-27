@@ -9,8 +9,6 @@ import {
   agentAttestationAbi,
 } from "../lib/vault.js";
 import { listAgents, type AgentListItem } from "../lib/api.js";
-import { listDeploysByOwner, type DeployAgent } from "../lib/host.js";
-import { deployAgentNeedsVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
 function shorten(a: string): string {
@@ -31,9 +29,6 @@ export function MyAgents() {
   );
   const { address, isConnected } = useAccount();
   const [agents, setAgents] = useState<AgentListItem[] | null>(null);
-  const [pendingDeploys, setPendingDeploys] = useState<DeployAgent[] | null>(
-    null,
-  );
   const [cap, setCap] = useState<{ active: number; max: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,18 +50,14 @@ export function MyAgents() {
   useEffect(() => {
     if (!isConnected || !address) {
       setAgents(null);
-      setPendingDeploys(null);
       return;
     }
     let cancelled = false;
-    Promise.all([listAgents(address), listDeploysByOwner(address)])
-      .then(([issued, deploys]) => {
+    listAgents(address)
+      .then((issued) => {
         if (cancelled) return;
         setAgents(issued.agents);
         setCap({ active: issued.activeCount, max: issued.maxPerHuman });
-        setPendingDeploys(
-          deploys.agents.filter((d) => deployAgentNeedsVouch(d)),
-        );
         setError(null);
       })
       .catch((err: Error) => !cancelled && setError(err.message));
@@ -76,7 +67,6 @@ export function MyAgents() {
   }, [isConnected, address]);
 
   const hasIssued = agents && agents.length > 0;
-  const hasPending = pendingDeploys && pendingDeploys.length > 0;
 
   return (
     <>
@@ -111,43 +101,7 @@ export function MyAgents() {
         </section>
       )}
 
-      {isConnected && hasPending && (
-        <section className="card deploy-vouch-card">
-          <h2 className="card-title">Awaiting your vouch</h2>
-          <p className="muted hint">
-            These hosted agents are provisioned but not in My Agents until you
-            complete /issue. They appear under{" "}
-            <Link to="/deployments">Deployments</Link> too.
-          </p>
-          <ul className="deploy-pending-vouch-list">
-            {pendingDeploys.map((d) => (
-              <li key={d.id}>
-                <div>
-                  <strong>{d.displayName}</strong>
-                  {d.agentAddress && (
-                    <code className="deploy-pending-agent">{d.agentAddress}</code>
-                  )}
-                </div>
-                <div className="actions">
-                  {d.agentAddress && (
-                    <Link
-                      className="btn btn-primary btn-sm"
-                      to={issueAgentHref(d.agentAddress, d.id)}
-                    >
-                      Vouch at /issue
-                    </Link>
-                  )}
-                  <Link className="btn btn-ghost btn-sm" to={`/deploy?job=${d.id}`}>
-                    Deploy status
-                  </Link>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {isConnected && agents && !hasIssued && !hasPending && (
+      {isConnected && agents && !hasIssued && (
         <section className="card">
           <p className="muted">No Agent IDs yet.</p>
           <div className="actions">

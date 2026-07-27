@@ -42,13 +42,55 @@ export function formatRelative(iso?: string | null): string {
   return `${days}d ago`;
 }
 
+export function formatMatchWhen(iso?: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Short label for GameArena match ids like `am_88d1f6d9…`. */
+export function formatMatchId(matchId: string): string {
+  const bare = matchId.replace(/^am_/, "");
+  if (bare.length <= 8) return bare;
+  return `${bare.slice(0, 6)}…${bare.slice(-2)}`;
+}
+
+export function matchResultLabel(result: string): string {
+  if (result === "won") return "Win";
+  if (result === "lost") return "Loss";
+  return "Pending";
+}
+
 export function skillIdForDeploy(agent: DeployAgent): string | null {
   return agent.skills?.[0]?.skillId ?? null;
 }
 
-export function skillLabelForDeploy(agent: DeployAgent): string {
+export function skillLabelForDeploy(
+  agent: DeployAgent,
+  partnerSkillLabel?: string,
+): string {
   const skillId = skillIdForDeploy(agent);
+  if (partnerSkillLabel && skillId?.includes("gamearena")) {
+    return partnerSkillLabel;
+  }
   return skillId ? skillShortLabel(skillId) : "Agent";
+}
+
+/** Skill title for UI — honors partner `skillLabel` on GameArena embeds. */
+export function resolvedSkillLabel(
+  skillId: string | null | undefined,
+  agent: DeployAgent,
+  partnerSkillLabel?: string,
+): string {
+  if (skillId && partnerSkillLabel && skillId.includes("gamearena")) {
+    return partnerSkillLabel;
+  }
+  if (skillId) return skillShortLabel(skillId);
+  return skillLabelForDeploy(agent, partnerSkillLabel);
 }
 
 export function parseConfigSummary(raw?: string | null): Record<string, string> {

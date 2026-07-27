@@ -15,7 +15,8 @@ import {
   writeEcosystemConfig,
 } from "./provision.js";
 import { pm2ProcessSnapshot } from "./pipeline.js";
-import { deriveAgentPrivateKey } from "./wallet.js";
+import { deriveAgentPrivateKey, readAgentMeta, writeAgentMeta } from "./wallet.js";
+import { GAMEARENA_SKILL_ID } from "./gamearena-pass.js";
 
 export interface DeployAgentRecord {
   id: string;
@@ -105,4 +106,78 @@ export function applyDeployConfiguration(
   }
 
   return { merged, restarted };
+}
+
+/** After on-chain Pass rename: persist meta, rewrite skill env, reload PM2. */
+export function syncAgentAfterPassRename(
+  config: RuntimeConfig,
+  agent: DeployAgentRecord,
+  gamePassUsername: string,
+): { restarted: boolean } {
+  const primary = agent.skills[0];
+  if (!primary) throw new Error("deploy has no skills");
+  if (primary.skillId !== GAMEARENA_SKILL_ID) {
+    throw new Error("syncAgentAfterPassRename requires a GameArena deploy");
+  }
+
+  if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+    throw new Error("agent not provisioned");
+  }
+
+  try {
+    const meta = readAgentMeta(config.agentsRoot, agent.id);
+    writeAgentMeta(config.agentsRoot, {
+      ...meta,
+      displayName: agent.displayName,
+      gamePassUsername,
+      gamePassRegisteredAt: new Date().toISOString(),
+    });
+  } catch {
+    // meta.json missing on partial deploy — env sync still helps.
+  }
+
+  const merged = mergeDeployConfiguration(agent.configuration, {});
+  const folder = skillFolderFromRegistryPath(primary.registryPath);
+  const skillDir = skillInstallDir(config.agentsRoot, agent.id, folder);
+  if (!existsSync(resolve(skillDir, "package.json"))) {
+    throw new Error(`skill not installed at ${skillDir}`);
+  }
+
+  const agentPrivateKey = deriveAgentPrivateKey(
+    config.deployMnemonic,
+    agent.walletDerivationIndex,
+  );
+
+  const skillEnv = buildSkillEnv(primary.skillId, {
+    deployId: agent.id,
+    agentAddress: agent.agentAddress as Address,
+    agentPrivateKey,
+    rpcUrl: config.rpcUrl,
+    displayName: agent.displayName,
+    config: { ...merged, PLAYER_NAME: gamePassUsername },
+    apiBase: config.apiBase,
+  });
+
+  const envWithPass = {
+    ...skillEnv,
+    PLAYER_NAME: gamePassUsername,
+    GAME_PASS_USERNAME: gamePassUsername,
+  };
+
+  writeSkillEnv(skillDir, envWithPass);
+  const ecosystemPath = writeEcosystemConfig(config, {
+    deployId: agent.id,
+    skillDir,
+    env: envWithPass,
+  });
+
+  const pm2Name = pm2ProcessName(agent.id);
+  const snap = pm2ProcessSnapshot(pm2Name);
+  let restarted = false;
+  if (snap?.online) {
+    pm2ReloadEcosystem(ecosystemPath, pm2Name);
+    restarted = true;
+  }
+
+  return { restarted };
 }
