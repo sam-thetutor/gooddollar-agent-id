@@ -14,6 +14,7 @@
  * ```
  */
 
+export { GoodAgentWidget } from "./components/GoodAgentWidget.js";
 export { SkillPicker } from "./components/SkillPicker.js";
 export { useSkillRegistry } from "./hooks/useSkillRegistry.js";
 export { DeploySessionProvider, useDeploySession } from "./deploy-session.js";
