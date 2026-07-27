@@ -1,12 +1,16 @@
 import type { ReactNode } from "react";
+import { useEffect, useMemo } from "react";
 import { useDeployFlow } from "../hooks/useDeployFlow.js";
+import { useSkillRegistry } from "../hooks/useSkillRegistry.js";
 import { useWidget } from "../context.js";
+import { useDeploySession } from "../deploy-session.js";
 import { isDeployProvisioning } from "../lib/deploy-progress.js";
 import {
   deployHintForSkill,
   skillShortLabel,
 } from "../skill-config.js";
 import { SkillConfigFields } from "./SkillConfigFields.js";
+import { SkillPicker } from "./SkillPicker.js";
 import { DeployProgressLoader } from "./DeployProgressLoader.js";
 import type { DeployStatusResponse } from "../client/host.js";
 
@@ -34,6 +38,14 @@ export function DeployPanel({
   }) => ReactNode;
 }) {
   const { config } = useWidget();
+  const { selectedSkillId, setSelectedSkillId, marketplace } =
+    useDeploySession();
+  const {
+    skills,
+    loading: registryLoading,
+    error: registryError,
+  } = useSkillRegistry(config.registryUrl, config.allowedSkillIds);
+
   const flow = useDeployFlow({
     deployId: initialDeployId,
     onDeployId,
@@ -45,17 +57,52 @@ export function DeployPanel({
 
   const step = flow.status?.status ?? (flow.deployId ? "provisioning" : "idle");
   const provisioning = isDeployProvisioning(flow.status, flow.deployId);
-  const skillLabel =
-    config.skillLabel ?? skillShortLabel(flow.skillId);
-  const hint = config.deployHint ?? deployHintForSkill(flow.skillId);
+
+  useEffect(() => {
+    if (!marketplace || skills.length === 0) return;
+    if (!skills.some((s) => s.skill_id === selectedSkillId)) {
+      setSelectedSkillId(skills[0]!.skill_id);
+    }
+  }, [marketplace, skills, selectedSkillId, setSelectedSkillId]);
+
+  const selectedEntry = useMemo(
+    () => skills.find((s) => s.skill_id === flow.skillId),
+    [skills, flow.skillId],
+  );
+
+  const skillLabel = marketplace
+    ? (selectedEntry?.name ?? skillShortLabel(flow.skillId))
+    : (config.skillLabel ?? skillShortLabel(flow.skillId));
+  const hint = marketplace
+    ? deployHintForSkill(flow.skillId)
+    : (config.deployHint ?? deployHintForSkill(flow.skillId));
+
+  const deployTitle = marketplace
+    ? `Deploy ${skillLabel}`
+    : `Deploy ${skillLabel} agent`;
 
   return (
     <div className="ga-widget-section">
-      <h3 className="ga-widget-title">Deploy {skillLabel} agent</h3>
+      <h3 className="ga-widget-title">{deployTitle}</h3>
       <p className="ga-widget-muted">{hint}</p>
 
       {!flow.deployId && (
         <>
+          {marketplace && registryLoading && (
+            <p className="ga-widget-muted">Loading skills…</p>
+          )}
+          {marketplace && registryError && (
+            <p className="ga-widget-error">{registryError}</p>
+          )}
+          {marketplace && !registryLoading && skills.length > 0 && (
+            <SkillPicker
+              skills={skills}
+              selectedSkillId={selectedSkillId}
+              onSelect={setSelectedSkillId}
+              disabled={flow.busy}
+            />
+          )}
+
           <label className="ga-widget-field">
             <span>Agent name</span>
             <input
@@ -88,7 +135,11 @@ export function DeployPanel({
           <button
             type="button"
             className="ga-widget-btn ga-widget-btn-primary"
-            disabled={flow.busy || !flow.canDeploy}
+            disabled={
+              flow.busy ||
+              !flow.canDeploy ||
+              (marketplace && registryLoading)
+            }
             onClick={() => void flow.deploy()}
           >
             {flow.busy ? "Deploying…" : "Deploy agent"}

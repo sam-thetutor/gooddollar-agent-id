@@ -1397,3 +1397,77 @@
     grid-column: auto;
   }
 }
+
+/* Marketplace skill picker */
+.ga-widget-skill-picker {
+  margin-bottom: 16px;
+}
+
+.ga-widget-skill-picker-lead {
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.ga-widget-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.ga-widget-skill-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+  padding: 12px;
+  border: 1px solid var(--ga-border);
+  border-radius: 10px;
+  background: var(--ga-surface);
+  color: var(--ga-text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.ga-widget-skill-card:hover:not(:disabled) {
+  border-color: var(--ga-primary);
+}
+
+.ga-widget-skill-card-selected {
+  border-color: var(--ga-primary);
+  background: color-mix(in srgb, var(--ga-primary) 12%, var(--ga-surface));
+}
+
+.ga-widget-skill-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ga-widget-skill-card-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ga-widget-skill-card-id {
+  font-size: 11px;
+  color: var(--ga-muted);
+  font-family: ui-monospace, monospace;
+}
+
+.ga-widget-skill-card-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ga-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ga-widget-skill-card-game {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ga-primary);
+  font-weight: 600;
+}

@@ -67,9 +67,28 @@ On **Deploy**, users name their agent and tune bot settings (strategy, match cap
 
 Use **`createGameArenaWidgetConfig({ partnerId })`** for GameArena offchain MARKOV agents.
 
-Use **`createGoodAgentWidgetConfig(skillId, { partnerId })`** for any other skill.
+Use **`createGoodAgentWidgetConfig(skillId, { partnerId })`** for a **single fixed skill**.
+
+Use **`createMarketplaceWidgetConfig({ partnerId })`** for a **multi-skill embed** — users pick any listed skill from the registry (optional `allowedSkillIds` whitelist).
 
 Use **`resolveWidgetConfig({ ... })`** if you build config objects yourself.
+
+```tsx
+import {
+  GoodAgentWidget,
+  createMarketplaceWidgetConfig,
+  createWalletAdapterFromHooks,
+} from "@goodagent/widget";
+
+<GoodAgentWidget
+  mode="full"
+  wallet={wallet}
+  config={createMarketplaceWidgetConfig({
+    partnerId: "your-site",
+    // allowedSkillIds: ["gaming/wagering/gamearena_1v1"], // optional filter
+  })}
+/>;
+```
 
 ---
 

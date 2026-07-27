@@ -3,6 +3,7 @@ import { WidgetProvider, useWidget } from "../context.js";
 import { deployNeedsUserVouch } from "../client/host.js";
 import type { DeployStatusResponse } from "../client/host.js";
 import { resolveWidgetConfig } from "../defaults.js";
+import { DeploySessionProvider } from "../deploy-session.js";
 import { useDeployFlow } from "../hooks/useDeployFlow.js";
 import { useOwnerDeploys } from "../hooks/useOwnerDeploys.js";
 import { parseFvCallback } from "../gooddollar.js";
@@ -365,7 +366,9 @@ export function GoodAgentWidget({
 
   return (
     <WidgetProvider config={resolved} wallet={wallet}>
-      <GoodAgentWidgetBody {...rest} />
+      <DeploySessionProvider config={resolved}>
+        <GoodAgentWidgetBody {...rest} />
+      </DeploySessionProvider>
     </WidgetProvider>
   );
 }

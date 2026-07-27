@@ -18,6 +18,7 @@ import type {
   GoodAgentWidgetConfig,
   GoodAgentWidgetPartnerConfig,
   SkillConfiguration,
+  SkillSelectionMode,
 } from "./types.js";
 
 export {
@@ -39,8 +40,21 @@ export const DEFAULT_STATUS_POLL_MS = 4000;
 export function resolveWidgetConfig(
   input: GoodAgentWidgetPartnerConfig,
 ): GoodAgentWidgetConfig {
+  const skillSelection: SkillSelectionMode =
+    input.skillSelection ?? "fixed";
+  if (skillSelection === "fixed" && !input.skillId) {
+    throw new Error(
+      "GoodAgent widget: skillId is required when skillSelection is fixed",
+    );
+  }
+  const skillId =
+    input.skillId ??
+    input.defaultSkillId ??
+    input.allowedSkillIds?.[0] ??
+    GAMEARENA_SKILL_ID;
+
   const skillConfiguration: SkillConfiguration = {
-    ...defaultConfigForSkill(input.skillId),
+    ...defaultConfigForSkill(skillId),
     ...input.skillConfiguration,
   };
 
@@ -48,15 +62,18 @@ export function resolveWidgetConfig(
     hostBaseUrl: input.hostBaseUrl ?? DEFAULT_WIDGET_API.hostBaseUrl,
     apiBaseUrl: input.apiBaseUrl ?? DEFAULT_WIDGET_API.apiBaseUrl,
     rpcUrl: input.rpcUrl ?? DEFAULT_WIDGET_RPC,
-    skillId: input.skillId,
+    skillSelection,
+    allowedSkillIds: input.allowedSkillIds,
+    defaultSkillId: input.defaultSkillId ?? skillId,
+    skillId,
     skillConfiguration,
     defaultDisplayName:
-      input.defaultDisplayName ?? defaultDisplayNameForSkill(input.skillId),
+      input.defaultDisplayName ?? defaultDisplayNameForSkill(skillId),
     deployTemplate:
-      input.deployTemplate ?? deployTemplateForSkill(input.skillId),
+      input.deployTemplate ?? deployTemplateForSkill(skillId),
     hideSkillConfig: input.hideSkillConfig ?? false,
-    deployHint: input.deployHint ?? deployHintForSkill(input.skillId),
-    skillLabel: input.skillLabel ?? skillShortLabel(input.skillId),
+    deployHint: input.deployHint ?? deployHintForSkill(skillId),
+    skillLabel: input.skillLabel ?? skillShortLabel(skillId),
     partnerId: input.partnerId,
     telegramBotToken: input.telegramBotToken,
     vaultAddress: input.vaultAddress ?? AGENT_VAULT_ADDRESS,
@@ -109,5 +126,33 @@ export function createGameArenaWidgetConfig(
       GAME_TYPE: "0",
       ...opts.skillConfiguration,
     },
+  });
+}
+
+/** Multi-skill embed — user picks any listed skill from the registry (optionally filtered). */
+export function createMarketplaceWidgetConfig(opts: {
+  partnerId: string;
+  allowedSkillIds?: string[];
+  defaultSkillId?: string;
+  defaultDisplayName?: string;
+  fvCallbackUrl?: string;
+  hideSkillConfig?: boolean;
+  deployHint?: string;
+  skillLabel?: string;
+  registryUrl?: string;
+  skillConfiguration?: SkillConfiguration;
+}): GoodAgentWidgetConfig {
+  return resolveWidgetConfig({
+    skillSelection: "marketplace",
+    partnerId: opts.partnerId,
+    allowedSkillIds: opts.allowedSkillIds,
+    defaultSkillId: opts.defaultSkillId,
+    defaultDisplayName: opts.defaultDisplayName,
+    hideSkillConfig: opts.hideSkillConfig,
+    deployHint: opts.deployHint,
+    skillLabel: opts.skillLabel,
+    fvCallbackUrl: opts.fvCallbackUrl,
+    registryUrl: opts.registryUrl,
+    skillConfiguration: opts.skillConfiguration,
   });
 }

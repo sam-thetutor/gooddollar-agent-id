@@ -26,13 +26,21 @@ export interface GoodAgentWalletAdapter {
 
 export type SkillConfiguration = Record<string, string>;
 
+export type SkillSelectionMode = "fixed" | "marketplace";
+
 /**
  * Partner-facing config — only pass what varies for your embed.
  * Static GoodAgent URLs, RPC, vault, registry, and skill defaults are filled in automatically.
  */
 export interface GoodAgentWidgetPartnerConfig {
-  /** Skill from https://goodagentids.xyz/skills */
-  skillId: string;
+  /** Skill from https://goodagentids.xyz/skills — required when skillSelection is `fixed` (default). */
+  skillId?: string;
+  /** `fixed` = single skill (default). `marketplace` = user picks from registry. */
+  skillSelection?: SkillSelectionMode;
+  /** When marketplace: limit which registry skills appear (omit = all listed). */
+  allowedSkillIds?: string[];
+  /** When marketplace: initial skill in the picker and deploy form. */
+  defaultSkillId?: string;
   /** Your project slug for deploy attribution. */
   partnerId?: string;
   /** Overrides merged onto built-in skill defaults (PLAY_MODE, strategy, caps, …). */
@@ -60,6 +68,9 @@ export interface GoodAgentWidgetConfig {
   hostBaseUrl: string;
   apiBaseUrl: string;
   rpcUrl: string;
+  skillSelection: SkillSelectionMode;
+  allowedSkillIds?: string[];
+  defaultSkillId?: string;
   skillId: string;
   skillConfiguration: SkillConfiguration;
   defaultDisplayName: string;

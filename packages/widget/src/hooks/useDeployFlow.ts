@@ -5,6 +5,7 @@ import {
   type DeployStatusResponse,
 } from "../client/host.js";
 import { useWidget } from "../context.js";
+import { useActiveDeploySkillId } from "../deploy-session.js";
 import {
   defaultConfigForSkill,
   defaultDisplayNameForSkill,
@@ -21,7 +22,7 @@ export function useDeployFlow(opts?: {
   onStatusChange?: (status: DeployStatusResponse | null) => void;
 }) {
   const { config, wallet, host } = useWidget();
-  const skillId = config.skillId;
+  const skillId = useActiveDeploySkillId(config);
 
   const [deployId, setDeployId] = useState(opts?.deployId ?? "");
   const [displayName, setDisplayName] = useState(
@@ -65,7 +66,12 @@ export function useDeployFlow(opts?: {
       );
     }
     setTelegramBotToken(config.telegramBotToken ?? "");
-  }, [skillId, config.defaultDisplayName, config.telegramBotToken]);
+  }, [
+    skillId,
+    config.defaultDisplayName,
+    config.telegramBotToken,
+    config.skillConfiguration,
+  ]);
 
   useEffect(() => {
     onStatusChangeRef.current?.(status);

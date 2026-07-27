@@ -14,7 +14,9 @@
  * ```
  */
 
-export { GoodAgentWidget } from "./components/GoodAgentWidget.js";
+export { SkillPicker } from "./components/SkillPicker.js";
+export { useSkillRegistry } from "./hooks/useSkillRegistry.js";
+export { DeploySessionProvider, useDeploySession } from "./deploy-session.js";
 export { DeployPanel } from "./components/DeployPanel.js";
 export { VouchPanel } from "./components/VouchPanel.js";
 export { AgentDetailPanel } from "./components/AgentDetailPanel.js";
@@ -63,6 +65,7 @@ export type { RegistrySkillEntry, SkillRegistry } from "./skill-registry.js";
 export {
   createGoodAgentWidgetConfig,
   createGameArenaWidgetConfig,
+  createMarketplaceWidgetConfig,
   resolveWidgetConfig,
   DEFAULT_WIDGET_API,
   DEFAULT_WIDGET_RPC,
@@ -78,6 +81,7 @@ export type {
   GoodAgentWidgetMode,
   GoodAgentWalletAdapter,
   SkillConfiguration,
+  SkillSelectionMode,
 } from "./types.js";
 
 export {
