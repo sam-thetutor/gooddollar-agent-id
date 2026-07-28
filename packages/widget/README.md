@@ -1,151 +1,97 @@
 # @goodagent/widget
 
-Embeddable GoodAgent UI for **any listed skill** on [goodagentids.xyz/skills](https://goodagentids.xyz/skills). Partners embed deploy → vouch → dashboard on their site using the **user’s wallet** — no private key export.
+React embed for **GoodAgent**: your users connect a wallet on **your site**, pick a skill (or use a preset), **deploy** a hosted bot, **vouch** (GoodDollar + G$ bond + Agent ID), and **monitor** it — without exporting keys.
 
-**Latest:** `@goodagent/widget@0.1.12` (npm)  
-**Backend:** `https://goodagentids.xyz/host` + `https://goodagentids.xyz/api` (hosted by GoodAgent — you do not run this yourself)
+| | |
+|---|---|
+| **npm** | `@goodagent/widget@0.2.0` |
+| **Skills catalog** | [goodagentids.xyz/skills](https://goodagentids.xyz/skills) |
+| **Hosted backend** | `https://goodagentids.xyz/host` + `/api` (you do not run agents yourself) |
+| **GameArena deep-dive** | [GAMEARENA_INTEGRATION.md](./GAMEARENA_INTEGRATION.md) |
 
-**Partner guide:** [GameArena integration](./GAMEARENA_INTEGRATION.md)
-
----
-
-## What’s new in 0.1.12
-
-- **Dashboard command deck** — agent dropdown, Live/Stop/Start bar, stats ribbon first, inline status + links
-- **Dashboard settings** — edit agent name and strategy/caps after deploy (Settings drawer, 2×2 grid)
-- **Deploy progress** — horizontal loader with step labels; owner list refreshes without page reload
-- **Verify tab** — compact horizontal steps; agent picker dropdown
-- **Tab flow** — auto-switch to Verify after deploy; no more Dashboard hijack while monitoring
+Install with **`npm install --legacy-peer-deps`** if React 19 peer resolution conflicts with your app.
 
 ---
 
-## Quick start (GameArena)
+## Choose an integration style
+
+| Style | Config helper | Best for |
+|--------|---------------|----------|
+| **Marketplace (recommended)** | `createMarketplaceWidgetConfig` | Partner sites where users **choose any listed skill** (Agent Haus, dashboards, hubs) |
+| **Single skill** | `createGoodAgentWidgetConfig(skillId, …)` | One skill only (e.g. Action Order partner page) |
+| **GameArena preset** | `createGameArenaWidgetConfig` | GameArena MARKOV defaults locked in; optional `hideSkillConfig` |
+
+All helpers take **`partnerId`** (your project slug for deploy attribution). URLs, RPC, vault, and registry defaults are filled in automatically.
+
+---
+
+## Quick start — marketplace (all skills)
+
+Users see a **skill picker** on the Deploy tab, then name + settings, then deploy → verify → dashboard.
 
 ```bash
-pnpm add @goodagent/widget@0.1.12 react react-dom
+npm install @goodagent/widget@0.2.0 react react-dom wagmi viem @tanstack/react-query --legacy-peer-deps
 ```
 
 ```tsx
 "use client";
 
-import {
-  GoodAgentWidget,
-  createGameArenaWidgetConfig,
-  usePrivyWalletAdapter,
-} from "@goodagent/widget";
-import "@goodagent/widget/styles.css";
-
-export default function AgentsPage() {
-  const wallet = usePrivyWalletAdapter({ preferExternal: true });
-
-  return (
-    <GoodAgentWidget
-      mode="full"
-      wallet={wallet}
-      config={createGameArenaWidgetConfig({ partnerId: "your-project-slug" })}
-    />
-  );
-}
-```
-
-That’s it. You pass **`partnerId`** only. GoodAgent fills in API URLs, RPC, vault, registry, skill defaults, and the face-verify callback.
-
-On **Deploy**, users name their agent and tune bot settings (strategy, match caps, interval). See [GameArena guide](./GAMEARENA_INTEGRATION.md) for details.
-
----
-
-## What you configure vs what is automatic
-
-| You pass (varies) | Filled in automatically |
-|-------------------|-------------------------|
-| `partnerId` | `hostBaseUrl` → `https://goodagentids.xyz/host` |
-| `skillId` (or use GameArena preset) | `apiBaseUrl` → `https://goodagentids.xyz/api` |
-| Optional `skillConfiguration` overrides | `rpcUrl`, `vaultAddress`, `registryUrl` |
-| Optional `fvCallbackUrl` | Base skill env from registry |
-| Optional `hideSkillConfig: true` to lock settings | `deployTemplate`, labels, hints, `goodDollarEnv` |
-| Wallet adapter (Privy / wagmi) | `fvCallbackUrl` → current page URL in browser |
-
-Use **`createGameArenaWidgetConfig({ partnerId })`** for GameArena offchain MARKOV agents.
-
-Use **`createGoodAgentWidgetConfig(skillId, { partnerId })`** for a **single fixed skill**.
-
-Use **`createMarketplaceWidgetConfig({ partnerId })`** for a **multi-skill embed** — users pick any listed skill from the registry (optional `allowedSkillIds` whitelist).
-
-Use **`resolveWidgetConfig({ ... })`** if you build config objects yourself.
-
-```tsx
+import { useMemo } from "react";
+import { useAccount, useSignMessage, useSignTypedData, useWriteContract } from "wagmi";
 import {
   GoodAgentWidget,
   createMarketplaceWidgetConfig,
   createWalletAdapterFromHooks,
 } from "@goodagent/widget";
+import "@goodagent/widget/styles.css";
 
-<GoodAgentWidget
-  mode="full"
-  wallet={wallet}
-  config={createMarketplaceWidgetConfig({
-    partnerId: "your-site",
-    // allowedSkillIds: ["gaming/wagering/gamearena_1v1"], // optional filter
-  })}
-/>;
+export function GoodAgentEmbed() {
+  const { address, isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
+  const { signTypedDataAsync } = useSignTypedData();
+  const { writeContractAsync } = useWriteContract();
+
+  const wallet = useMemo(
+    () =>
+      createWalletAdapterFromHooks({
+        address,
+        isConnected,
+        connect: async () => {
+          /* open your Connect modal */
+        },
+        signMessageAsync,
+        signTypedDataAsync,
+        writeContractAsync,
+      }),
+    [address, isConnected, signMessageAsync, signTypedDataAsync, writeContractAsync],
+  );
+
+  const config = useMemo(
+    () =>
+      createMarketplaceWidgetConfig({
+        partnerId: "your-site-slug",
+        fvCallbackUrl:
+          typeof window !== "undefined"
+            ? `${window.location.origin}/agents`
+            : undefined,
+        // Optional: only show some skills
+        // allowedSkillIds: ["gaming/wagering/gamearena_1v1"],
+        // defaultSkillId: "gaming/wagering/gamearena_1v1",
+      }),
+    [],
+  );
+
+  return (
+    <GoodAgentWidget mode="full" wallet={wallet} config={config} />
+  );
+}
 ```
+
+**Next.js:** add `transpilePackages: ["@goodagent/widget"]` in `next.config`.
 
 ---
 
-## Step-by-step integration
-
-### 1. Prerequisites
-
-| Requirement | Notes |
-|-------------|--------|
-| **React 18+** | `react`, `react-dom` as peers |
-| **Celo wallet** | User signs deploy, vouch, pause/resume |
-| **Embed page** | e.g. `/agents` |
-
-Wallet stack (pick one):
-
-- **Privy** — `@privy-io/react-auth` + `<PrivyProvider>` on Celo
-- **wagmi** — `wagmi` + `viem` + `<WagmiProvider>`
-
----
-
-### 2. Install
-
-```bash
-pnpm add @goodagent/widget react react-dom
-
-# Privy sites:
-pnpm add @privy-io/react-auth
-
-# wagmi sites:
-pnpm add wagmi viem @tanstack/react-query
-```
-
----
-
-### 3. Wallet adapter
-
-**Privy:**
-
-```tsx
-import { usePrivyWalletAdapter } from "@goodagent/widget";
-
-const wallet = usePrivyWalletAdapter({ preferExternal: true });
-```
-
-**wagmi:**
-
-```tsx
-import { createWalletAdapterFromHooks } from "@goodagent/widget";
-// wire useAccount, useSignMessage, useSignTypedData, useWriteContract, …
-const wallet = createWalletAdapterFromHooks({ ...hooks });
-```
-
----
-
-### 4. Render the widget
-
-**GameArena preset** (recommended for gamearenahq.xyz partners):
+## Quick start — GameArena only (preset)
 
 ```tsx
 import {
@@ -159,15 +105,42 @@ import "@goodagent/widget/styles.css";
   wallet={wallet}
   config={createGameArenaWidgetConfig({
     partnerId: "gamearena",
-    fvCallbackUrl:
-      typeof window !== "undefined"
-        ? `${window.location.origin}/agents`
-        : undefined,
+    skillLabel: "GoodAgent", // optional display copy
   })}
 />
 ```
 
-**Any skill:**
+---
+
+## Quick start — Privy apps
+
+Privy helpers live on a **separate entry** so wagmi-only apps do not need `@privy-io/react-auth`:
+
+```bash
+npm install @goodagent/widget @privy-io/react-auth --legacy-peer-deps
+```
+
+```tsx
+import { GoodAgentWidget, createMarketplaceWidgetConfig } from "@goodagent/widget";
+import { usePrivyWalletAdapter } from "@goodagent/widget/privy";
+import "@goodagent/widget/styles.css";
+
+export function AgentsPage() {
+  const wallet = usePrivyWalletAdapter({ preferExternal: true });
+
+  return (
+    <GoodAgentWidget
+      mode="full"
+      wallet={wallet}
+      config={createMarketplaceWidgetConfig({ partnerId: "your-site" })}
+    />
+  );
+}
+```
+
+---
+
+## Quick start — single skill (no picker)
 
 ```tsx
 import {
@@ -177,6 +150,7 @@ import {
 } from "@goodagent/widget";
 
 <GoodAgentWidget
+  mode="full"
   wallet={wallet}
   config={createGoodAgentWidgetConfig(ACTIONORDER_SKILL_ID, {
     partnerId: "action-order",
@@ -184,82 +158,49 @@ import {
 />
 ```
 
-**Raw partner config** (same as above, explicit skill id):
+---
 
-```tsx
-<GoodAgentWidget
-  wallet={wallet}
-  config={{
-    skillId: "gaming/wagering/gamearena_1v1",
-    partnerId: "my-app",
-  }}
-/>
+## User flow (all modes)
+
+```text
+Deploy  →  Verify  →  Dashboard
+  │           │            │
+  │           │            └─ Stop/Start, stats, settings, match history
+  │           └─ GoodDollar face verify, G$ bond, Agent ID (owner wallet signs)
+  └─ Name agent, skill config, provision on GoodAgent servers
 ```
+
+| `mode` prop | Tabs shown |
+|-------------|------------|
+| `"full"` | Deploy + Verify + Dashboard (default) |
+| `"deploy"` | Deploy only |
+| `"vouch"` | Verify only |
+| `"dashboard"` | Dashboard only |
 
 ---
 
-### 5. What users do on Deploy
+## Config reference
 
-**GameArena (default):** settings form is **shown**. Users configure:
+### `createMarketplaceWidgetConfig(options)`
 
-| Field | Purpose |
-|-------|---------|
-| Agent name | Becomes GameArena Pass username on-chain (sanitized) |
-| Strategy vs MARKOV | random / sequence / fixed / counter |
-| Daily match cap | Max matches per UTC day |
-| Max matches per run | Matches before idle |
-| Pause between matches | Seconds between games |
-| Play mode | Default offchain (free tickets) |
+| Option | Description |
+|--------|-------------|
+| `partnerId` | **Required.** Referrer on deploy records. |
+| `allowedSkillIds` | Optional whitelist of registry `skill_id` values. Omit = **all listed skills**. |
+| `defaultSkillId` | Initial skill in picker + form. |
+| `fvCallbackUrl` | GoodDollar return URL after face verify. Default: current page in browser. |
+| `registryUrl` | Override skills JSON (default: GoodAgent public registry). |
+| `hideSkillConfig` | Hide tuning form (rare for marketplace). |
 
-To hide the form and lock defaults (name-only deploy):
+### `createGameArenaWidgetConfig` / `createGoodAgentWidgetConfig`
 
-```tsx
-createGameArenaWidgetConfig({
-  partnerId: "gamearena",
-  hideSkillConfig: true,
-})
-```
-
----
-
-### 6. User flow
-
-1. **Deploy** — name + tune settings → deploy → sign pipeline if prompted  
-2. **Verify** — GoodDollar face verify → G$ bond → Agent ID  
-3. **Dashboard** — pick agent from dropdown → stats, Stop/Start, Settings (name + strategy)  
-
-```bash
-curl https://goodagentids.xyz/host/health
-```
-
----
-
-## Config helpers
-
-| Helper | Use when |
-|--------|----------|
-| `createGameArenaWidgetConfig({ partnerId })` | GameArena offchain MARKOV embed |
-| `createGoodAgentWidgetConfig(skillId, { partnerId })` | Any skill from registry |
-| `resolveWidgetConfig({ skillId, partnerId, … })` | Building config programmatically |
-
-### Partner config (`GoodAgentWidgetPartnerConfig`)
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `skillId` | yes* | *Omitted when using `createGameArenaWidgetConfig` |
-| `partnerId` | recommended | Stored as deploy referrer |
-| `skillConfiguration` | no | Merged onto skill defaults |
-| `defaultDisplayName` | no | Prefilled agent name |
-| `hideSkillConfig` | no | `true` = hide tuning form (default **false** for GameArena preset) |
-| `deployHint` / `skillLabel` | no | Custom UI copy |
-| `telegramBotToken` | no | Required for UBI reminder skill |
-| `fvCallbackUrl` | no | GoodDollar return URL (current page if omitted) |
-| `hostBaseUrl` / `apiBaseUrl` | no | Self-host only |
+See [GAMEARENA_INTEGRATION.md](./GAMEARENA_INTEGRATION.md) for GameArena fields (strategy, caps, play mode).  
+Single-skill configs accept the same optional overrides: `defaultDisplayName`, `deployHint`, `skillLabel`, `skillConfiguration`, `telegramBotToken` (UBI reminder).
 
 ### Skill id constants
 
-| Export | Skill id |
-|--------|----------|
+| Export | Registry id |
+|--------|-------------|
 | `GAMEARENA_SKILL_ID` | `gaming/wagering/gamearena_1v1` |
 | `ACTIONORDER_SKILL_ID` | `gaming/card-fighter/actionorder_vshouse` |
 | `UBI_REMINDER_SKILL_ID` | `social/reminder/ubi_claim_reminder` |
@@ -267,28 +208,24 @@ curl https://goodagentids.xyz/host/health
 
 ---
 
-## Widget modes
+## Styling
 
-| `mode` | Shows |
-|--------|--------|
-| `"full"` | Deploy → Verify → Dashboard |
-| `"deploy"` | Deploy only |
-| `"vouch"` | Vouch only |
-| `"dashboard"` | Dashboard only |
+```tsx
+import "@goodagent/widget/styles.css";
+```
+
+Wrap the widget and override CSS variables under a parent class (see Agent Haus `goodagent-embed` pattern): `--ga-bg`, `--ga-primary`, `--ga-border`, etc.
 
 ---
 
-## Exports
+## What's new in 0.2.0
 
-**Components:** `GoodAgentWidget`, `DeployPanel`, `VouchPanel`, `DashboardPanel`
+- **`createMarketplaceWidgetConfig`** — multi-skill embed with registry **skill picker**
+- **`skillSelection: "marketplace" | "fixed"`** — backward-compatible single-skill presets
+- **Privy split** — import `@goodagent/widget/privy` so main bundle works without Privy installed
+- **Partner `skillLabel`** — custom deploy/dashboard copy (e.g. brand as “GoodAgent”)
 
-**Config:** `createGameArenaWidgetConfig`, `createGoodAgentWidgetConfig`, `resolveWidgetConfig`, `DEFAULT_WIDGET_API`
-
-**Wallet:** `usePrivyWalletAdapter`, `createWalletAdapterFromHooks`, `createWalletAdapterFromPrivy`
-
-**Headless:** `createHostClient`, `createApiClient`, `fetchSkillRegistry`, `signDeployControl`
-
-**Types:** `GoodAgentWidgetPartnerConfig`, `GoodAgentWidgetConfig`, `GoodAgentWalletAdapter`
+0.1.x dashboard improvements (command deck, deploy progress, verify tab) are included.
 
 ---
 
@@ -296,20 +233,27 @@ curl https://goodagentids.xyz/host/health
 
 | Issue | Fix |
 |-------|-----|
-| Unstyled widget | `import "@goodagent/widget/styles.css"` |
-| Signing hangs (MetaMask) | `usePrivyWalletAdapter({ preferExternal: true })` or wagmi adapter |
-| Deploy stuck provisioning | Progress bar + lite polling; user signs pipeline start; check `/host/health` |
-| Dashboard empty / stale | Agent dropdown; tab refresh on open; complete Verify first |
-| Name save 404 | Host must expose `POST /deploy/:id/display-name` (GoodAgent production deploy) |
-| Verify redirect fails | Set `fvCallbackUrl` to your agents page URL |
-| Dashboard slow | Host serves lite status first; full stats follow |
+| Unstyled UI | Import `@goodagent/widget/styles.css` |
+| `Can't resolve '@privy-io/react-auth'` | Use wagmi adapter **or** import Privy from `@goodagent/widget/privy` only |
+| React 19 install conflicts | `npm install --legacy-peer-deps` |
+| Skill list empty / error | Registry fetch blocked? Check network; optional custom `registryUrl` |
+| Deploy stuck | User must sign pipeline; check `curl https://goodagentids.xyz/host/health` |
+| Verify redirect | Set `fvCallbackUrl` to your embed page |
+
+---
+
+## Exports (summary)
+
+- **UI:** `GoodAgentWidget`, `DeployPanel`, `VouchPanel`, `DashboardPanel`, `SkillPicker`
+- **Config:** `createMarketplaceWidgetConfig`, `createGameArenaWidgetConfig`, `createGoodAgentWidgetConfig`, `resolveWidgetConfig`
+- **Wallet:** `createWalletAdapterFromHooks` · Privy: `@goodagent/widget/privy`
+- **Headless:** `createHostClient`, `fetchSkillRegistry`, `useSkillRegistry`, `signDeployControl`
 
 ---
 
 ## Links
 
-- [npm package](https://www.npmjs.com/package/@goodagent/widget)
-- [Skills registry](https://goodagentids.xyz/skills)
-- [Agent explorer](https://goodagentids.xyz/explore)
-- [GameArena partner guide](./GAMEARENA_INTEGRATION.md)
-- [For agents / verify API](https://goodagentids.xyz/for-agents)
+- [npm](https://www.npmjs.com/package/@goodagent/widget)
+- [Skills registry (site)](https://goodagentids.xyz/skills)
+- [Explorer](https://goodagentids.xyz/explore)
+- [Agent verify API](https://goodagentids.xyz/for-agents)

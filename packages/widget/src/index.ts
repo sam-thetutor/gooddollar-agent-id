@@ -1,10 +1,21 @@
 /**
  * @goodagent/widget — embeddable deploy / vouch / dashboard for partner sites.
  *
- * @example
+ * @example Marketplace (users pick a skill)
+ * ```tsx
+ * import { GoodAgentWidget, createMarketplaceWidgetConfig } from "@goodagent/widget";
+ * import "@goodagent/widget/styles.css";
+ *
+ * <GoodAgentWidget
+ *   config={createMarketplaceWidgetConfig({ partnerId: "your-site" })}
+ *   wallet={wallet}
+ *   mode="full"
+ * />
+ * ```
+ *
+ * @example GameArena preset
  * ```tsx
  * import { GoodAgentWidget, createGameArenaWidgetConfig } from "@goodagent/widget";
- * import "@goodagent/widget/styles.css";
  *
  * <GoodAgentWidget
  *   config={createGameArenaWidgetConfig({ partnerId: "gamearena" })}

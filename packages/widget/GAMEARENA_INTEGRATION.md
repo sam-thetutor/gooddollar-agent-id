@@ -82,7 +82,7 @@ import {
   GoodAgentWidget,
   createGameArenaWidgetConfig,
   usePrivyWalletAdapter,
-} from "@goodagent/widget";
+} from "@goodagent/widget/privy";
 import "@goodagent/widget/styles.css";
 
 export function GameArenaAgentsPanel() {
@@ -151,7 +151,7 @@ import {
   GoodAgentWidget,
   createGameArenaWidgetConfig,
   usePrivyWalletAdapter,
-} from "@goodagent/widget";
+} from "@goodagent/widget/privy";
 import "@goodagent/widget/styles.css";
 
 export default function AgentsPage() {
