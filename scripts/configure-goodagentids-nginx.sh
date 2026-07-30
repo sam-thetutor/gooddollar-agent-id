@@ -37,6 +37,16 @@ server {
         include /etc/nginx/snippets/proxy-common.conf;
     }
 
+    location /host/arena/live/ {
+        proxy_pass http://127.0.0.1:3010/arena/live/;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        include /etc/nginx/snippets/proxy-common.conf;
+    }
+
     location /host/ {
         proxy_pass http://127.0.0.1:3010/;
         include /etc/nginx/snippets/proxy-common.conf;

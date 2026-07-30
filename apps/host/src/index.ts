@@ -27,6 +27,15 @@ import {
   recordDeployMatch,
   recordDeployRefill,
   appendDeployLogLine,
+  setDeployLiveMatch,
+  getDeployLiveMatch,
+  setActiveArenaMatchId,
+  getActiveArenaMatchId,
+  listDeployMatches,
+  getDeployLogTail,
+  syncGamearenaStateFile,
+  syncDeployLogFile,
+  type GameArenaLiveMatch,
   type DeployStatus,
 } from "@goodagent/db";
 import {
@@ -49,6 +58,7 @@ import {
   checkGamePassUsernameForAgent,
   setGamePassUsername,
   syncAgentAfterPassRename,
+  agentDir,
   GAMEARENA_SKILL_ID,
   type PipelineStatus,
   type DeployAgentRecord,
@@ -77,6 +87,29 @@ type VerifyStatus = {
 };
 
 const verifyCache = new Map<string, { at: number; data: VerifyStatus }>();
+
+/** Avoid re-syncing large agent log/state files on every dashboard poll. */
+const FILE_SYNC_INTERVAL_MS = 60_000;
+const lastFileSyncAt = new Map<string, number>();
+
+function scheduleDeployFileSync(
+  agentId: string,
+  statePath: string | null,
+  outLog: string | null,
+): void {
+  const now = Date.now();
+  const last = lastFileSyncAt.get(agentId) ?? 0;
+  if (now - last < FILE_SYNC_INTERVAL_MS) return;
+  lastFileSyncAt.set(agentId, now);
+  void (async () => {
+    if (statePath && existsSync(statePath)) {
+      await syncGamearenaStateFile(agentId, statePath).catch(() => undefined);
+    }
+    if (outLog && existsSync(outLog)) {
+      await syncDeployLogFile(agentId, outLog).catch(() => undefined);
+    }
+  })();
+}
 
 app.use("*", cors({ origin: "*" }));
 
@@ -212,6 +245,54 @@ function gamePassTxErrorMessage(err: unknown): string {
   return message;
 }
 
+app.get("/deploy/:id/ladder", async (c) => {
+  const agent = await getDeployedAgent(c.req.param("id"));
+  if (!agent?.agentAddress) return c.json({ ladder: null });
+
+  try {
+    loadRuntimeEnv();
+    const config = getRuntimeConfig();
+    const skillConfig = parseDeployConfiguration(agent);
+    const gamearenaAgents = await listGamearenaDeployedAgents();
+    const agentRegistry = await buildGamearenaRegistryFromAgents({
+      agentsRoot: config.agentsRoot,
+      agents: gamearenaAgents
+        .filter((row) => row.agentAddress)
+        .map((row) => ({
+          id: row.id,
+          displayName: row.displayName,
+          agentAddress: row.agentAddress!,
+          skillId: row.skills[0]?.skillId ?? null,
+          verified: false,
+        })),
+    });
+    const key = agent.agentAddress.toLowerCase();
+    agentRegistry[key] = {
+      ...(agentRegistry[key] ?? {
+        deployId: agent.id,
+        displayName: agent.displayName,
+        agentAddress: agent.agentAddress,
+        skillId: agent.skills[0]?.skillId ?? GAMEARENA_SKILL_ID,
+        gamePassUsername: null,
+        verified: false,
+        source: "goodagent",
+      }),
+    };
+
+    const raw = await fetchGamearenaLadder(
+      agent.agentAddress as `0x${string}`,
+      skillConfig.CHALLENGE_AI_URL ?? undefined,
+    );
+    const ladder = raw
+      ? enrichGamearenaLadder(raw, agentRegistry, agent.agentAddress as `0x${string}`)
+      : null;
+    return c.json({ ladder });
+  } catch (err) {
+    console.warn(`[host] ladder for ${c.req.param("id")}:`, err);
+    return c.json({ ladder: null });
+  }
+});
+
 async function fetchVerifyStatus(
   agentAddress: string,
 ): Promise<VerifyStatus | null> {
@@ -231,6 +312,58 @@ async function fetchVerifyStatus(
     return cached?.data ?? null;
   }
 }
+
+const GAMEARENA_SSE_UPSTREAM =
+  process.env.GAMEARENA_LIVE_SSE_URL?.trim() ||
+  "https://game-backend-production-6130.up.railway.app";
+const GAMEARENA_SSE_ORIGIN = "https://gamearenahq.xyz";
+
+/** Proxy GameArena live SSE — upstream allowlists gamearenahq.xyz Origin only. */
+app.get("/arena/live/:matchId", async (c) => {
+  const matchId = c.req.param("matchId").trim();
+  if (!/^am_[a-f0-9]+$/i.test(matchId)) {
+    return c.json({ error: "INVALID_MATCH_ID" }, 400);
+  }
+
+  const upstream = `${GAMEARENA_SSE_UPSTREAM.replace(/\/$/, "")}/api/arena/live/${encodeURIComponent(matchId)}`;
+
+  let upstreamRes: Response;
+  try {
+    upstreamRes = await fetch(upstream, {
+      headers: {
+        Accept: "text/event-stream",
+        Origin: GAMEARENA_SSE_ORIGIN,
+        Referer: `${GAMEARENA_SSE_ORIGIN}/games/challenge-ai`,
+      },
+      signal: c.req.raw.signal,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "UPSTREAM_UNREACHABLE", message }, 502);
+  }
+
+  if (!upstreamRes.ok || !upstreamRes.body) {
+    const body = await upstreamRes.text().catch(() => "");
+    let payload: unknown = { error: "UPSTREAM_ERROR" };
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      if (body) payload = { error: body.slice(0, 200) };
+    }
+    return c.json(payload, upstreamRes.status as 400 | 403 | 404 | 502);
+  }
+
+  return new Response(upstreamRes.body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
+});
 
 app.get("/health", (c) =>
   c.json({
@@ -427,6 +560,8 @@ app.get("/deploy/:id/status", async (c) => {
       pm2,
       verify,
       stats: null,
+      liveMatch: null,
+      activeArenaMatchId: null,
     });
   }
 
@@ -471,11 +606,35 @@ app.get("/deploy/:id/status", async (c) => {
         }
       }
 
+      const skillId = agent.skills[0]?.skillId ?? null;
+      let persistedMatches: Awaited<ReturnType<typeof listDeployMatches>> = [];
+      let persistedLogTail: string | null = null;
+
+      if (skillId?.includes("gamearena")) {
+        const deployDir = agentDir(config.agentsRoot, agent.id);
+        const statePath = resolve(
+          deployDir,
+          "skills",
+          "gamearena-player",
+          "state.json",
+        );
+        const outLog = resolve(deployDir, "logs", "out.log");
+        scheduleDeployFileSync(
+          agent.id,
+          existsSync(statePath) ? statePath : null,
+          existsSync(outLog) ? outLog : null,
+        );
+        [persistedMatches, persistedLogTail] = await Promise.all([
+          listDeployMatches(agent.id),
+          getDeployLogTail(agent.id, 12),
+        ]);
+      }
+
       return await getDeployStats({
         agentsRoot: config.agentsRoot,
         deployId: agent.id,
         agentAddress: agent.agentAddress as `0x${string}`,
-        skillId: agent.skills[0]?.skillId ?? null,
+        skillId,
         rpcUrl: config.rpcUrl,
         configBaselineGs: skillConfig.BASELINE_GS ?? null,
         playMode:
@@ -490,6 +649,8 @@ app.get("/deploy/:id/status", async (c) => {
         displayName: agent.displayName,
         agentRegistry,
         includeLadder,
+        persistedMatches,
+        persistedLogTail,
       });
     } catch (err) {
       console.warn(`[host] stats for ${agent.id}:`, err);
@@ -497,7 +658,15 @@ app.get("/deploy/:id/status", async (c) => {
     }
   })();
 
-  const [verify, stats] = await Promise.all([verifyPromise, statsPromise]);
+  const liveMatchPromise = getDeployLiveMatch(agent.id);
+  const activeArenaMatchIdPromise = getActiveArenaMatchId(agent.id);
+
+  const [verify, stats, liveMatch, activeArenaMatchId] = await Promise.all([
+    verifyPromise,
+    statsPromise,
+    liveMatchPromise,
+    activeArenaMatchIdPromise,
+  ]);
 
   if (stats?.ladder && agent.agentAddress && verify?.valid) {
     const key = agent.agentAddress.toLowerCase();
@@ -526,6 +695,8 @@ app.get("/deploy/:id/status", async (c) => {
     pm2,
     verify,
     stats,
+    liveMatch,
+    activeArenaMatchId,
   });
 });
 
@@ -639,6 +810,21 @@ app.post("/deploy/:id/activity", async (c) => {
     priceGs?: number;
     txHash?: string;
     message?: string;
+    phase?: "starting" | "playing" | "ended";
+    winsNeeded?: number;
+    playerLabel?: string;
+    round?: number;
+    playerMove?: number;
+    aiMove?: number;
+    playerMoveLabel?: string;
+    readLevel?: number;
+    suddenDeath?: boolean;
+    markovLine?: string;
+    score?: { player: number; ai: number; ties: number };
+    final?: GameArenaLiveMatch["final"];
+    updatedAt?: string;
+    roundResult?: "win" | "loss" | "tie";
+    action?: "start" | "end";
   }>();
 
   if (body.type === "match") {
@@ -671,6 +857,53 @@ app.post("/deploy/:id/activity", async (c) => {
   if (body.type === "log") {
     if (!body.message?.trim()) return c.json({ error: "INVALID_LOG" }, 400);
     await appendDeployLogLine(id, body.message, body.at);
+    return c.json({ ok: true });
+  }
+
+  if (body.type === "live_match") {
+    if (!body.matchId || !body.phase) {
+      return c.json({ error: "INVALID_LIVE_MATCH" }, 400);
+    }
+    const snapshot: GameArenaLiveMatch = {
+      matchId: body.matchId,
+      phase: body.phase,
+      updatedAt: body.updatedAt ?? body.at ?? new Date().toISOString(),
+      winsNeeded: body.winsNeeded,
+      playerLabel: body.playerLabel,
+      round: body.round,
+      playerMove: body.playerMove,
+      aiMove: body.aiMove,
+      playerMoveLabel: body.playerMoveLabel,
+      result: body.roundResult,
+      readLevel: body.readLevel,
+      suddenDeath: body.suddenDeath,
+      markovLine: body.markovLine,
+      score: body.score,
+      final: body.final,
+    };
+    await setDeployLiveMatch(id, snapshot);
+    return c.json({ ok: true });
+  }
+
+  if (body.type === "live_clear") {
+    await setDeployLiveMatch(id, null);
+    return c.json({ ok: true });
+  }
+
+  if (body.type === "arena_match") {
+    if (!body.matchId || !body.action) {
+      return c.json({ error: "INVALID_ARENA_MATCH" }, 400);
+    }
+    if (body.action === "start") {
+      await setActiveArenaMatchId(id, body.matchId);
+      await setDeployLiveMatch(id, {
+        matchId: body.matchId,
+        phase: "starting",
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      await setActiveArenaMatchId(id, null);
+    }
     return c.json({ ok: true });
   }
 

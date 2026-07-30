@@ -1,5 +1,6 @@
 import type { DeployControlAuth } from "@goodagent/shared";
 import { GOODAGENT_HOST_URL } from "@goodagent/shared";
+import type { GameArenaLiveMatch } from "@goodagent/live-arena";
 
 function isLocalhostUrl(url: string): boolean {
   return /localhost|127\.0\.0\.1/.test(url);
@@ -79,7 +80,11 @@ export interface DeployStatusResponse {
     reason?: string;
   } | null;
   stats?: DeployStats | null;
+  liveMatch?: GameArenaLiveMatch | null;
+  activeArenaMatchId?: string | null;
 }
+
+export type { GameArenaLiveMatch } from "@goodagent/live-arena";
 
 export interface DeployStats {
   balances: {
@@ -255,6 +260,10 @@ export function runDeployPipeline(
   );
 }
 
+export function getDeployStatusLite(deployId: string) {
+  return hostFetch<DeployStatusResponse>(`/deploy/${deployId}/status?lite=1`);
+}
+
 export async function getDeployStatus(deployId: string) {
   const prefetch = window.__deployStatusPrefetch;
   if (prefetch) {
@@ -266,7 +275,13 @@ export async function getDeployStatus(deployId: string) {
       // fall through to normal fetch
     }
   }
-  return hostFetch<DeployStatusResponse>(`/deploy/${deployId}/status?ladder=1`);
+  return hostFetch<DeployStatusResponse>(`/deploy/${deployId}/status`);
+}
+
+export function getDeployLadder(deployId: string) {
+  return hostFetch<{ ladder: GamearenaLadder | null }>(
+    `/deploy/${deployId}/ladder`,
+  ).then((r) => r.ladder);
 }
 
 export function listDeploysByOwner(ownerWallet: string) {

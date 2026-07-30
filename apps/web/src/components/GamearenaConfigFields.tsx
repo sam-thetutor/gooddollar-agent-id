@@ -196,6 +196,22 @@ export function GamearenaConfigFields({
             <span className="input-suffix-label">sec</span>
           </div>
         </ConfigField>
+        {showOffchain && (
+          <ConfigField label="Pause between rounds (live spectator)">
+            <div className="input-suffix">
+              <input
+                value={config.ROUND_PACE_MS ?? "1000"}
+                onChange={(e) => onChange("ROUND_PACE_MS", e.target.value)}
+                inputMode="numeric"
+              />
+              <span className="input-suffix-label">ms</span>
+            </div>
+            <p className="config-section-note muted">
+              Wait after each throw so GameArena&apos;s SSE feed plays out (2500 ms
+              for comfortable spectating; 1000 ms minimum).
+            </p>
+          </ConfigField>
+        )}
       </section>
 
       {showOnchain && (

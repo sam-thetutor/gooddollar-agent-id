@@ -4,6 +4,7 @@ import {
   type DeployControlAuth,
 } from "../deploy-auth.js";
 import type { GoodAgentWalletAdapter } from "../types.js";
+import type { GameArenaLiveMatch } from "@goodagent/live-arena";
 import type { SkillConfiguration } from "../types.js";
 import type { DeployTemplate } from "../skill-config.js";
 
@@ -87,6 +88,8 @@ export interface DeployStatusResponse {
     restarts?: number;
     memoryMb?: number;
   } | null;
+  liveMatch?: GameArenaLiveMatch | null;
+  activeArenaMatchId?: string | null;
 }
 
 function normalizeBase(url: string): string {

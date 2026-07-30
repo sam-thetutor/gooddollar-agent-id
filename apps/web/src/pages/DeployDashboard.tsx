@@ -1,29 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useAccount, useSignMessage } from "wagmi";
 import { Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { API_ORIGIN } from "../lib/site.js";
 import {
   getDeployStatus,
+  getDeployStatusLite,
+  getDeployLadder,
   runDeployPipeline,
   setDeployBaseline,
   startDeploy,
   stopDeploy,
   updateDeployConfiguration,
   type DeployStatusResponse,
+  type GamearenaLadder,
   type SkillConfiguration,
 } from "../lib/host.js";
 import { isDeployOwner, signDeployControl } from "../lib/deploy-control.js";
 import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import { GamearenaConfigFields } from "../components/GamearenaConfigFields.js";
+import {
+  GameArenaLiveSection,
+  isGamearenaSkill,
+  useArenaLiveSpectator,
+} from "@goodagent/live-arena";
 import { BalaioConfigFields } from "../components/BalaioConfigFields.js";
 import {
   balaioRoleSummary,
   isBalaioSkill,
 } from "../lib/balaio-config.js";
 import {
-  isGamearenaSkill,
   parsePlayMode,
   playModeLabel,
   strategyLabelFromConfig,
@@ -34,6 +41,7 @@ import { usePageMeta } from "../lib/usePageMeta.js";
 type HealthState = "live" | "paused" | "stopped" | "failed" | "deploying" | "awaiting_vouch" | "unknown";
 
 const REFRESH_MS = 20_000;
+const LIVE_REFRESH_MS = 2_000;
 const MATCHES_PAGE_SIZE = 10;
 
 function processHealth(s: DeployStatusResponse): HealthState {
@@ -163,12 +171,52 @@ export function DeployDashboard() {
   const [draftConfig, setDraftConfig] = useState<SkillConfiguration>({});
   const [configBusy, setConfigBusy] = useState(false);
   const refreshInFlight = useRef(false);
+  const showedLite = useRef(false);
+  const [ladder, setLadder] = useState<GamearenaLadder | null>(null);
+  const [ladderLoading, setLadderLoading] = useState(false);
+  const ladderFetchInFlight = useRef(false);
+  const hasLadder = useRef(false);
+
+  useEffect(() => {
+    showedLite.current = false;
+    setLadder(null);
+    hasLadder.current = false;
+  }, [id]);
+
+  useEffect(() => {
+    hasLadder.current = ladder != null;
+  }, [ladder]);
+
+  const refreshLadder = useCallback(async (background = false) => {
+    if (!id || ladderFetchInFlight.current) return;
+    ladderFetchInFlight.current = true;
+    if (!background || !hasLadder.current) setLadderLoading(true);
+    try {
+      const next = await getDeployLadder(id);
+      if (next) setLadder(next);
+    } catch {
+      // keep last good snapshot
+    } finally {
+      ladderFetchInFlight.current = false;
+      setLadderLoading(false);
+    }
+  }, [id]);
 
   const refresh = useCallback(async () => {
     if (!id || refreshInFlight.current) return;
     refreshInFlight.current = true;
     try {
-      setStatus(await getDeployStatus(id));
+      if (!showedLite.current) {
+        showedLite.current = true;
+        try {
+          setStatus(await getDeployStatusLite(id));
+          setError(null);
+        } catch {
+          // full fetch may still succeed
+        }
+      }
+      const next = await getDeployStatus(id);
+      setStatus(next);
       setLastUpdated(new Date());
       setError(null);
     } catch (e) {
@@ -178,11 +226,68 @@ export function DeployDashboard() {
     }
   }, [id]);
 
+  const [searchParams] = useSearchParams();
+  const debugSseMatchId = searchParams.get("sseMatchId");
+
+  const livePolling =
+    status?.liveMatch?.phase === "starting" ||
+    status?.liveMatch?.phase === "playing";
+
+  const health = useMemo(
+    () => (status ? processHealth(status) : "unknown"),
+    [status],
+  );
+
+  const gamearenaSkill = isGamearenaSkill(status?.skillId);
+
+  const {
+    sseMatchId,
+    sseStatus,
+    liveDisplay,
+    liveFeedState,
+    sseBadgeLabel,
+    arenaActive,
+    waitingForArena,
+  } = useArenaLiveSpectator({
+    enabled: gamearenaSkill,
+    debugMatchId: debugSseMatchId,
+    activeArenaMatchId: status?.activeArenaMatchId,
+    liveMatch: status?.liveMatch,
+    logTail: status?.stats?.logTail,
+    playerLabel: status?.displayName,
+    agentLive: health === "live",
+  });
+
+  const sseSubscribed = Boolean(gamearenaSkill && sseMatchId);
+  const gamearenaLive = gamearenaSkill && health === "live";
+
+  useEffect(() => {
+    if (!id || !gamearenaSkill) return;
+    void refreshLadder(false);
+    const t = setInterval(() => void refreshLadder(true), 60_000);
+    return () => clearInterval(t);
+  }, [id, gamearenaSkill, refreshLadder]);
+
   useEffect(() => {
     void refresh();
-    const t = setInterval(() => void refresh(), REFRESH_MS);
+    const ms =
+      livePolling ||
+      arenaActive ||
+      waitingForArena ||
+      gamearenaLive ||
+      sseSubscribed
+        ? LIVE_REFRESH_MS
+        : REFRESH_MS;
+    const t = setInterval(() => void refresh(), ms);
     return () => clearInterval(t);
-  }, [refresh]);
+  }, [
+    refresh,
+    livePolling,
+    arenaActive,
+    waitingForArena,
+    gamearenaLive,
+    sseSubscribed,
+  ]);
 
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 1000);
@@ -203,16 +308,11 @@ export function DeployDashboard() {
     setEditingConfig(false);
   };
 
-  const health = useMemo(
-    () => (status ? processHealth(status) : "unknown"),
-    [status],
-  );
+  const perf = status?.stats?.performance;
   const config = useMemo(
     () => parseConfig(status?.configuration),
     [status?.configuration],
   );
-
-  const perf = status?.stats?.performance;
   const playMode = isGamearenaSkill(status?.skillId)
     ? parsePlayMode(config)
     : null;
@@ -724,6 +824,21 @@ export function DeployDashboard() {
 
             <div className="deploy-console-body">
               <div className="deploy-console-main">
+                {gamearenaSkill && (
+                  <div className="deploy-console-section deploy-console-live-section">
+                    <GameArenaLiveSection
+                      liveDisplay={liveDisplay}
+                      liveFeedState={liveFeedState}
+                      sseMatchId={sseMatchId}
+                      sseStatus={sseStatus}
+                      sseBadgeLabel={sseBadgeLabel}
+                      agentName={status.displayName}
+                      nextMatchIn={nextMatchIn}
+                      agentLive={health === "live"}
+                    />
+                  </div>
+                )}
+
                 <section className="deploy-console-section">
                   <div className="deploy-section-head">
                     <h2>Match history</h2>
@@ -844,25 +959,6 @@ export function DeployDashboard() {
                   {perf?.summary && (
                     <p className="deploy-console-summary muted">{perf.summary}</p>
                   )}
-
-                  {health === "live" && nextMatchIn != null && (
-                    <p className="deploy-console-next muted">
-                      {nextMatchIn > 0
-                        ? `Next match in ~${nextMatchIn}s`
-                        : "Proposing next match…"}
-                    </p>
-                  )}
-                </section>
-
-                <section className="deploy-console-section deploy-console-log-section">
-                  <h2>Live log</h2>
-                  {status.stats?.logTail ? (
-                    <pre className="deploy-console-log">{status.stats.logTail}</pre>
-                  ) : (
-                    <p className="deploy-console-empty muted">
-                      Log output will appear when the skill runs.
-                    </p>
-                  )}
                 </section>
 
                 {status.lastError && (
@@ -875,63 +971,78 @@ export function DeployDashboard() {
 
               <aside className="deploy-console-aside">
                 {offchainPlay && (
-                  <section className="deploy-console-aside-block">
+                  <section
+                    className={`deploy-console-aside-block deploy-ladder-panel${
+                      ladderLoading && ladder ? " deploy-ladder-panel--refreshing" : ""
+                    }`}
+                  >
                     <div className="deploy-section-head">
                       <h3>GameArena leaderboard</h3>
-                      <a
-                        className="deploy-section-meta muted"
-                        href="https://gamearenahq.xyz/games/challenge-ai"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Full board ↗
-                      </a>
+                      <span className="deploy-ladder-head-meta">
+                        {ladderLoading && (
+                          <span className="deploy-ladder-sync muted" aria-live="polite">
+                            {ladder ? "Updating…" : "Loading…"}
+                          </span>
+                        )}
+                        <a
+                          className="deploy-section-meta muted"
+                          href="https://gamearenahq.xyz/games/challenge-ai"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Full board ↗
+                        </a>
+                      </span>
                     </div>
-                    {status.stats?.ladder?.error ? (
-                      <p className="deploy-ladder-error muted">
-                        {status.stats.ladder.error}
-                      </p>
-                    ) : status.stats?.ladder?.rank != null ? (
+                    {ladderLoading && !ladder ? (
+                      <div className="deploy-ladder-skeleton" aria-hidden>
+                        <div className="deploy-ladder-skeleton-line deploy-ladder-skeleton-line--short" />
+                        <div className="deploy-ladder-skeleton-line" />
+                        <div className="deploy-ladder-skeleton-line" />
+                        <div className="deploy-ladder-skeleton-line" />
+                        <div className="deploy-ladder-skeleton-line" />
+                      </div>
+                    ) : ladder?.error ? (
+                      <p className="deploy-ladder-error muted">{ladder.error}</p>
+                    ) : ladder?.rank != null ? (
                       <>
                         <p className="muted" style={{ fontSize: "0.875rem" }}>
-                          Rank #{status.stats.ladder.rank}
-                          {status.stats.ladder.self?.goodAgent?.gamePassUsername
-                            ? ` · ${status.stats.ladder.self.goodAgent.gamePassUsername}`
+                          Rank #{ladder.rank}
+                          {ladder.self?.goodAgent?.gamePassUsername
+                            ? ` · ${ladder.self.goodAgent.gamePassUsername}`
                             : ""}
                           {" · "}
-                          {status.stats.ladder.points ?? 0} pts ·{" "}
-                          {status.stats.ladder.wins ?? 0}W /{" "}
-                          {status.stats.ladder.matches ?? 0}M
+                          {ladder.points ?? 0} pts · {ladder.wins ?? 0}W /{" "}
+                          {ladder.matches ?? 0}M
                         </p>
-                        {status.stats.ladder.enrichedTop &&
-                          status.stats.ladder.enrichedTop.length > 0 && (
-                            <ol className="deploy-ladder-top">
-                              {status.stats.ladder.enrichedTop.map((row) => (
-                                <li
-                                  key={row.wallet}
-                                  className={
-                                    row.wallet.toLowerCase() ===
-                                    status.agentAddress?.toLowerCase()
-                                      ? "deploy-ladder-me"
-                                      : undefined
-                                  }
-                                >
-                                  <span className="deploy-ladder-rank">
-                                    #{row.rank}
-                                  </span>
-                                  <span className="deploy-ladder-name">
-                                    {row.username ??
-                                      row.goodAgent?.displayName ??
-                                      `${row.wallet.slice(0, 6)}…`}
-                                    {row.isGoodAgent ? " · AI" : ""}
-                                  </span>
-                                  <span className="deploy-ladder-pts">
-                                    {row.points} pts
-                                  </span>
-                                </li>
-                              ))}
-                            </ol>
-                          )}
+                        {ladder.enrichedTop && ladder.enrichedTop.length > 0 && (
+                          <ol className="deploy-ladder-top">
+                            {ladder.enrichedTop.map((row) => (
+                              <li
+                                key={row.wallet}
+                                className={
+                                  row.wallet.toLowerCase() ===
+                                  status.agentAddress?.toLowerCase()
+                                    ? "deploy-ladder-me"
+                                    : undefined
+                                }
+                              >
+                                <span className="deploy-ladder-rank">
+                                  #{row.rank}
+                                </span>
+                                <span className="deploy-ladder-name">
+                                  {row.username ??
+                                    row.goodAgent?.displayName ??
+                                    `${row.wallet.slice(0, 6)}…`}
+                                  {row.isGoodAgent ? " · AI" : ""}
+                                </span>
+                                <span className="deploy-ladder-pts">
+                                  {row.points} pts
+                                </span>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
                       </>
                     ) : (
                       <p className="muted" style={{ fontSize: "0.875rem" }}>
@@ -1067,6 +1178,18 @@ export function DeployDashboard() {
                       <dt>Interval</dt>
                       <dd>{humanInterval(config.MATCH_INTERVAL_SECONDS)}</dd>
                     </div>
+                    {offchainPlay && (
+                      <div>
+                        <dt>Round pace</dt>
+                        <dd>
+                          {Math.max(
+                            0,
+                            Number(config.ROUND_PACE_MS ?? 1000),
+                          )}{" "}
+                          ms
+                        </dd>
+                      </div>
+                    )}
                   </dl>
                 </section>
 

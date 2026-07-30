@@ -69,6 +69,7 @@ export function buildGamearenaEnv(
     ACCEPT_POLL_SECONDS: config.ACCEPT_POLL_SECONDS ?? "5",
     MAX_MATCHES: config.MAX_MATCHES ?? "10",
     MATCH_INTERVAL_SECONDS: config.MATCH_INTERVAL_SECONDS ?? "300",
+    ROUND_PACE_MS: config.ROUND_PACE_MS ?? "1000",
   };
   if (agentPrivateKey) {
     env.PRIVATE_KEY = agentPrivateKey;

@@ -100,6 +100,7 @@ function defaultConfigForSkill(skillId: string): SkillConfiguration {
       GAME_TYPE: "0",
       MAX_MATCHES: "10",
       MATCH_INTERVAL_SECONDS: "300",
+      ROUND_PACE_MS: "2500",
     };
   }
   if (skillId === "gaming/card-fighter/actionorder_vshouse") {

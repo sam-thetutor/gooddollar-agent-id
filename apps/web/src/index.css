@@ -3433,9 +3433,6 @@ a:hover {
   min-width: 0;
 }
 
-.deploy-console-log-section h2 {
-  margin-bottom: 0;
-}
 
 .deploy-console-error-section {
   background: rgba(224, 106, 106, 0.04);
@@ -3529,6 +3526,57 @@ a:hover {
 .deploy-ladder-error {
   font-size: 0.78rem;
   margin: 0.35rem 0 0;
+}
+
+.deploy-ladder-head-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.deploy-ladder-sync {
+  font-size: 0.72rem;
+}
+
+.deploy-ladder-panel {
+  transition: opacity 0.2s ease;
+}
+
+.deploy-ladder-panel--refreshing {
+  opacity: 0.88;
+}
+
+.deploy-ladder-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.deploy-ladder-skeleton-line {
+  height: 0.65rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.14) 50%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  background-size: 200% 100%;
+  animation: deploy-ladder-shimmer 1.2s ease-in-out infinite;
+}
+
+.deploy-ladder-skeleton-line--short {
+  width: 55%;
+}
+
+@keyframes deploy-ladder-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 .deploy-console-aside-block .deploy-section-head {

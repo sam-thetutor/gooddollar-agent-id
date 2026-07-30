@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
+import "@goodagent/live-arena/styles.css";
 import "./index.css";
 
 // NOTE: StrictMode intentionally omitted — its dev-only double-mount resets

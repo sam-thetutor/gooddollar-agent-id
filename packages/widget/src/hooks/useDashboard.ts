@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
+import {
+  isGamearenaSkill,
+  shouldFastPollLiveArena,
+} from "@goodagent/live-arena";
 import {
   isDeployOwner,
   signDeployControl,
@@ -46,7 +50,7 @@ function optimisticRunning(
 }
 
 export function useDashboard(deployId: string, deploy?: DeployAgent) {
-  const { wallet, host, api, rpcUrl } = useWidget();
+  const { wallet, host, api, rpcUrl, config } = useWidget();
   const [status, setStatus] = useState<DeployStatusResponse | null>(null);
   const [clientBalances, setClientBalances] =
     useState<AgentBalanceDisplay | null>(null);
@@ -111,15 +115,28 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
     return pollFull();
   }, [pollLite, pollFull]);
 
+  const skillId =
+    status?.skillId ?? deploy?.skills?.[0]?.skillId ?? null;
+  const agentOnline =
+    status?.pm2?.online ?? status?.status === "running";
+  const fastPoll = useMemo(
+    () =>
+      isGamearenaSkill(skillId) &&
+      agentOnline &&
+      (shouldFastPollLiveArena(status) || agentOnline),
+    [skillId, agentOnline, status],
+  );
+  const pollMs = fastPoll ? 2000 : (config.statusPollMs ?? 5000);
+
   useEffect(() => {
     if (!deployId) return;
     setStatus(null);
     setClientBalances(null);
     setStatsLoading(true);
     void poll();
-    const t = setInterval(() => void poll(), 5000);
+    const t = setInterval(() => void poll(), pollMs);
     return () => clearInterval(t);
-  }, [deployId, poll]);
+  }, [deployId, poll, pollMs]);
 
   const isOwner = isDeployOwner(
     wallet.address,

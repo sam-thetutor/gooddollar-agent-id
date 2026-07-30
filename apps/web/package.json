@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@goodagent/live-arena": "workspace:*",
     "@goodagent/shared": "workspace:*",
     "@goodsdks/citizen-sdk": "^1.2.5",
     "@reown/appkit": "^1.8.21",

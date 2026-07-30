@@ -32,7 +32,7 @@ else
   git clone --depth 1 "$SKILLS_REPO" "$SKILL_CACHE"
 fi
 
-export GC AGENTS_ROOT SKILL_CACHE
+export GC AGENTS_ROOT SKILL_CACHE ROUND_PACE_MS="${ROUND_PACE_MS:-1000}"
 node <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
@@ -132,6 +132,7 @@ for (const agentDir of fs.readdirSync(AGENTS_ROOT)) {
   const envPath = path.join(skillDir, ".env");
   let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
   envContent = upsertEnvLine(envContent, "GAMEARENA_PROXY", proxy);
+  envContent = upsertEnvLine(envContent, "ROUND_PACE_MS", process.env.ROUND_PACE_MS || "1000");
   fs.writeFileSync(envPath, envContent, { mode: 0o600 });
 
   const ecoPath = path.join(AGENTS_ROOT, agentDir, "ecosystem.config.cjs");
@@ -146,6 +147,12 @@ for (const agentDir of fs.readdirSync(AGENTS_ROOT)) {
   }
 
   execSync("npm ci", { cwd: skillDir, stdio: "inherit" });
+  count++;
+}
+console.log(`[proxy] synced ${count} agent(s)`);
+NODE
+
+export ROUND_PACE_MS="${ROUND_PACE_MS:-1000}"
 
 for eco in "$AGENTS_ROOT"/*/ecosystem.config.cjs; do
   deploy_id=$(basename "$(dirname "$eco")")

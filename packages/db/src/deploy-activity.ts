@@ -1,5 +1,30 @@
+import { Prisma } from "@prisma/client";
 import { existsSync, readFileSync } from "node:fs";
 import { prisma } from "./client.js";
+
+export type GameArenaLivePhase = "starting" | "playing" | "ended";
+
+export interface GameArenaLiveMatch {
+  matchId: string;
+  phase: GameArenaLivePhase;
+  updatedAt: string;
+  winsNeeded?: number;
+  playerLabel?: string;
+  round?: number;
+  playerMove?: number;
+  aiMove?: number;
+  playerMoveLabel?: string;
+  result?: "win" | "loss" | "tie";
+  readLevel?: number;
+  suddenDeath?: boolean;
+  markovLine?: string;
+  score?: { player: number; ai: number; ties: number };
+  final?: {
+    outcome: "player_won" | "ai_won" | "tie";
+    totalRounds?: number;
+    matchLine?: string;
+  };
+}
 
 export interface PersistedMatchRecord {
   matchId: string;
@@ -205,6 +230,9 @@ export async function syncDeployLogFile(
   const lines = raw.split("\n").filter((l) => l.trim());
   if (!lines.length) return 0;
 
+  // Only tail-sync — full files can be thousands of lines and block dashboard loads.
+  const tailLines = lines.slice(-200);
+
   const last = await prisma.deployLogLine.findFirst({
     where: { deployedAgentId },
     orderBy: { loggedAt: "desc" },
@@ -212,14 +240,81 @@ export async function syncDeployLogFile(
 
   let startIdx = 0;
   if (last) {
-    const idx = lines.lastIndexOf(last.message);
+    const idx = tailLines.lastIndexOf(last.message);
     if (idx >= 0) startIdx = idx + 1;
   }
 
   let synced = 0;
-  for (const line of lines.slice(startIdx)) {
+  for (const line of tailLines.slice(startIdx)) {
     await appendDeployLogLine(deployedAgentId, line);
     synced += 1;
   }
   return synced;
+}
+
+const LIVE_STALE_PLAYING_MS = 120_000;
+const LIVE_STALE_ENDED_MS = 90_000;
+
+function parseLiveUpdatedAt(updatedAt: string | undefined): number {
+  if (!updatedAt) return 0;
+  const t = new Date(updatedAt).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+export async function setDeployLiveMatch(
+  deployedAgentId: string,
+  data: GameArenaLiveMatch | null,
+): Promise<void> {
+  await prisma.deployedAgent.update({
+    where: { id: deployedAgentId },
+    data: {
+      liveMatch: data === null ? Prisma.DbNull : (data as object),
+    },
+  });
+}
+
+/** Returns live snapshot; clears stale rows (agent stopped mid-match or old ended state). */
+export async function getDeployLiveMatch(
+  deployedAgentId: string,
+): Promise<GameArenaLiveMatch | null> {
+  const row = await prisma.deployedAgent.findUnique({
+    where: { id: deployedAgentId },
+    select: { liveMatch: true },
+  });
+  if (!row?.liveMatch || typeof row.liveMatch !== "object") return null;
+
+  const snap = row.liveMatch as unknown as GameArenaLiveMatch;
+  if (!snap.matchId || !snap.phase) return null;
+
+  const age = Date.now() - parseLiveUpdatedAt(snap.updatedAt);
+  const stale =
+    (snap.phase === "starting" || snap.phase === "playing") &&
+    age > LIVE_STALE_PLAYING_MS;
+  const endedStale = snap.phase === "ended" && age > LIVE_STALE_ENDED_MS;
+  if (stale || endedStale) {
+    await setDeployLiveMatch(deployedAgentId, null);
+    return endedStale ? snap : null;
+  }
+
+  return snap;
+}
+
+export async function setActiveArenaMatchId(
+  deployedAgentId: string,
+  matchId: string | null,
+): Promise<void> {
+  await prisma.deployedAgent.update({
+    where: { id: deployedAgentId },
+    data: { activeArenaMatchId: matchId },
+  });
+}
+
+export async function getActiveArenaMatchId(
+  deployedAgentId: string,
+): Promise<string | null> {
+  const row = await prisma.deployedAgent.findUnique({
+    where: { id: deployedAgentId },
+    select: { activeArenaMatchId: true },
+  });
+  return row?.activeArenaMatchId ?? null;
 }

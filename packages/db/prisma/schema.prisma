@@ -82,6 +82,8 @@ model DeployedAgent {
   lastHeartbeatAt       DateTime? @map("last_heartbeat_at")
   pm2Name               String?   @map("pm2_name")
   lastError             String?   @map("last_error")
+  liveMatch             Json?     @map("live_match")
+  activeArenaMatchId    String?   @map("active_arena_match_id")
   deployPaymentTx       String?   @map("deploy_payment_tx")
   telegramBotTokenEnc   String?   @map("telegram_bot_token_enc") @db.Text
   plan                  String    @default("one_time")

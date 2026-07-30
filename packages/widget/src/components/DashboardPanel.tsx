@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DeployAgent } from "../client/host.js";
 import { deployNeedsUserVouch, signDeployControl } from "../client/host.js";
+import {
+  GameArenaLiveSection,
+  isGamearenaSkill,
+  useArenaLiveSpectator,
+} from "@goodagent/live-arena";
 import { useWidget } from "../context.js";
 import {
   celoscanUrl,
@@ -229,6 +234,27 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
     parseConfigSummary(status?.configuration ?? deploy.configuration).PLAY_MODE ===
       "offchain";
 
+  const { config: widgetConfig } = useWidget();
+  const skillIdResolved =
+    status?.skillId ?? skillIdForDeploy(deploy) ?? null;
+  const gamearenaSkill = isGamearenaSkill(skillIdResolved);
+
+  const {
+    sseMatchId,
+    sseStatus,
+    liveDisplay,
+    liveFeedState,
+    sseBadgeLabel,
+  } = useArenaLiveSpectator({
+    enabled: gamearenaSkill,
+    hostBaseUrl: widgetConfig.hostBaseUrl,
+    activeArenaMatchId: status?.activeArenaMatchId,
+    liveMatch: status?.liveMatch,
+    logTail: status?.stats?.logTail,
+    playerLabel: displayName,
+    agentLive: online,
+  });
+
   return (
     <div className="ga-widget-dash-deck">
       <div className="ga-widget-dash-command">
@@ -324,6 +350,19 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
           }
         />
       </div>
+
+      {gamearenaSkill && (
+        <GameArenaLiveSection
+          liveDisplay={liveDisplay}
+          liveFeedState={liveFeedState}
+          sseMatchId={sseMatchId}
+          sseStatus={sseStatus}
+          sseBadgeLabel={sseBadgeLabel}
+          agentName={displayName}
+          agentLive={online}
+          title="Live arena"
+        />
+      )}
 
       <div className="ga-widget-dash-status-row">
         <span

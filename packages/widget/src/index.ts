@@ -106,3 +106,4 @@ export {
 } from "./constants.js";
 
 import "./styles/widget.css";
+import "@goodagent/live-arena/styles.css";
