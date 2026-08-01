@@ -67,6 +67,9 @@ importers:
       '@goodagent/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@goodagent/live-arena':
+        specifier: workspace:*
+        version: link:../../packages/live-arena
       '@goodagent/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime

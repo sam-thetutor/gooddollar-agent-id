@@ -264,6 +264,17 @@ export function getDeployStatusLite(deployId: string) {
   return hostFetch<DeployStatusResponse>(`/deploy/${deployId}/status?lite=1`);
 }
 
+export interface DeployLiveSnapshot {
+  liveMatch?: GameArenaLiveMatch | null;
+  activeArenaMatchId?: string | null;
+  logTail?: string | null;
+  pm2?: DeployStatusResponse["pm2"];
+}
+
+export function getDeployLiveSnapshot(deployId: string) {
+  return hostFetch<DeployLiveSnapshot>(`/deploy/${deployId}/live-snapshot`);
+}
+
 export async function getDeployStatus(deployId: string) {
   const prefetch = window.__deployStatusPrefetch;
   if (prefetch) {

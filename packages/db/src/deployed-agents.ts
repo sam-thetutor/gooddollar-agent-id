@@ -174,7 +174,10 @@ export async function maxWalletDerivationIndex(): Promise<number> {
   return row._max.walletDerivationIndex ?? -1;
 }
 
-const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1";
+export const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1";
+
+/** Deploy statuses that no longer block a new GameArena entry. */
+const GAMEARENA_NON_BLOCKING_STATUSES: DeployStatus[] = ["failed", "stopped"];
 
 /** All GameArena deploys with a provisioned play wallet (for leaderboard enrichment). */
 export function listGamearenaDeployedAgents(): Promise<
@@ -184,6 +187,75 @@ export function listGamearenaDeployedAgents(): Promise<
     where: {
       agentAddress: { not: null },
       skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+    },
+    orderBy: { createdAt: "desc" },
+    include: { skills: true },
+  });
+}
+
+/** GameArena skill deploys for one owner wallet (partner lookup). */
+export function listGamearenaDeployedAgentsByOwner(
+  ownerWallet: string,
+): Promise<(DeployedAgent & { skills: SkillInstall[] })[]> {
+  return prisma.deployedAgent.findMany({
+    where: {
+      ownerWallet: ownerWallet.toLowerCase(),
+      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+    },
+    orderBy: { createdAt: "desc" },
+    include: { skills: true },
+  });
+}
+
+/** First GameArena deploy for an owner (competition entry — oldest by createdAt). */
+export function getFirstGamearenaDeployForOwner(
+  ownerWallet: string,
+): Promise<(DeployedAgent & { skills: SkillInstall[] }) | null> {
+  return prisma.deployedAgent.findFirst({
+    where: {
+      ownerWallet: ownerWallet.toLowerCase(),
+      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+    },
+    orderBy: { createdAt: "asc" },
+    include: { skills: true },
+  });
+}
+
+/** Blocks a second GameArena deploy for the same owner wallet (competition rule). */
+export function findBlockingGamearenaDeployForOwner(
+  ownerWallet: string,
+  excludeDeployId?: string,
+): Promise<(DeployedAgent & { skills: SkillInstall[] }) | null> {
+  return prisma.deployedAgent.findFirst({
+    where: {
+      ownerWallet: ownerWallet.toLowerCase(),
+      status: { notIn: GAMEARENA_NON_BLOCKING_STATUSES },
+      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+      ...(excludeDeployId ? { id: { not: excludeDeployId } } : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    include: { skills: true },
+  });
+}
+
+/** Blocks a second GameArena deploy for the same GoodDollar human (stronger sybil check). */
+export async function findBlockingGamearenaDeployForHumanRoot(
+  humanRoot: string,
+  excludeDeployId?: string,
+): Promise<(DeployedAgent & { skills: SkillInstall[] }) | null> {
+  const creds = await prisma.agentCredential.findMany({
+    where: { humanRoot: humanRoot.toLowerCase(), revokedAt: null },
+    select: { agent: true },
+  });
+  const agentAddresses = creds.map((c) => c.agent.toLowerCase());
+  if (!agentAddresses.length) return null;
+
+  return prisma.deployedAgent.findFirst({
+    where: {
+      agentAddress: { in: agentAddresses, mode: "insensitive" },
+      status: { notIn: GAMEARENA_NON_BLOCKING_STATUSES },
+      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+      ...(excludeDeployId ? { id: { not: excludeDeployId } } : {}),
     },
     orderBy: { createdAt: "desc" },
     include: { skills: true },

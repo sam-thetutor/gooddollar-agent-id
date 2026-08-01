@@ -7,6 +7,7 @@ import { API_ORIGIN } from "../lib/site.js";
 import {
   getDeployStatus,
   getDeployStatusLite,
+  getDeployLiveSnapshot,
   getDeployLadder,
   runDeployPipeline,
   setDeployBaseline,
@@ -41,7 +42,6 @@ import { usePageMeta } from "../lib/usePageMeta.js";
 type HealthState = "live" | "paused" | "stopped" | "failed" | "deploying" | "awaiting_vouch" | "unknown";
 
 const REFRESH_MS = 20_000;
-const LIVE_REFRESH_MS = 2_000;
 const MATCHES_PAGE_SIZE = 10;
 
 function processHealth(s: DeployStatusResponse): HealthState {
@@ -171,6 +171,7 @@ export function DeployDashboard() {
   const [draftConfig, setDraftConfig] = useState<SkillConfiguration>({});
   const [configBusy, setConfigBusy] = useState(false);
   const refreshInFlight = useRef(false);
+  const liveSnapshotInFlight = useRef(false);
   const showedLite = useRef(false);
   const [ladder, setLadder] = useState<GamearenaLadder | null>(null);
   const [ladderLoading, setLadderLoading] = useState(false);
@@ -226,12 +227,41 @@ export function DeployDashboard() {
     }
   }, [id]);
 
+  const refreshLiveSnapshot = useCallback(async () => {
+    if (!id || liveSnapshotInFlight.current) return;
+    liveSnapshotInFlight.current = true;
+    try {
+      const snap = await getDeployLiveSnapshot(id);
+      setStatus((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          liveMatch: snap.liveMatch ?? null,
+          activeArenaMatchId: snap.activeArenaMatchId ?? null,
+          pm2: snap.pm2 ?? prev.pm2,
+          stats: snap.logTail
+            ? {
+                ...(prev.stats ?? {
+                  balances: null,
+                  performance: null,
+                  walletPnL: null,
+                  logTail: null,
+                  ladder: null,
+                }),
+                logTail: snap.logTail,
+              }
+            : prev.stats,
+        };
+      });
+    } catch {
+      // Host may not have live-snapshot yet
+    } finally {
+      liveSnapshotInFlight.current = false;
+    }
+  }, [id]);
+
   const [searchParams] = useSearchParams();
   const debugSseMatchId = searchParams.get("sseMatchId");
-
-  const livePolling =
-    status?.liveMatch?.phase === "starting" ||
-    status?.liveMatch?.phase === "playing";
 
   const health = useMemo(
     () => (status ? processHealth(status) : "unknown"),
@@ -246,8 +276,6 @@ export function DeployDashboard() {
     liveDisplay,
     liveFeedState,
     sseBadgeLabel,
-    arenaActive,
-    waitingForArena,
   } = useArenaLiveSpectator({
     enabled: gamearenaSkill,
     debugMatchId: debugSseMatchId,
@@ -258,9 +286,6 @@ export function DeployDashboard() {
     agentLive: health === "live",
   });
 
-  const sseSubscribed = Boolean(gamearenaSkill && sseMatchId);
-  const gamearenaLive = gamearenaSkill && health === "live";
-
   useEffect(() => {
     if (!id || !gamearenaSkill) return;
     void refreshLadder(false);
@@ -270,24 +295,16 @@ export function DeployDashboard() {
 
   useEffect(() => {
     void refresh();
-    const ms =
-      livePolling ||
-      arenaActive ||
-      waitingForArena ||
-      gamearenaLive ||
-      sseSubscribed
-        ? LIVE_REFRESH_MS
-        : REFRESH_MS;
-    const t = setInterval(() => void refresh(), ms);
+    const t = setInterval(() => void refresh(), REFRESH_MS);
     return () => clearInterval(t);
-  }, [
-    refresh,
-    livePolling,
-    arenaActive,
-    waitingForArena,
-    gamearenaLive,
-    sseSubscribed,
-  ]);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!id || !gamearenaSkill || health !== "live") return;
+    void refreshLiveSnapshot();
+    const t = setInterval(() => void refreshLiveSnapshot(), 1_000);
+    return () => clearInterval(t);
+  }, [id, gamearenaSkill, health, refreshLiveSnapshot]);
 
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 1000);

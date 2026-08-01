@@ -4,7 +4,7 @@ React embed for **GoodAgent**: your users connect a wallet on **your site**, pic
 
 | | |
 |---|---|
-| **npm** | `@goodagent/widget@0.3.0` |
+| **npm** | `@goodagent/widget@0.3.1` |
 | **Skills catalog** | [goodagentids.xyz/skills](https://goodagentids.xyz/skills) |
 | **Hosted backend** | `https://goodagentids.xyz/host` + `/api` (you do not run agents yourself) |
 | **GameArena deep-dive** | [GAMEARENA_INTEGRATION.md](./GAMEARENA_INTEGRATION.md) |
@@ -30,7 +30,7 @@ All helpers take **`partnerId`** (your project slug for deploy attribution). URL
 Users see a **skill picker** on the Deploy tab, then name + settings, then deploy → verify → dashboard.
 
 ```bash
-npm install @goodagent/widget@0.3.0 react react-dom wagmi viem @tanstack/react-query --legacy-peer-deps
+npm install @goodagent/widget@0.3.1 react react-dom wagmi viem @tanstack/react-query --legacy-peer-deps
 ```
 
 ```tsx
@@ -217,6 +217,11 @@ import "@goodagent/widget/styles.css";
 Wrap the widget and override CSS variables under a parent class (see Agent Haus `goodagent-embed` pattern): `--ga-bg`, `--ga-primary`, `--ga-border`, etc.
 
 ---
+
+## What's new in 0.3.1
+
+- **GameArena competition:** Verify and Dashboard show only the **first** GameArena deploy per wallet (matches host partner API)
+- Requires host with first-agent partner API + start gate (`GAMEARENA_FIRST_AGENT_ONLY`)
 
 ## What's new in 0.3.0
 

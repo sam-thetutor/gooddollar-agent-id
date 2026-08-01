@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import {
   isGamearenaSkill,
-  shouldFastPollLiveArena,
 } from "@goodagent/live-arena";
 import {
   isDeployOwner,
   signDeployControl,
   type DeployAgent,
+  type DeployLiveSnapshot,
   type DeployStatusResponse,
 } from "../client/host.js";
 import { useWidget } from "../context.js";
@@ -28,7 +28,51 @@ function mergeStatus(
     stats: patch.stats === undefined ? base.stats : patch.stats,
     pm2: patch.pm2 === undefined ? base.pm2 : patch.pm2,
     verify: patch.verify === undefined ? base.verify : patch.verify,
+    liveMatch: patch.liveMatch === undefined ? base.liveMatch : patch.liveMatch,
+    activeArenaMatchId:
+      patch.activeArenaMatchId === undefined
+        ? base.activeArenaMatchId
+        : patch.activeArenaMatchId,
   };
+}
+
+function mergeLiteStats(
+  prev: DeployStatusResponse["stats"],
+  liteStats: DeployStatusResponse["stats"],
+): DeployStatusResponse["stats"] {
+  if (!liteStats && !prev) return null;
+  if (!liteStats) return prev ?? null;
+  if (!prev) return liteStats;
+  return {
+    ...prev,
+    logTail: liteStats.logTail ?? prev.logTail,
+  };
+}
+
+/** Lite polls omit heavy stats — keep the last full snapshot fields. */
+function mergeLiteStatus(
+  prev: DeployStatusResponse | null,
+  lite: DeployStatusResponse,
+): DeployStatusResponse {
+  return mergeStatus(lite, {
+    stats: mergeLiteStats(prev?.stats ?? null, lite.stats ?? null),
+    liveMatch: lite.liveMatch ?? null,
+    activeArenaMatchId: lite.activeArenaMatchId ?? null,
+  });
+}
+
+function mergeLiveSnapshot(
+  prev: DeployStatusResponse,
+  snap: DeployLiveSnapshot,
+): DeployStatusResponse {
+  return mergeStatus(prev, {
+    liveMatch: snap.liveMatch ?? null,
+    activeArenaMatchId: snap.activeArenaMatchId ?? null,
+    pm2: snap.pm2 ?? prev.pm2,
+    stats: snap.logTail
+      ? mergeLiteStats(prev.stats ?? null, { logTail: snap.logTail })
+      : prev.stats,
+  });
 }
 
 function optimisticPaused(
@@ -58,6 +102,8 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
   const [controlBusy, setControlBusy] =
     useState<DashboardControlBusy>(null);
   const [error, setError] = useState<string | null>(null);
+  const fullPollInFlight = useRef(false);
+  const livePollInFlight = useRef(false);
 
   const agentAddress = status?.agentAddress ?? deploy?.agentAddress ?? null;
 
@@ -83,9 +129,7 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
     if (!deployId) return null;
     try {
       const lite = await host.getDeployStatus(deployId, { lite: true });
-      setStatus((prev) =>
-        mergeStatus(lite, { stats: prev?.stats ?? null }),
-      );
+      setStatus((prev) => mergeLiteStatus(prev, lite));
       setError(null);
       return lite;
     } catch (e) {
@@ -94,49 +138,98 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
     }
   }, [deployId, host]);
 
-  const pollFull = useCallback(async () => {
-    if (!deployId) return null;
-    setStatsLoading(true);
+  const pollFull = useCallback(
+    async (opts?: { background?: boolean }) => {
+      if (!deployId || fullPollInFlight.current) return null;
+      fullPollInFlight.current = true;
+      const background = opts?.background ?? false;
+      if (!background) setStatsLoading(true);
+      try {
+        const full = await host.getDeployStatus(deployId);
+        setStatus(full);
+        setError(null);
+        return full;
+      } catch (e) {
+        setError((e as Error).message);
+        return null;
+      } finally {
+        fullPollInFlight.current = false;
+        if (!background) setStatsLoading(false);
+      }
+    },
+    [deployId, host],
+  );
+
+  const pollLiveSnapshot = useCallback(async () => {
+    if (!deployId || livePollInFlight.current) return null;
+    livePollInFlight.current = true;
     try {
-      const full = await host.getDeployStatus(deployId);
-      setStatus(full);
-      setError(null);
-      return full;
-    } catch (e) {
-      setError((e as Error).message);
+      const snap = await host.getDeployLiveSnapshot(deployId);
+      setStatus((prev) => (prev ? mergeLiveSnapshot(prev, snap) : prev));
+      return snap;
+    } catch {
       return null;
     } finally {
-      setStatsLoading(false);
+      livePollInFlight.current = false;
     }
   }, [deployId, host]);
 
   const poll = useCallback(async () => {
     await pollLite();
-    return pollFull();
+    return pollFull({ background: true });
   }, [pollLite, pollFull]);
 
   const skillId =
     status?.skillId ?? deploy?.skills?.[0]?.skillId ?? null;
   const agentOnline =
-    status?.pm2?.online ?? status?.status === "running";
-  const fastPoll = useMemo(
-    () =>
-      isGamearenaSkill(skillId) &&
-      agentOnline &&
-      (shouldFastPollLiveArena(status) || agentOnline),
-    [skillId, agentOnline, status],
-  );
-  const pollMs = fastPoll ? 2000 : (config.statusPollMs ?? 5000);
+    status?.pm2?.online ??
+    (status?.status === "running" || deploy?.status === "running");
+  const gamearenaOnline =
+    isGamearenaSkill(skillId) && agentOnline;
+  const litePollMs = gamearenaOnline ? 5000 : (config.statusPollMs ?? 5000);
+  const livePollMs = gamearenaOnline ? 1000 : null;
+  const fullPollMs = gamearenaOnline ? 20_000 : 30_000;
 
   useEffect(() => {
     if (!deployId) return;
     setStatus(null);
     setClientBalances(null);
     setStatsLoading(true);
-    void poll();
-    const t = setInterval(() => void poll(), pollMs);
-    return () => clearInterval(t);
-  }, [deployId, poll, pollMs]);
+    let cancelled = false;
+
+    void (async () => {
+      await pollLite();
+      if (!cancelled) setStatsLoading(false);
+      if (gamearenaOnline) void pollLiveSnapshot();
+      void pollFull({ background: true });
+    })();
+
+    const liteTimer = setInterval(() => void pollLite(), litePollMs);
+    const liveTimer =
+      livePollMs != null
+        ? setInterval(() => void pollLiveSnapshot(), livePollMs)
+        : null;
+    const fullTimer = setInterval(
+      () => void pollFull({ background: true }),
+      fullPollMs,
+    );
+
+    return () => {
+      cancelled = true;
+      clearInterval(liteTimer);
+      if (liveTimer) clearInterval(liveTimer);
+      clearInterval(fullTimer);
+    };
+  }, [
+    deployId,
+    pollLite,
+    pollLiveSnapshot,
+    pollFull,
+    litePollMs,
+    livePollMs,
+    fullPollMs,
+    gamearenaOnline,
+  ]);
 
   const isOwner = isDeployOwner(
     wallet.address,
@@ -154,7 +247,7 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
       const auth = await signDeployControl(wallet, "pause", deployId);
       await host.stopDeploy(deployId, auth);
       await pollLite();
-      void pollFull();
+      void pollFull({ background: true });
     } catch (e) {
       setError((e as Error).message);
       await pollLite();
@@ -182,7 +275,7 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
       const auth = await signDeployControl(wallet, "resume", deployId);
       await host.startDeploy(deployId, auth);
       await pollLite();
-      void pollFull();
+      void pollFull({ background: true });
     } catch (e) {
       setError((e as Error).message);
       await pollLite();

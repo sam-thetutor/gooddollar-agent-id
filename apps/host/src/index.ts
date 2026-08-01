@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
@@ -12,6 +12,7 @@ import {
   listChatSubscriptions,
   listDeployedAgentsByOwner,
   listGamearenaDeployedAgents,
+  getFirstGamearenaDeployForOwner,
   markReminded,
   maxWalletDerivationIndex,
   parseDeployConfiguration,
@@ -59,11 +60,17 @@ import {
   setGamePassUsername,
   syncAgentAfterPassRename,
   agentDir,
+  readGamePassProfile,
   GAMEARENA_SKILL_ID,
   type PipelineStatus,
   type DeployAgentRecord,
 } from "@goodagent/runtime";
-import { isSkillDeployable, GOODAGENT_API_URL } from "@goodagent/shared";
+import { inferLiveMatchFromLogTail } from "@goodagent/live-arena";
+import {
+  isSkillDeployable,
+  GOODAGENT_API_URL,
+  GOODAGENT_HOST_URL,
+} from "@goodagent/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { verifyDeployControl } from "./deploy-control-auth.js";
@@ -76,6 +83,9 @@ const HOST_PORT = Number(process.env.HOST_PORT ?? 3002);
 const HOST_INTERNAL_SECRET = process.env.HOST_INTERNAL_SECRET?.trim() ?? "";
 const API_BASE = process.env.API_BASE ?? GOODAGENT_API_URL;
 const DEV_SKIP_PAYMENT = process.env.HOST_DEV_SKIP_PAYMENT === "1";
+const HOST_PUBLIC_BASE =
+  process.env.PUBLIC_HOST_URL?.trim()?.replace(/\/$/, "") || GOODAGENT_HOST_URL;
+const OWNER_WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
 
 const app = new Hono();
 const runningPipelines = new Set<string>();
@@ -109,6 +119,146 @@ function scheduleDeployFileSync(
       await syncDeployLogFile(agentId, outLog).catch(() => undefined);
     }
   })();
+}
+
+/** When the skill only writes logs (no arena_match posts), infer live state from log tail. */
+function resolveLiveArenaFromLog(
+  logTail: string | null | undefined,
+  displayName: string,
+  liveMatch: GameArenaLiveMatch | null,
+  activeArenaMatchId: string | null,
+): { liveMatch: GameArenaLiveMatch | null; activeArenaMatchId: string | null } {
+  const inferred = logTail?.trim()
+    ? inferLiveMatchFromLogTail(logTail, displayName)
+    : null;
+
+  if (inferred?.phase === "starting" || inferred?.phase === "playing") {
+    const hostActive =
+      liveMatch?.phase === "starting" || liveMatch?.phase === "playing";
+    return {
+      liveMatch: hostActive ? liveMatch : inferred,
+      activeArenaMatchId: activeArenaMatchId ?? inferred.matchId,
+    };
+  }
+
+  if (
+    liveMatch?.phase === "starting" ||
+    liveMatch?.phase === "playing"
+  ) {
+    return { liveMatch, activeArenaMatchId };
+  }
+
+  // Between matches — clear stale ended rows so the next match can subscribe
+  return { liveMatch: null, activeArenaMatchId: null };
+}
+
+function readAgentLogTail(
+  agentsRoot: string,
+  deployId: string,
+  lines = 24,
+): string | null {
+  const outLog = resolve(agentDir(agentsRoot, deployId), "logs", "out.log");
+  if (!existsSync(outLog)) return null;
+  try {
+    const raw = readFileSync(outLog, "utf8");
+    return raw.trim().split("\n").slice(-lines).join("\n") || null;
+  } catch {
+    return null;
+  }
+}
+
+function gamearenaFirstAgentConflict(existing: {
+  id: string;
+  displayName: string;
+  agentAddress: string | null;
+  status: string;
+}) {
+  return {
+    error: "GAMEARENA_FIRST_AGENT_ONLY" as const,
+    message:
+      "Only your first GameArena agent can participate. Configure and start that agent from the dashboard.",
+    agent: {
+      deployId: existing.id,
+      displayName: existing.displayName,
+      agentAddress: existing.agentAddress,
+      status: existing.status,
+    },
+  };
+}
+
+interface GamearenaPartnerAgent {
+  deployId: string;
+  displayName: string;
+  agentAddress: string | null;
+  ownerWallet: string | null;
+  gamePassUsername: string | null;
+  status: string;
+  activeMatchId: string | null;
+  livePhase: "starting" | "playing" | null;
+  liveWatchUrl: string | null;
+}
+
+async function buildGamearenaPartnerAgent(
+  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
+  rpcUrl: string,
+  agentsRoot: string,
+): Promise<GamearenaPartnerAgent> {
+  const config = parseDeployConfiguration(agent);
+  let gamePassUsername =
+    config.GAME_PASS_USERNAME?.trim() || config.PLAYER_NAME?.trim() || null;
+
+  if (!gamePassUsername && agent.agentAddress) {
+    try {
+      const profile = await readGamePassProfile(
+        agent.agentAddress as `0x${string}`,
+        rpcUrl,
+      );
+      gamePassUsername = profile.username || null;
+    } catch {
+      // On-chain username lookup is best-effort for partners.
+    }
+  }
+
+  let activeMatchId: string | null = null;
+  let livePhase: GamearenaPartnerAgent["livePhase"] = null;
+
+  if (agent.agentAddress) {
+    const logTail = readAgentLogTail(agentsRoot, agent.id, 48);
+    const [liveMatch, storedMatchId] = await Promise.all([
+      getDeployLiveMatch(agent.id),
+      getActiveArenaMatchId(agent.id),
+    ]);
+    const resolved = resolveLiveArenaFromLog(
+      logTail,
+      agent.displayName,
+      liveMatch,
+      storedMatchId,
+    );
+    activeMatchId = resolved.activeArenaMatchId;
+    if (
+      resolved.liveMatch?.phase === "starting" ||
+      resolved.liveMatch?.phase === "playing"
+    ) {
+      livePhase = resolved.liveMatch.phase;
+    }
+  }
+
+  const liveWatchUrl =
+    activeMatchId && livePhase
+      ? `${HOST_PUBLIC_BASE}/arena/live/${encodeURIComponent(activeMatchId)}`
+      : null;
+
+  return {
+    deployId: agent.id,
+    displayName: agent.displayName,
+    agentAddress: agent.agentAddress,
+    ownerWallet: agent.ownerWallet,
+    gamePassUsername,
+    status: agent.status,
+    activeMatchId,
+    livePhase,
+    liveWatchUrl,
+  };
 }
 
 app.use("*", cors({ origin: "*" }));
@@ -335,7 +485,7 @@ app.get("/arena/live/:matchId", async (c) => {
         Origin: GAMEARENA_SSE_ORIGIN,
         Referer: `${GAMEARENA_SSE_ORIGIN}/games/challenge-ai`,
       },
-      signal: c.req.raw.signal,
+      signal: AbortSignal.timeout(8_000),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -431,6 +581,30 @@ app.get("/leaderboard/gamearena", async (c) => {
     console.warn("[host] gamearena leaderboard:", err);
     return c.json({ error: "LADDER_FAILED" }, 500);
   }
+});
+
+/** GameArena partner API — owner wallet → deployed play agents + live match. */
+app.get("/partners/gamearena/agents", async (c) => {
+  const ownerRaw = c.req.query("owner") ?? c.req.query("ownerWallet");
+  if (!ownerRaw?.trim()) {
+    return c.json({ error: "owner query param required" }, 400);
+  }
+  const ownerWallet = ownerRaw.trim();
+  if (!OWNER_WALLET_RE.test(ownerWallet)) {
+    return c.json({ error: "INVALID_OWNER" }, 400);
+  }
+
+  loadRuntimeEnv();
+  const config = getRuntimeConfig();
+  const first = await getFirstGamearenaDeployForOwner(ownerWallet);
+  const snapshots = first
+    ? [await buildGamearenaPartnerAgent(first, config.rpcUrl, config.agentsRoot)]
+    : [];
+
+  return c.json({
+    owner: ownerWallet.toLowerCase(),
+    agents: snapshots,
+  });
 });
 
 app.get("/deploy", async (c) => {
@@ -529,6 +703,50 @@ app.get("/deploy/:id", async (c) => {
   return c.json({ agent: publicAgent(agent) });
 });
 
+/** Fast live arena snapshot — reads agent log file directly (no heavy stats RPC). */
+app.get("/deploy/:id/live-snapshot", async (c) => {
+  const agent = await getDeployedAgent(c.req.param("id"));
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const skillId = agent.skills[0]?.skillId ?? null;
+  if (!skillId?.includes("gamearena")) {
+    return c.json({
+      liveMatch: null,
+      activeArenaMatchId: null,
+      logTail: null,
+      pm2: agent.pm2Name ? pm2ProcessSnapshot(agent.pm2Name) : null,
+    });
+  }
+
+  loadRuntimeEnv();
+  const config = getRuntimeConfig();
+  const pm2 = agent.pm2Name ? pm2ProcessSnapshot(agent.pm2Name) : null;
+  const logTail = readAgentLogTail(config.agentsRoot, agent.id, 48);
+  let liveMatch: GameArenaLiveMatch | null = null;
+  let activeArenaMatchId: string | null = null;
+  try {
+    [liveMatch, activeArenaMatchId] = await Promise.all([
+      getDeployLiveMatch(agent.id),
+      getActiveArenaMatchId(agent.id),
+    ]);
+  } catch {
+    // DB flake — infer live state from agent log file only
+  }
+  const resolved = resolveLiveArenaFromLog(
+    logTail,
+    agent.displayName,
+    liveMatch,
+    activeArenaMatchId,
+  );
+
+  return c.json({
+    liveMatch: resolved.liveMatch,
+    activeArenaMatchId: resolved.activeArenaMatchId,
+    logTail,
+    pm2,
+  });
+});
+
 app.get("/deploy/:id/status", async (c) => {
   const agent = await getDeployedAgent(c.req.param("id"));
   if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
@@ -542,12 +760,29 @@ app.get("/deploy/:id/status", async (c) => {
     : Promise.resolve(null);
 
   if (lite) {
-    const verify = await verifyPromise;
+    const skillId = agent.skills[0]?.skillId ?? null;
+    let logTail: string | null = null;
+    if (skillId?.includes("gamearena")) {
+      loadRuntimeEnv();
+      const config = getRuntimeConfig();
+      logTail = readAgentLogTail(config.agentsRoot, agent.id, 48);
+    }
+    const [verify, liveMatch, activeArenaMatchId] = await Promise.all([
+      verifyPromise,
+      getDeployLiveMatch(agent.id),
+      getActiveArenaMatchId(agent.id),
+    ]);
+    const resolved = resolveLiveArenaFromLog(
+      logTail,
+      agent.displayName,
+      liveMatch,
+      activeArenaMatchId,
+    );
     return c.json({
       id: agent.id,
       displayName: agent.displayName,
       template: agent.template,
-      skillId: agent.skills[0]?.skillId ?? null,
+      skillId,
       configuration: agent.configuration,
       status: agent.status,
       ownerWallet: agent.ownerWallet,
@@ -559,9 +794,9 @@ app.get("/deploy/:id/status", async (c) => {
       pipelineRunning: runningPipelines.has(agent.id),
       pm2,
       verify,
-      stats: null,
-      liveMatch: null,
-      activeArenaMatchId: null,
+      stats: logTail ? { logTail } : null,
+      liveMatch: resolved.liveMatch,
+      activeArenaMatchId: resolved.activeArenaMatchId,
     });
   }
 
@@ -678,6 +913,14 @@ app.get("/deploy/:id/status", async (c) => {
     }
   }
 
+  const logTail = stats?.logTail ?? null;
+  const resolved = resolveLiveArenaFromLog(
+    logTail,
+    agent.displayName,
+    liveMatch,
+    activeArenaMatchId,
+  );
+
   return c.json({
     id: agent.id,
     displayName: agent.displayName,
@@ -695,8 +938,8 @@ app.get("/deploy/:id/status", async (c) => {
     pm2,
     verify,
     stats,
-    liveMatch,
-    activeArenaMatchId,
+    liveMatch: resolved.liveMatch,
+    activeArenaMatchId: resolved.activeArenaMatchId,
   });
 });
 
@@ -1053,6 +1296,16 @@ app.post("/deploy/:id/start", async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: "HOST_CONFIG", message }, 500);
+  }
+
+  if (
+    primarySkillId(agent) === GAMEARENA_SKILL_ID &&
+    agent.ownerWallet
+  ) {
+    const first = await getFirstGamearenaDeployForOwner(agent.ownerWallet);
+    if (first && first.id !== id) {
+      return c.json(gamearenaFirstAgentConflict(first), 409);
+    }
   }
 
   try {

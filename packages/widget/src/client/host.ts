@@ -92,6 +92,13 @@ export interface DeployStatusResponse {
   activeArenaMatchId?: string | null;
 }
 
+export interface DeployLiveSnapshot {
+  liveMatch?: GameArenaLiveMatch | null;
+  activeArenaMatchId?: string | null;
+  logTail?: string | null;
+  pm2?: DeployStatusResponse["pm2"];
+}
+
 function normalizeBase(url: string): string {
   return url.replace(/\/$/, "");
 }
@@ -174,6 +181,13 @@ export function createHostClient(hostBaseUrl: string) {
       return hostFetch<DeployStatusResponse>(
         base,
         `/deploy/${deployId}/status${qs ? `?${qs}` : ""}`,
+      );
+    },
+
+    getDeployLiveSnapshot(deployId: string) {
+      return hostFetch<DeployLiveSnapshot>(
+        base,
+        `/deploy/${deployId}/live-snapshot`,
       );
     },
 

@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  inferLiveMatchFromLogTail,
   pickArenaLiveDisplay,
   resolveLiveMatchDisplay,
   type GameArenaLiveMatch,
@@ -40,6 +41,31 @@ export function useArenaLiveSpectator(input: ArenaLiveSpectatorInput) {
     agentLive,
   } = input;
 
+  const displayedMatchIdsRef = useRef(new Set<string>());
+  const [caughtUpReplay, setCaughtUpReplay] =
+    useState<GameArenaLiveMatch | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !logTail?.trim()) return;
+
+    const inferred = inferLiveMatchFromLogTail(logTail, playerLabel);
+    if (
+      inferred &&
+      (inferred.phase === "starting" || inferred.phase === "playing")
+    ) {
+      displayedMatchIdsRef.current.add(inferred.matchId);
+      setCaughtUpReplay(null);
+      return;
+    }
+
+    if (inferred?.phase !== "ended") return;
+
+    if (displayedMatchIdsRef.current.has(inferred.matchId)) return;
+
+    displayedMatchIdsRef.current.add(inferred.matchId);
+    setCaughtUpReplay(inferred);
+  }, [enabled, logTail, playerLabel]);
+
   const liveDisplayFallback = useMemo(
     () =>
       enabled
@@ -77,16 +103,29 @@ export function useArenaLiveSpectator(input: ArenaLiveSpectatorInput) {
     );
 
   const liveDisplay = useMemo(
-    () =>
-      enabled
-        ? pickArenaLiveDisplay({
-            sseLive,
-            hostLive: liveMatch,
-            logFallback: liveDisplayFallback,
-            agentLive,
-            hasActiveSseTarget: Boolean(sseMatchId || activeArenaMatchId),
-          })
-        : null,
+    () => {
+      if (!enabled) return null;
+      const picked = pickArenaLiveDisplay({
+        sseLive,
+        hostLive: liveMatch,
+        logFallback: liveDisplayFallback,
+        agentLive,
+        hasActiveSseTarget: Boolean(
+          sseMatchId ||
+            activeArenaMatchId ||
+            liveDisplayFallback?.phase === "starting" ||
+            liveDisplayFallback?.phase === "playing",
+        ),
+      });
+      if (
+        picked &&
+        (picked.phase === "starting" || picked.phase === "playing")
+      ) {
+        return picked;
+      }
+      if (caughtUpReplay) return caughtUpReplay;
+      return picked;
+    },
     [
       enabled,
       sseLive,
@@ -95,19 +134,25 @@ export function useArenaLiveSpectator(input: ArenaLiveSpectatorInput) {
       agentLive,
       sseMatchId,
       activeArenaMatchId,
+      caughtUpReplay,
     ],
   );
 
   const liveFeedState = useMemo((): LiveFeedState => {
     if (!enabled) return "idle";
-    if (sseStatus === "connecting" && sseMatchId) return "connecting";
     if (
       sseLive?.phase === "starting" ||
       sseLive?.phase === "playing" ||
       liveMatch?.phase === "starting" ||
-      liveMatch?.phase === "playing"
+      liveMatch?.phase === "playing" ||
+      liveDisplay?.phase === "starting" ||
+      liveDisplay?.phase === "playing"
     ) {
       return "live";
+    }
+    if (sseStatus === "connecting" && sseMatchId) return "connecting";
+    if (sseStatus === "error" && liveDisplay) {
+      return liveDisplay.phase === "ended" ? "replay" : "live";
     }
     if (agentLive && !liveDisplay) return "waiting";
     if (liveDisplay?.phase === "ended") return "replay";
@@ -127,13 +172,18 @@ export function useArenaLiveSpectator(input: ArenaLiveSpectatorInput) {
     if (!enabled) return null;
     if (liveFeedState === "waiting") return "Standing by";
     if (liveFeedState === "connecting") return "Connecting to GameArena…";
+    if (sseStatus === "error" && liveDisplay) {
+      return liveDisplay.phase === "ended"
+        ? "Last match (host snapshot)"
+        : "Host snapshot (feed unavailable)";
+    }
     if (sseStatus === "connected" || liveFeedState === "live") {
       return "GameArena live feed";
     }
     if (sseStatus === "ended") return "Match finished";
     if (sseStatus === "idle" && sseMatchId) return "Waiting for feed…";
-    if (liveFeedState === "replay") return "Last match (log replay)";
     if (sseStatus === "error") return sseError ?? "Feed error";
+    if (liveFeedState === "replay") return "Last match (log replay)";
     return null;
   }, [
     enabled,
@@ -141,6 +191,7 @@ export function useArenaLiveSpectator(input: ArenaLiveSpectatorInput) {
     sseStatus,
     sseMatchId,
     sseError,
+    liveDisplay,
   ]);
 
   const arenaActive =

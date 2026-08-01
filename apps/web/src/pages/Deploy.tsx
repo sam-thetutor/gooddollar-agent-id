@@ -18,10 +18,11 @@ import { signDeployControl } from "../lib/deploy-control.js";
 import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import {
   GAMEARENA_SKILL_ID,
-  skillSpendPill,
+  parsePlayMode,
+  playModeLabel,
+  strategyLabelFromConfig,
 } from "../lib/gamearena-config.js";
 import {
-  balaioFundingHint,
   isBalaioRoleEnabled,
 } from "../lib/balaio-config.js";
 import {
@@ -30,6 +31,18 @@ import {
   resolveDefaultDeploySkillId,
 } from "../lib/skill-registry.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
+import {
+  OnboardActions,
+  OnboardCard,
+  OnboardField,
+  OnboardPageHeader,
+  OnboardReviewStep,
+  OnboardStepper,
+  OnboardSuccessOverlay,
+  type OnboardStep,
+} from "../components/DeployOnboardingWizard.js";
+
+const DEPLOY_DRAFT_KEY = "goodagent-deploy-draft-v1";
 
 const REGISTRY_URL =
   "https://raw.githubusercontent.com/sam-thetutor/goodagent-skills/main/registry.json";
@@ -290,57 +303,188 @@ function UbiReminderFields({
   );
 }
 
-function GamearenaDeployHint() {
-  return (
-    <p className="muted hint deploy-section-hint">
-      We fund your agent with 200 G$ + CELO for gas. Pick free tickets,
-      on-chain wagers, or auto (tickets first, then G$ when MARKOV is live).
-      Choose how your agent throws vs MARKOV — random, a fixed move, or a
-      repeating sequence. You{" "}
-      <strong>vouch at /issue</strong> (250 G$ refundable bond) before it goes
-      live.
-    </p>
-  );
+function deployFundingShort(
+  skillId: string,
+  balaioSkill: boolean,
+  balaioCreator: boolean,
+): string {
+  if (skillId === UBI_REMINDER_SKILL_ID) {
+    return "Telegram only — no play wallet. Refundable 250 G$ bond at /issue.";
+  }
+  if (balaioSkill) {
+    return balaioCreator
+      ? "G$ for escrow + CELO for gas · 250 G$ bond at /issue"
+      : "CELO for gas · 250 G$ bond at /issue";
+  }
+  if (skillId === GAMEARENA_SKILL_ID) {
+    return "G$ for refills + CELO for gas · 250 G$ bond at /issue";
+  }
+  return "200 G$ + CELO for gas · 250 G$ bond at /issue";
 }
 
-function SkillPickCard({
-  skill,
-  selected,
-  onSelect,
-}: {
-  skill: SkillEntry;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const pill = skillSpendPill(skill);
+function deployReviewRows(
+  skillId: string,
+  config: SkillConfiguration,
+  botToken: string,
+): { label: string; value: string }[] {
+  if (skillId === GAMEARENA_SKILL_ID) {
+    const playMode = parsePlayMode(config);
+    const showOnchain = playMode === "onchain" || playMode === "auto";
+    const showOffchain = playMode === "offchain" || playMode === "auto";
+    const autoRefill = (config.AUTO_REFILL ?? "1") !== "0";
 
-  return (
-    <button
-      type="button"
-      className={`deploy-skill-pick${selected ? " selected" : ""}`}
-      onClick={onSelect}
-      aria-pressed={selected}
-    >
-      <div className="deploy-skill-pick-head">
-        <div>
-          <strong>{skill.name}</strong>
-          <p className="skill-id">{skill.skill_id}</p>
-        </div>
-        {skill.game && (
-          <span className="pill pill-muted">{skill.game}</span>
-        )}
-      </div>
-      <p className="deploy-skill-pick-desc">{skill.description}</p>
-      <div className="skill-perms">
-        <span
-          className={`pill ${pill.variant === "warn" ? "pill-warn" : "pill-ok"}`}
-        >
-          {pill.label}
-        </span>
-        <span className="pill pill-muted">Celo</span>
-      </div>
-    </button>
-  );
+    const rows: { label: string; value: string }[] = [
+      { label: "Play mode", value: playModeLabel(playMode) },
+      { label: "Strategy", value: strategyLabelFromConfig(config) },
+    ];
+
+    if (showOffchain) {
+      rows.push({
+        label: "Auto-refill",
+        value: autoRefill ? "On" : "Off",
+      });
+      if (autoRefill) {
+        rows.push(
+          {
+            label: "Refill budget / day",
+            value: `${config.DAILY_REFILL_CAP_GS ?? "20"} G$`,
+          },
+          {
+            label: "Max refills / day",
+            value: config.MAX_REFILLS_PER_DAY ?? "10",
+          },
+        );
+      }
+      rows.push({
+        label: "Daily match cap",
+        value: config.DAILY_MATCH_CAP ?? "50",
+      });
+    }
+
+    rows.push(
+      {
+        label: "Max matches / run",
+        value: config.MAX_MATCHES ?? "10",
+      },
+      {
+        label: "Pause between matches",
+        value: `${config.MATCH_INTERVAL_SECONDS ?? "300"} sec`,
+      },
+    );
+
+    if (showOffchain) {
+      rows.push({
+        label: "Round pace (spectator)",
+        value: `${config.ROUND_PACE_MS ?? "1000"} ms`,
+      });
+    }
+
+    if (showOnchain) {
+      rows.push(
+        {
+          label: "Wager per match",
+          value: `${config.WAGER_GS ?? "1"} G$`,
+        },
+        {
+          label: "Daily loss cap",
+          value: `${config.DAILY_LOSS_CAP_GS ?? "20"} G$`,
+        },
+        {
+          label: "Accept timeout",
+          value: `${config.ACCEPT_TIMEOUT_SECONDS ?? "90"} sec`,
+        },
+      );
+    }
+
+    return rows;
+  }
+  if (skillId === "gaming/card-fighter/actionorder_vshouse") {
+    const char =
+      CHARACTERS.find((c) => c.id === config.CHARACTER_ID)?.label ??
+      config.CHARACTER_ID ??
+      "Riven";
+    const strat =
+      STRATEGIES.find((s) => s.id === config.STRATEGY)?.label ??
+      config.STRATEGY ??
+      "Anti-strike";
+    const diff = ["Easy", "Normal", "Hard", "Expert"][
+      Number(config.DIFFICULTY ?? "0")
+    ] ?? "Easy";
+    return [
+      { label: "Character", value: char },
+      { label: "Strategy", value: strat },
+      { label: "Difficulty", value: diff },
+      { label: "Max matches per day", value: config.MAX_MATCHES ?? "5" },
+      {
+        label: "Pause between matches",
+        value: `${config.MATCH_INTERVAL_SECONDS ?? "10"} sec`,
+      },
+    ];
+  }
+  if (skillId === UBI_REMINDER_SKILL_ID) {
+    return [
+      {
+        label: "Telegram bot",
+        value: botToken.trim()
+          ? `${botToken.slice(0, 8)}… (token set)`
+          : "Not set",
+      },
+      {
+        label: "Scan interval",
+        value: `${config.REMINDER_INTERVAL_MINUTES ?? "15"} min`,
+      },
+      {
+        label: "Identity expiry warning",
+        value: `${config.IDENTITY_EXPIRY_WARN_DAYS ?? "14"} days`,
+      },
+    ];
+  }
+  if (skillId === BALAIO_WORKER_SKILL_ID) {
+    const roles = [
+      config.ENABLE_WORKER === "1" ? "Worker" : null,
+      config.ENABLE_CREATE === "1" ? "Creator" : null,
+      config.ENABLE_APPROVE === "1" ? "Approver" : null,
+    ].filter(Boolean);
+    return [
+      { label: "Roles", value: roles.join(", ") || "Worker" },
+      {
+        label: "Scan interval",
+        value: `${config.SCAN_INTERVAL_SECONDS ?? "300"} sec`,
+      },
+      { label: "Min reward", value: config.MIN_REWARD ?? "1" },
+      { label: "Reward tokens", value: config.REWARD_TOKENS ?? "G$" },
+    ];
+  }
+  return [{ label: "Configuration", value: "Registry defaults" }];
+}
+
+type WizardStep = OnboardStep;
+
+function previewHighlights(
+  skillId: string,
+  config: SkillConfiguration,
+): string[] {
+  if (skillId === GAMEARENA_SKILL_ID) {
+    return [
+      playModeLabel(parsePlayMode(config)),
+      strategyLabelFromConfig(config),
+      `${config.DAILY_MATCH_CAP ?? "50"} matches/day`,
+    ];
+  }
+  if (skillId === "gaming/card-fighter/actionorder_vshouse") {
+    const char =
+      CHARACTERS.find((c) => c.id === config.CHARACTER_ID)?.label ?? "Riven";
+    return [char, `${config.MAX_MATCHES ?? "5"} matches/day`];
+  }
+  if (skillId === UBI_REMINDER_SKILL_ID) {
+    return ["Telegram", "Read-only", "Chain watcher"];
+  }
+  if (skillId === BALAIO_WORKER_SKILL_ID) {
+    return isBalaioRoleEnabled(config, "creator")
+      ? ["Balaio creator", "G$ escrow"]
+      : ["Balaio worker", "On-chain tasks"];
+  }
+  return ["Hosted runtime", "GoodAgent ID"];
 }
 
 function DeployPipeline({
@@ -495,10 +639,7 @@ export function Deploy() {
   });
 
   const deployableSkills = useMemo(
-    () =>
-      filterListedSkills(registry?.skills ?? []).filter(
-        (s) => s.skill_id === GAMEARENA_SKILL_ID,
-      ),
+    () => filterListedSkills(registry?.skills ?? []),
     [registry],
   );
 
@@ -520,8 +661,56 @@ export function Deploy() {
     () => searchParams.get("job"),
   );
   const [status, setStatus] = useState<DeployStatusResponse | null>(null);
+  const [wizardStep, setWizardStep] = useState<WizardStep>(1);
+  const [nameTouched, setNameTouched] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
 
   const selectedSkill = deployableSkills.find((s) => s.skill_id === skillId);
+
+  useEffect(() => {
+    if (deployId || searchParams.get("job")) return;
+    try {
+      const raw = localStorage.getItem(DEPLOY_DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as {
+        name?: string;
+        skillId?: string;
+        config?: SkillConfiguration;
+        botToken?: string;
+        wizardStep?: WizardStep;
+      };
+      if (draft.name) setName(draft.name);
+      if (draft.skillId) setSkillId(draft.skillId);
+      if (draft.config) setConfig(draft.config);
+      if (draft.botToken) setBotToken(draft.botToken);
+      if (draft.wizardStep) setWizardStep(draft.wizardStep);
+    } catch {
+      localStorage.removeItem(DEPLOY_DRAFT_KEY);
+    }
+  }, [deployId, searchParams]);
+
+  useEffect(() => {
+    if (deployId) return;
+    const saveTimer = window.setTimeout(() => {
+      localStorage.setItem(
+        DEPLOY_DRAFT_KEY,
+        JSON.stringify({
+          name,
+          skillId,
+          config,
+          botToken,
+          wizardStep,
+        }),
+      );
+      setDraftSaved(true);
+    }, 400);
+    const hideTimer = window.setTimeout(() => setDraftSaved(false), 2000);
+    return () => {
+      window.clearTimeout(saveTimer);
+      window.clearTimeout(hideTimer);
+    };
+  }, [name, skillId, config, botToken, wizardStep, deployId]);
 
   useEffect(() => {
     const job = searchParams.get("job");
@@ -544,13 +733,21 @@ export function Deploy() {
   }, [deployId, poll]);
 
   useEffect(() => {
+    const fromUrl = searchParams.get("skill");
+    if (
+      fromUrl &&
+      deployableSkills.some((s) => s.skill_id === fromUrl)
+    ) {
+      setSkillId(fromUrl);
+      return;
+    }
     if (
       deployableSkills.length > 0 &&
       !deployableSkills.some((s) => s.skill_id === skillId)
     ) {
       setSkillId(defaultSkillId);
     }
-  }, [skillId, deployableSkills, defaultSkillId]);
+  }, [skillId, deployableSkills, defaultSkillId, searchParams]);
 
   useEffect(() => {
     setConfig(defaultConfigForSkill(skillId));
@@ -590,6 +787,9 @@ export function Deploy() {
         skipPayment: true,
       });
       setDeployId(agent.id);
+      localStorage.removeItem(DEPLOY_DRAFT_KEY);
+      setShowSuccess(true);
+      window.setTimeout(() => setShowSuccess(false), 1800);
       const auth = await signDeployControl(
         "run-pipeline",
         agent.id,
@@ -606,184 +806,232 @@ export function Deploy() {
   }
 
   const formLocked = busy || !!deployId;
-  const gamearenaSkill = skillId === GAMEARENA_SKILL_ID;
   const balaioSkill = skillId === BALAIO_WORKER_SKILL_ID;
   const balaioCreator = balaioSkill && isBalaioRoleEnabled(config, "creator");
-  const balaioFunding = balaioCreator ? balaioFundingHint(config) : null;
+  const fundingShort = deployFundingShort(skillId, balaioSkill, balaioCreator);
+
+  const reviewConfigRows = useMemo(
+    () => deployReviewRows(skillId, config, botToken),
+    [skillId, config, botToken],
+  );
+
+  const step1Valid =
+    name.trim().length > 0 &&
+    deployableSkills.length > 0 &&
+    deployableSkills.some((s) => s.skill_id === skillId);
+  const step2Valid =
+    step1Valid &&
+    (skillId !== UBI_REMINDER_SKILL_ID || botToken.trim().length > 0);
+
+  const nameError =
+    nameTouched && name.trim().length === 0
+      ? "Give your AI agent a memorable name."
+      : null;
+
+  const previewTags = useMemo(
+    () => previewHighlights(skillId, config),
+    [skillId, config],
+  );
+
+  function goWizardNext() {
+    setError(null);
+    if (wizardStep === 1) {
+      setNameTouched(true);
+      if (!step1Valid) return;
+      setWizardStep(2);
+    } else if (wizardStep === 2 && step2Valid) {
+      setWizardStep(3);
+    }
+  }
+
+  function goWizardBack() {
+    setError(null);
+    if (wizardStep === 3) setWizardStep(2);
+    else if (wizardStep === 2) setWizardStep(1);
+  }
 
   return (
     <>
       <Nav />
       <main className="page deploy-page">
-        <header className="hero compact">
-          <p className="eyebrow">Autonomous deploy</p>
-          <h1>Deploy an agent</h1>
-          <p className="lede">
-            {skillId === UBI_REMINDER_SKILL_ID
-              ? "We provision an agent identity, install your reminder bot, and keep it running 24/7 after you vouch at /issue."
-              : balaioSkill
-                ? balaioCreator
-                  ? "We provision a wallet, fund it with G$ for task escrow + gas, install the Balaio skill, and keep your agent running 24/7 after you vouch at /issue."
-                  : "We provision a wallet with CELO for gas (and G$ when earning), install the Balaio worker skill, and keep your agent scanning for tasks 24/7 after you vouch at /issue."
-              : gamearenaSkill
-                ? "We provision a wallet, fund it with G$ for ticket refills, install your skill, and keep the agent running 24/7 after you vouch at /issue."
-                : "We provision a wallet, fund it with 200 G$ + gas, install your skill, and keep the agent running 24/7 after you vouch at /issue."}
-          </p>
-        </header>
-
         {!isConnected ? (
-          <section className="card">
-            <h2 className="card-title">Connect wallet</h2>
-            <p className="muted">
-              Connect your GoodDollar-verified wallet to own and manage this
-              deploy.
-            </p>
-            <div className="actions">
-              <ConnectButton />
-            </div>
-          </section>
+          <div className="container">
+            <section className="card">
+              <h2 className="card-title">Connect wallet</h2>
+              <p className="muted">
+                Connect your GoodDollar-verified wallet to own and manage this
+                deploy.
+              </p>
+              <div className="actions">
+                <ConnectButton />
+              </div>
+            </section>
+          </div>
         ) : registryLoading ? (
-          <section className="card">
-            <p className="muted">Loading skill registry…</p>
-          </section>
+          <div className="container">
+            <section className="card">
+              <p className="muted">Loading skills…</p>
+            </section>
+          </div>
         ) : (
           <>
-            {!deployId && (
-              <>
-                <section className="card form">
-                  <h2 className="card-title">1 · Name your agent</h2>
-                  <label className="field">
-                    <span>Display name</span>
-                    <input
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="e.g. Arena Agent #1"
-                      disabled={formLocked}
-                    />
-                  </label>
-                </section>
+            {!deployId ? (
+              <div className="onboard-shell">
+                <div className="onboard-sticky-header">
+                  <OnboardStepper step={wizardStep} />
+                </div>
 
-                {deployableSkills.length > 1 && (
-                  <section className="card">
-                    <h2 className="card-title">2 · Pick a skill</h2>
-                    <p className="muted hint deploy-section-hint">
-                      Skills are open-source playbooks from the{" "}
-                      <Link to="/skills">GoodAgent registry</Link>. Caps are
-                      enforced in your config below.
-                    </p>
-                    <div className="deploy-skill-grid">
-                      {deployableSkills.map((skill) => (
-                        <SkillPickCard
-                          key={skill.skill_id}
-                          skill={skill}
-                          selected={skill.skill_id === skillId}
-                          onSelect={() => setSkillId(skill.skill_id)}
+                <div key={wizardStep} className="onboard-step">
+                  {wizardStep === 1 && (
+                    <OnboardCard>
+                      <OnboardPageHeader
+                        title="Basic information"
+                        subtitle="Name your agent and pick a skill."
+                      />
+                      <OnboardField
+                        label="Agent name"
+                        hint="Give your AI agent a memorable name."
+                        error={nameError}
+                      >
+                        <input
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          onBlur={() => setNameTouched(true)}
+                          placeholder="My GameArena Agent"
+                          disabled={formLocked}
+                          aria-invalid={!!nameError}
                         />
-                      ))}
-                    </div>
-                    {selectedSkill?.game_url && (
-                      <p className="deploy-game-link">
-                        <a
-                          href={selectedSkill.game_url}
-                          target="_blank"
-                          rel="noreferrer"
+                      </OnboardField>
+
+                      {deployableSkills.length > 0 ? (
+                        <OnboardField
+                          label="Skill"
+                          hint="Pick what this agent does — wallet, runtime, and limits depend on it."
                         >
-                          Play {selectedSkill.game} ↗
-                        </a>
-                      </p>
-                    )}
-                  </section>
-                )}
-
-                <section className="card form">
-                  <h2 className="card-title">
-                    {deployableSkills.length > 1
-                      ? skillId === UBI_REMINDER_SKILL_ID
-                        ? "3 · Bot settings"
-                        : balaioSkill
-                          ? "3 · Balaio settings"
-                          : "3 · Play settings"
-                      : "2 · Play settings"}
-                  </h2>
-                  {skillId === GAMEARENA_SKILL_ID ? (
-                    <GamearenaDeployHint />
-                  ) : skillId === UBI_REMINDER_SKILL_ID ? (
-                    <p className="muted hint deploy-section-hint">
-                      Read-only agent — it watches the chain and messages
-                      Telegram, never touches funds. You vouch at /issue
-                      (refundable 250 G$ bond) so your bot carries a verifiable
-                      human-backed identity.
-                    </p>
-                  ) : balaioSkill ? (
-                    <p className="muted hint deploy-section-hint">
-                      {balaioCreator ? (
-                        <>
-                          Creator mode escrows G$ from the agent wallet when it
-                          posts a task on Balaio (reward × slots + 1% fee).
-                          {balaioFunding ? ` ${balaioFunding}.` : ""} You vouch
-                          at /issue (250 G$ refundable bond) so workers can
-                          verify who posted the task.
-                        </>
+                          <select
+                            value={skillId}
+                            onChange={(e) => setSkillId(e.target.value)}
+                            disabled={formLocked}
+                          >
+                            {deployableSkills.map((skill) => (
+                              <option
+                                key={skill.skill_id}
+                                value={skill.skill_id}
+                              >
+                                {skill.name}
+                              </option>
+                            ))}
+                          </select>
+                        </OnboardField>
                       ) : (
-                        <>
-                          Worker mode signs on-chain Balaio transactions with
-                          CELO gas. Rewards are paid in G$ after the buyer
-                          approves. You vouch at /issue (250 G$ refundable bond)
-                          so buyers can verify who completed the work.
-                        </>
+                        <p className="error">
+                          No skills available.{" "}
+                          <Link to="/skills">Browse registry</Link>
+                        </p>
                       )}
-                    </p>
-                  ) : selectedSkill?.spends_tokens ? (
-                    <p className="muted hint deploy-section-hint">
-                      We fund your agent play wallet with 200 G$ + 0.5 CELO for
-                      gas. You vouch at /issue and lock a refundable 250 G$
-                      bond in AgentVault before it can wager. Set conservative
-                      limits below.
-                    </p>
-                  ) : (
-                    <p className="muted hint deploy-section-hint">
-                      Free vs-house mode. No G$ wager — only gas for Celo
-                      transactions.
-                    </p>
+
+                      <OnboardActions
+                        showCancel
+                        primaryLabel="Continue"
+                        primaryDisabled={formLocked || !step1Valid}
+                        onPrimary={goWizardNext}
+                      />
+                    </OnboardCard>
                   )}
 
-                  {skillId === "gaming/wagering/gamearena_1v1" && (
-                    <GamearenaConfigFields config={config} onChange={updateConfig} />
+                  {wizardStep === 2 && (
+                    <OnboardCard>
+                      <OnboardPageHeader
+                        title="Configure agent"
+                        subtitle={
+                          selectedSkill?.description
+                            ? selectedSkill.description.slice(0, 140) +
+                              (selectedSkill.description.length > 140
+                                ? "…"
+                                : "")
+                            : "Tune behavior and limits before going live."
+                        }
+                      />
+                      <div className="onboard-config-stack form">
+                        {skillId === GAMEARENA_SKILL_ID && (
+                          <GamearenaConfigFields
+                            config={config}
+                            onChange={updateConfig}
+                            compact
+                            variant="onboard"
+                          />
+                        )}
+                        {skillId ===
+                          "gaming/card-fighter/actionorder_vshouse" && (
+                          <ActionorderFields
+                            config={config}
+                            onChange={updateConfig}
+                          />
+                        )}
+                        {skillId === UBI_REMINDER_SKILL_ID && (
+                          <UbiReminderFields
+                            config={config}
+                            onChange={updateConfig}
+                            botToken={botToken}
+                            onTokenChange={setBotToken}
+                          />
+                        )}
+                        {skillId === BALAIO_WORKER_SKILL_ID && (
+                          <BalaioConfigFields
+                            config={config}
+                            onChange={updateConfig}
+                          />
+                        )}
+                        {skillId !== GAMEARENA_SKILL_ID &&
+                          skillId !==
+                            "gaming/card-fighter/actionorder_vshouse" &&
+                          skillId !== UBI_REMINDER_SKILL_ID &&
+                          skillId !== BALAIO_WORKER_SKILL_ID && (
+                            <p className="muted">
+                              Registry defaults apply. Change settings from the
+                              dashboard after deploy.
+                            </p>
+                          )}
+                      </div>
+                      <OnboardActions
+                        showBack
+                        onBack={goWizardBack}
+                        backDisabled={formLocked}
+                        primaryDisabled={formLocked || !step2Valid}
+                        onPrimary={goWizardNext}
+                      />
+                    </OnboardCard>
                   )}
-                  {skillId === "gaming/card-fighter/actionorder_vshouse" && (
-                    <ActionorderFields config={config} onChange={updateConfig} />
-                  )}
-                  {skillId === UBI_REMINDER_SKILL_ID && (
-                    <UbiReminderFields
-                      config={config}
-                      onChange={updateConfig}
-                      botToken={botToken}
-                      onTokenChange={setBotToken}
+
+                  {wizardStep === 3 && (
+                    <OnboardReviewStep
+                      name={name}
+                      skillName={selectedSkill?.name ?? skillId}
+                      highlights={previewTags}
+                      configRows={reviewConfigRows}
+                      fundingNote={fundingShort}
+                      note={
+                        <>
+                          Sign once to provision the wallet and runtime. Vouch
+                          at <Link to="/issue">/issue</Link> before it plays.
+                        </>
+                      }
+                      error={error}
+                      onBack={goWizardBack}
+                      onCreate={() => void handleDeploy()}
+                      backDisabled={formLocked || busy}
+                      createDisabled={formLocked || !step2Valid || busy}
+                      busy={busy}
                     />
                   )}
-                  {skillId === BALAIO_WORKER_SKILL_ID && (
-                    <BalaioConfigFields config={config} onChange={updateConfig} />
-                  )}
+                </div>
 
-                  {error && <p className="error">{error}</p>}
-
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={
-                        formLocked ||
-                        !name.trim() ||
-                        (skillId === UBI_REMINDER_SKILL_ID && !botToken.trim())
-                      }
-                      onClick={() => void handleDeploy()}
-                    >
-                      {busy ? "Deploying…" : "Deploy agent"}
-                    </button>
-                  </div>
-                </section>
-              </>
-            )}
+                {draftSaved && !deployId ? (
+                  <p className="onboard-autosave">Progress saved</p>
+                ) : null}
+                <OnboardSuccessOverlay show={showSuccess} />
+              </div>
+            ) : null}
 
             {deployId && status && (
               <DeployPipeline

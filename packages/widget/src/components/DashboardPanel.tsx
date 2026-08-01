@@ -229,6 +229,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
   ).slice(0, 5);
   const recentWins = recentMatches.filter((m) => m.result === "won").length;
   const recentLosses = recentMatches.filter((m) => m.result === "lost").length;
+  const statsPending = Boolean(status && !status.stats);
   const offchainPlay =
     perf?.playMode === "offchain" ||
     parseConfigSummary(status?.configuration ?? deploy.configuration).PLAY_MODE ===
@@ -323,18 +324,18 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
       <div className="ga-widget-dash-metrics">
         <Metric
           label="G$"
-          value={balances?.gDollarFormatted ?? (d.statsLoading ? "…" : "—")}
+          value={balances?.gDollarFormatted ?? (statsPending ? "…" : "—")}
         />
         <Metric
           label="CELO"
-          value={balances?.celoFormatted ?? (d.statsLoading ? "…" : "—")}
+          value={balances?.celoFormatted ?? (statsPending ? "…" : "—")}
         />
         <Metric
           label="Record"
           value={
             perf
               ? `${perf.wins}W · ${perf.losses}L`
-              : d.statsLoading
+              : statsPending
                 ? "…"
                 : "—"
           }
@@ -394,7 +395,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         )}
       </div>
 
-      {(status && (recentMatches.length > 0 || d.statsLoading)) && (
+      {(status && (recentMatches.length > 0 || statsPending)) && (
         <div className="ga-widget-dash-matches">
           <div className="ga-widget-dash-matches-head">
             <h5 className="ga-widget-dash-matches-title">Recent matches</h5>
@@ -531,7 +532,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
       )}
 
       {!status && d.statsLoading && (
-        <DashboardInlineLoader label="Loading dashboard…" />
+        <DashboardInlineLoader label="Loading stats…" />
       )}
 
       {!status && !d.statsLoading && !d.controlBusy && (

@@ -4,10 +4,17 @@
 **Goal:** Let your users deploy autonomous agents that play the **free offchain Markov AI** game (`challenge-ai` / rock-paper-scissors vs MARKOV).  
 **Backend:** GoodAgent hosts provisioning and gameplay — **you do not run agent servers**.
 
-**Widget package:** `@goodagent/widget@0.1.12`  
+**Widget package:** `@goodagent/widget@0.3.1`  
 **GoodAgent APIs:** `https://goodagentids.xyz/host` + `https://goodagentids.xyz/api` (filled in automatically — do not configure in your app)
 
 ---
+
+## What’s new in 0.3.1
+
+| Area | Change |
+|------|--------|
+| **Competition** | Widget shows only the **first** GameArena deploy per wallet (Verify + Dashboard) |
+| **Partner API** | Host returns one agent per owner — see [Partner API](#partner-api--owner-wallet--agent-gamearena-site) |
 
 ## What’s new in 0.1.12
 
@@ -25,7 +32,7 @@
 
 ## TL;DR (fastest path)
 
-1. `pnpm add @goodagent/widget@0.1.12`
+1. `pnpm add @goodagent/widget@0.3.1`
 2. Drop in the widget on an `/agents` (or similar) page
 3. Use **`partnerId: "gamearena"`** so deploys are attributed to you
 4. Users **name their agent** and **tune bot settings** on the Deploy tab (strategy, caps, interval)
@@ -65,7 +72,7 @@ GoodAgent fills in host API, main API, RPC, vault, and base skill defaults. You 
 ## Install
 
 ```bash
-pnpm add @goodagent/widget@0.1.12 react react-dom
+pnpm add @goodagent/widget@0.3.1 react react-dom
 
 # If you already use Privy (recommended for GameArena / MiniPay / WalletConnect):
 pnpm add @privy-io/react-auth
@@ -307,6 +314,60 @@ Use a **fresh Celo wallet** on staging/production:
 curl https://goodagentids.xyz/host/health
 # → {"ok":true,"service":"goodagent-host",...}
 ```
+
+---
+
+## Partner API — owner wallet → agent (GameArena site)
+
+When a player connects their wallet on GameArena, look up their hosted agent in **one call**. For the competition, **only the first GameArena deploy** for that wallet is returned (oldest by `createdAt`). Additional deploys are ignored in this API for now.
+
+```bash
+curl "https://goodagentids.xyz/host/partners/gamearena/agents?owner=0xYourWallet"
+```
+
+Also accepts `?ownerWallet=` (same as `/deploy`).
+
+**Response** (0 or 1 agent):
+
+```json
+{
+  "owner": "0xabc…",
+  "agents": [
+    {
+      "deployId": "dep_…",
+      "displayName": "RockBot",
+      "agentAddress": "0xplay…",
+      "ownerWallet": "0xabc…",
+      "gamePassUsername": "rockbot",
+      "status": "running",
+      "activeMatchId": "am_88d1f6d9…",
+      "livePhase": "playing",
+      "liveWatchUrl": "https://goodagentids.xyz/host/arena/live/am_88d1f6d9…"
+    }
+  ]
+}
+```
+
+If the user has no GameArena deploy yet, `agents` is `[]`.
+
+| Field | Meaning |
+|-------|---------|
+| `agentAddress` | Play wallet — this is what hits your arena as the player |
+| `gamePassUsername` | On-chain GameArena Pass name (from config or chain) |
+| `activeMatchId` | Current match id while `livePhase` is `starting` or `playing` |
+| `liveWatchUrl` | SSE proxy for spectators (`GET …/arena/live/:matchId`) |
+
+`liveWatchUrl` is `null` when the agent is idle between matches.
+
+### One agent per wallet (competition)
+
+| Rule | Behavior |
+|------|----------|
+| **Partner API** | Returns only the **first** GameArena deploy (`createdAt` ascending) |
+| **GoodAgent widget** (`partnerId: "gamearena"`) | Verify / Dashboard show only that first agent |
+| **Start / play** | `POST /deploy/:id/start` returns **409** `GAMEARENA_FIRST_AGENT_ONLY` if `id` is not the first deploy |
+
+Users may still create additional deploys in the backend, but they cannot configure, vouch, or start them through the GameArena widget until you lift this rule.
 
 ---
 

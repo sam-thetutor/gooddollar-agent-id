@@ -25,8 +25,10 @@ export function useOwnerDeploys(ownerWallet: string | undefined) {
       hasLoadedRef.current = true;
       return list;
     } catch (e) {
-      setError((e as Error).message);
-      if (!hasLoadedRef.current) setAgents([]);
+      if (!hasLoadedRef.current) {
+        setError((e as Error).message);
+        setAgents([]);
+      }
       return [];
     } finally {
       setLoading(false);

@@ -17,6 +17,8 @@ import type { GoodAgentWidgetProps } from "../types.js";
 import { DeployPanel } from "./DeployPanel.js";
 import { DashboardPanel } from "./DashboardPanel.js";
 import { VouchPanel } from "./VouchPanel.js";
+import { filterToFirstGamearenaDeploy } from "../lib/gamearena-first-deploy.js";
+import { GAMEARENA_SKILL_ID } from "../skill-config.js";
 import "../styles/widget.css";
 
 type Tab = WidgetSessionTab;
@@ -67,11 +69,18 @@ function GoodAgentWidgetBody({
 }: Omit<GoodAgentWidgetProps, "config" | "wallet">) {
   const { config, wallet, host } = useWidget();
   const {
-    agents: ownerDeploys,
+    agents: ownerDeploysRaw,
     loading: deploysLoading,
     error: deploysError,
     refresh: refreshDeploys,
   } = useOwnerDeploys(wallet.address);
+
+  const gamearenaFirstAgentOnly = config.skillId === GAMEARENA_SKILL_ID;
+  const ownerDeploys = useMemo(
+    () =>
+      filterToFirstGamearenaDeploy(ownerDeploysRaw, gamearenaFirstAgentOnly),
+    [ownerDeploysRaw, gamearenaFirstAgentOnly],
+  );
 
   const fv =
     typeof window !== "undefined"

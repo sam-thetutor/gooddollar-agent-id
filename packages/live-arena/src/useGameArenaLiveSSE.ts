@@ -42,14 +42,22 @@ export function useGameArenaLiveSSE(
     setStatus("connecting");
 
     const es = new EventSource(gameArenaLiveSseUrl(id, hostBaseUrl));
+    const connectTimeout = window.setTimeout(() => {
+      if (endedRef.current || es.readyState === EventSource.OPEN) return;
+      es.close();
+      setStatus("error");
+      setError("GameArena live feed timed out — showing host snapshot");
+    }, 5_000);
 
     const apply = (event: GameArenaSseEvent) => {
       const snap = mapGameArenaSseEvent(event, id, playerLabel);
       setLive(snap);
       if (event.type === "hello") {
+        window.clearTimeout(connectTimeout);
         setStatus("connected");
         setError(null);
       } else if (event.type === "round") {
+        window.clearTimeout(connectTimeout);
         setStatus("connected");
       } else if (event.type === "end") {
         endedRef.current = true;
@@ -84,10 +92,12 @@ export function useGameArenaLiveSSE(
     };
 
     es.onopen = () => {
+      window.clearTimeout(connectTimeout);
       if (!endedRef.current) setStatus("connected");
     };
 
     return () => {
+      window.clearTimeout(connectTimeout);
       es.close();
     };
   }, [matchId, playerLabel, hostBaseUrl]);

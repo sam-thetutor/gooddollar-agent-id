@@ -33,6 +33,10 @@ rsync -az --delete \
 rsync -az --delete \
   --exclude node_modules \
   --exclude dist \
+  "${ROOT}/packages/live-arena/" "${REMOTE}:${REMOTE_ROOT}/packages/live-arena/"
+rsync -az --delete \
+  --exclude node_modules \
+  --exclude dist \
   "${ROOT}/packages/agent-id/" "${REMOTE}:${REMOTE_ROOT}/packages/agent-id/"
 rsync -az --delete \
   --exclude node_modules \
@@ -91,6 +95,14 @@ append_or_replace HOST_PORT "3010" "$REMOTE_ENV"
 append_or_replace HOST_DEV_SKIP_PAYMENT "1" "$REMOTE_ENV"
 append_or_replace AGENT_INITIAL_GS "200" "$REMOTE_ENV"
 append_or_replace AGENT_INITIAL_CELO "0.5" "$REMOTE_ENV"
+# Postgres runs on the same VPS — localhost avoids flaky public-IP connections
+if grep -q '@80.241.209.225:5432' "$REMOTE_ENV" 2>/dev/null; then
+  sed -i 's|@80.241.209.225:5432|@127.0.0.1:6543|g' "$REMOTE_ENV"
+fi
+# Supabase Supavisor: port 5432 is session mode (pool_size=5); use 6543 transaction pool.
+if grep -q '@127.0.0.1:5432/postgres?schema=gcopilot' "$REMOTE_ENV" 2>/dev/null; then
+  sed -i 's|@127.0.0.1:5432/postgres?schema=gcopilot|@127.0.0.1:6543/postgres?pgbouncer=true\&schema=gcopilot|' "$REMOTE_ENV"
+fi
 REMOTE_SCRIPT
 
 # Copy secret values from local .env
@@ -123,13 +135,17 @@ set -euo pipefail
 export PATH="\$HOME/.local/share/pnpm:\$HOME/.npm-global/bin:\$PATH"
 cd /home/geinz/gcopilot
 command -v pnpm >/dev/null || npm i -g pnpm@9.15.0
-pnpm install --filter @goodagent/host... --filter @goodagent/runtime... --filter @goodagent/db... --filter @goodagent/shared...
-if pnpm --filter @goodagent/db exec dotenv -e ../../.env -- prisma db push --accept-data-loss; then
-  echo "db push ok"
+pnpm install --filter @goodagent/host... --filter @goodagent/runtime... --filter @goodagent/db... --filter @goodagent/shared... --filter @goodagent/live-arena...
+# Prisma db push needs session pool (5432), not transaction pool (6543/pgbouncer).
+# Transaction pool hangs indefinitely on DDL; schema is usually already in sync.
+SESSION_DB_URL="\$(grep '^DATABASE_URL=' .env | cut -d= -f2- | sed 's|6543/postgres?pgbouncer=true&|5432/postgres?|')"
+if timeout 120 env DATABASE_URL="\$SESSION_DB_URL" pnpm --filter @goodagent/db exec prisma db push --accept-data-loss --skip-generate; then
+  echo "db push ok (session pool 5432)"
 else
-  echo "WARN: db push skipped (database unreachable — continuing build)"
+  echo "WARN: db push skipped or timed out — continuing build (runtime uses 6543 pool)"
 fi
 pnpm --filter @goodagent/shared build
+pnpm --filter @goodagent/live-arena build
 pnpm --filter @goodagent/db build
 pnpm --filter @goodagent/runtime build
 pnpm --filter @goodagent/host build

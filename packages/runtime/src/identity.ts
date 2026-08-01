@@ -23,6 +23,10 @@ import {
   relayAgentAttestation,
   signAgentAttestation,
 } from "@goodagent/agent-id";
+import {
+  findBlockingGamearenaDeployForHumanRoot,
+  GAMEARENA_SKILL_ID,
+} from "@goodagent/db";
 import type { RuntimeConfig } from "./config.js";
 
 const G_DOLLAR = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A" as const;
@@ -214,6 +218,7 @@ export async function assertOwnerVouchedForAgent(
   config: RuntimeConfig,
   agentAddress: Address,
   ownerWallet: Address,
+  opts?: { deployId?: string; skillId?: string },
 ): Promise<void> {
   const res = await fetch(`${config.apiBase}/agent/verify/${agentAddress}`);
   if (!res.ok) {
@@ -226,6 +231,7 @@ export async function assertOwnerVouchedForAgent(
     valid?: boolean;
     reason?: string;
     operator?: string;
+    humanRoot?: string;
   };
 
   if (!body.valid) {
@@ -243,6 +249,22 @@ export async function assertOwnerVouchedForAgent(
     throw new Error(
       "The Agent ID must be issued from your owner wallet — reconnect with the same wallet you used to deploy and vouch at /issue.",
     );
+  }
+
+  if (
+    opts?.skillId === GAMEARENA_SKILL_ID &&
+    body.humanRoot &&
+    opts.deployId
+  ) {
+    const existing = await findBlockingGamearenaDeployForHumanRoot(
+      body.humanRoot,
+      opts.deployId,
+    );
+    if (existing) {
+      throw new Error(
+        "This GoodDollar identity already has a GameArena agent in the competition — one agent per person.",
+      );
+    }
   }
 
   await assertAgentPlayReady(config, agentAddress);

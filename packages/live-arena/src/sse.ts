@@ -142,11 +142,16 @@ export function extractArenaMatchIdFromLog(
 ): string | null {
   if (!logTail?.trim()) return null;
   const lines = logTail.trim().split("\n");
+  const ended = new Set<string>();
+  for (const line of lines) {
+    const end = line.match(/^\[match (\S+)\] (?:WON|LOST)/);
+    if (end) ended.add(end[1]!);
+  }
   for (let i = lines.length - 1; i >= 0; i--) {
     const m = lines[i]!.match(START_LINE);
-    if (m) return m[1]!;
+    if (m && !ended.has(m[1]!)) return m[1]!;
     const round = lines[i]!.match(/^\[match (\S+)\]/);
-    if (round) return round[1]!;
+    if (round && !ended.has(round[1]!)) return round[1]!;
   }
   return null;
 }

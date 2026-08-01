@@ -109,6 +109,9 @@ function SkillCard({ skill }: { skill: SkillEntry }) {
       </div>
 
       <footer className="skill-card-foot">
+        <Link className="btn btn-ghost btn-sm" to={`/deploy?skill=${encodeURIComponent(skill.skill_id)}`}>
+          Deploy this skill
+        </Link>
         <a
           href={`${REPO_URL}/blob/main/${skill.path}/SKILL.md`}
           target="_blank"

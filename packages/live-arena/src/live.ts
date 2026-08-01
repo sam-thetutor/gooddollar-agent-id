@@ -77,6 +77,111 @@ type LogLiveEvent =
       matchLine?: string;
     };
 
+type MatchLogState = {
+  matchId: string;
+  startLineIndex: number;
+  endLineIndex?: number;
+  latestRound?: Extract<LogLiveEvent, { kind: "round" }>;
+  end?: Extract<LogLiveEvent, { kind: "end" }>;
+};
+
+function buildMatchStates(lines: string[]): Map<string, MatchLogState> {
+  const matches = new Map<string, MatchLogState>();
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex]!;
+    const start = line.match(START_LINE);
+    if (start) {
+      const matchId = start[1]!;
+      matches.set(matchId, { matchId, startLineIndex: lineIndex });
+      continue;
+    }
+    const end = line.match(END_LINE);
+    if (end) {
+      const matchId = end[1]!;
+      const state = matches.get(matchId) ?? { matchId, startLineIndex: lineIndex };
+      state.endLineIndex = lineIndex;
+      state.end = {
+        kind: "end",
+        lineIndex,
+        matchId,
+        outcome: end[2] === "WON" ? "player_won" : "ai_won",
+        totalRounds: Number(end[3]),
+        matchLine: end[4],
+      };
+      matches.set(matchId, state);
+      continue;
+    }
+    const round = line.match(ROUND_LINE);
+    if (round) {
+      const matchId = round[1]!;
+      const state = matches.get(matchId) ?? { matchId, startLineIndex: lineIndex };
+      state.latestRound = {
+        kind: "round",
+        lineIndex,
+        matchId,
+        round: Number(round[2]),
+        playerMoveLabel: round[3]!.trim(),
+        aiMove: Number(round[4]),
+        result: round[5] as "win" | "loss" | "tie",
+        markovLine: round[6],
+      };
+      matches.set(matchId, state);
+    }
+  }
+
+  return matches;
+}
+
+function matchStateToLive(
+  state: MatchLogState,
+  playerLabel: string,
+  updatedAt: string,
+): GameArenaLiveMatch | null {
+  if (state.endLineIndex == null) {
+    if (state.latestRound) {
+      const event = state.latestRound;
+      return {
+        matchId: event.matchId,
+        phase: "playing",
+        updatedAt,
+        playerLabel,
+        round: event.round,
+        playerMoveLabel: event.playerMoveLabel,
+        aiMove: event.aiMove,
+        result: event.result,
+        markovLine: event.markovLine,
+      };
+    }
+    return {
+      matchId: state.matchId,
+      phase: "starting",
+      updatedAt,
+      playerLabel,
+    };
+  }
+
+  if (!state.end) return null;
+  const event = state.end;
+  const roundSnap = state.latestRound;
+  return {
+    matchId: event.matchId,
+    phase: "ended",
+    updatedAt,
+    playerLabel,
+    round: roundSnap?.round,
+    playerMoveLabel: roundSnap?.playerMoveLabel,
+    aiMove: roundSnap?.aiMove,
+    result: roundSnap?.result,
+    markovLine: roundSnap?.markovLine ?? event.matchLine,
+    final: {
+      outcome: event.outcome,
+      totalRounds: event.totalRounds,
+      matchLine: event.matchLine,
+    },
+  };
+}
+
 /** Fallback when the skill has not posted `live_match` activity yet (older deploys). */
 export function inferLiveMatchFromLogTail(
   logTail: string | null | undefined,
@@ -86,110 +191,38 @@ export function inferLiveMatchFromLogTail(
 
   const lines = logTail.trim().split("\n");
   const name = playerLabel?.trim() || "Agent";
-  let latest: LogLiveEvent | null = null;
-
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-    const line = lines[lineIndex]!;
-    const start = line.match(START_LINE);
-    if (start) {
-      latest = { kind: "start", lineIndex, matchId: start[1]! };
-      continue;
-    }
-    const end = line.match(END_LINE);
-    if (end) {
-      latest = {
-        kind: "end",
-        lineIndex,
-        matchId: end[1]!,
-        outcome: end[2] === "WON" ? "player_won" : "ai_won",
-        totalRounds: Number(end[3]),
-        matchLine: end[4],
-      };
-      continue;
-    }
-    const round = line.match(ROUND_LINE);
-    if (round) {
-      latest = {
-        kind: "round",
-        lineIndex,
-        matchId: round[1]!,
-        round: Number(round[2]),
-        playerMoveLabel: round[3]!.trim(),
-        aiMove: Number(round[4]),
-        result: round[5] as "win" | "loss" | "tie",
-        markovLine: round[6],
-      };
-    }
-  }
-
-  if (!latest) return null;
-
-  const event: LogLiveEvent = latest;
-  const distFromEnd = lines.length - 1 - event.lineIndex;
-  const stale =
-    (event.kind === "round" && distFromEnd > 1) ||
-    (event.kind === "start" && distFromEnd > 0) ||
-    (event.kind === "end" && distFromEnd > 4);
-  if (stale) return null;
-
   const updatedAt = new Date().toISOString();
+  const matches = buildMatchStates(lines);
 
-  if (event.kind === "end") {
-    let roundSnap: Extract<LogLiveEvent, { kind: "round" }> | null = null;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const round = lines[i]!.match(ROUND_LINE);
-      if (round && round[1] === event.matchId) {
-        roundSnap = {
-          kind: "round",
-          lineIndex: i,
-          matchId: round[1]!,
-          round: Number(round[2]),
-          playerMoveLabel: round[3]!.trim(),
-          aiMove: Number(round[4]),
-          result: round[5] as "win" | "loss" | "tie",
-          markovLine: round[6],
-        };
-        break;
+  let openMatch: MatchLogState | null = null;
+  for (const state of matches.values()) {
+    if (state.endLineIndex == null) {
+      if (!openMatch || state.startLineIndex > openMatch.startLineIndex) {
+        openMatch = state;
       }
     }
-    return {
-      matchId: event.matchId,
-      phase: "ended",
-      updatedAt,
-      playerLabel: name,
-      round: roundSnap?.round,
-      playerMoveLabel: roundSnap?.playerMoveLabel,
-      aiMove: roundSnap?.aiMove,
-      result: roundSnap?.result,
-      markovLine: roundSnap?.markovLine ?? event.matchLine,
-      final: {
-        outcome: event.outcome,
-        totalRounds: event.totalRounds,
-        matchLine: event.matchLine,
-      },
-    };
   }
 
-  if (event.kind === "round") {
-    return {
-      matchId: event.matchId,
-      phase: "playing",
-      updatedAt,
-      playerLabel: name,
-      round: event.round,
-      playerMoveLabel: event.playerMoveLabel,
-      aiMove: event.aiMove,
-      result: event.result,
-      markovLine: event.markovLine,
-    };
+  if (openMatch) {
+    return matchStateToLive(openMatch, name, updatedAt);
   }
 
-  return {
-    matchId: event.matchId,
-    phase: "starting",
-    updatedAt,
-    playerLabel: name,
-  };
+  // Between matches — replay the most recent finished match still near log tail.
+  let recentEnd: MatchLogState | null = null;
+  for (const state of matches.values()) {
+    if (state.endLineIndex == null) continue;
+    const distFromEnd = lines.length - 1 - state.endLineIndex;
+    if (distFromEnd > 12) continue;
+    if (!recentEnd || state.endLineIndex > recentEnd.endLineIndex!) {
+      recentEnd = state;
+    }
+  }
+
+  if (recentEnd) {
+    return matchStateToLive(recentEnd, name, updatedAt);
+  }
+
+  return null;
 }
 
 /** Prefer host snapshot; fill gaps from log lines when the agent only reports logs. */
@@ -226,21 +259,36 @@ export function pickArenaLiveDisplay(opts: {
 }): GameArenaLiveMatch | null {
   if (opts.sseLive) return opts.sseLive;
 
+  const log = opts.logFallback;
+  if (log && (log.phase === "starting" || log.phase === "playing")) {
+    return log;
+  }
+
   const host = opts.hostLive;
   if (host && (host.phase === "starting" || host.phase === "playing")) {
     return host;
   }
 
-  const betweenMatches =
-    opts.agentLive && !opts.hasActiveSseTarget && host?.phase !== "playing";
-  if (betweenMatches) return null;
-
-  if (host?.phase === "ended") {
-    const hostAt = new Date(host.updatedAt).getTime();
-    if (!Number.isNaN(hostAt) && Date.now() - hostAt < 120_000) return host;
+  if (log?.phase === "ended" && opts.agentLive) {
+    return log;
   }
 
-  return opts.logFallback ?? host ?? null;
+  const logActive =
+    log?.phase === "starting" || log?.phase === "playing";
+  const betweenMatches =
+    opts.agentLive &&
+    !opts.hasActiveSseTarget &&
+    !logActive &&
+    host?.phase !== "playing" &&
+    log?.phase !== "ended";
+  if (betweenMatches) return null;
+
+  if (host?.phase === "ended" && !logActive) {
+    const hostAt = new Date(host.updatedAt).getTime();
+    if (!Number.isNaN(hostAt) && Date.now() - hostAt < 30_000) return host;
+  }
+
+  return log ?? host ?? null;
 }
 
 export const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1";
@@ -252,9 +300,12 @@ export function isGamearenaSkill(skillId?: string | null): boolean {
 export function shouldFastPollLiveArena(status: {
   liveMatch?: GameArenaLiveMatch | null;
   activeArenaMatchId?: string | null;
+  stats?: { logTail?: string | null } | null;
 } | null | undefined): boolean {
   if (!status) return false;
   if (status.activeArenaMatchId?.trim()) return true;
   const phase = status.liveMatch?.phase;
-  return phase === "starting" || phase === "playing";
+  if (phase === "starting" || phase === "playing") return true;
+  const inferred = inferLiveMatchFromLogTail(status.stats?.logTail);
+  return inferred?.phase === "starting" || inferred?.phase === "playing";
 }
