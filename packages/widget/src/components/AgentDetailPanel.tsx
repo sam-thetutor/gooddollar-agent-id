@@ -29,8 +29,15 @@ export function AgentDetailPanel({
 
   const online = status?.pm2?.online ?? status?.status === "running";
   const tone = statusTone(status?.status ?? deploy.status, online);
-  const skillId = status?.skillId ?? deploy.skills?.[0]?.skillId ?? null;
-  const skillLabel = resolvedSkillLabel(skillId, deploy, widgetConfig.skillLabel);
+  const skillId =
+    status?.skills?.find((s) => s.skillId.includes("gamearena"))?.skillId ??
+    status?.skillId ??
+    deploy.skills?.[0]?.skillId ??
+    null;
+  const skillLabel =
+    status?.skills && status.skills.length > 1
+      ? status.skills.map((s) => s.skillId.split("/").pop()).join(" + ")
+      : resolvedSkillLabel(skillId, deploy, widgetConfig.skillLabel);
   const config = parseConfigSummary(status?.configuration ?? deploy.configuration);
   const highlights = configHighlights(skillId, config);
   const perf = status?.stats?.performance;

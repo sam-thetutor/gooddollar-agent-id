@@ -74,7 +74,21 @@ export function buildGamearenaEnv(
   if (agentPrivateKey) {
     env.PRIVATE_KEY = agentPrivateKey;
   }
+  Object.assign(env, resolveGamearenaAgentApiEnv());
   return env;
+}
+
+/** Host-level scoped GameArena play key — injected into agent skill env, not user deploy config. */
+export function resolveGamearenaAgentApiEnv(): Record<string, string> {
+  const apiKey = process.env.GAMEARENA_AGENT_API_KEY?.trim();
+  if (!apiKey) return {};
+  const apiUrl =
+    process.env.GAMEARENA_AGENT_API_URL?.trim()?.replace(/\/$/, "") ||
+    "https://game-backend-production-6130.up.railway.app";
+  return {
+    GAMEARENA_AGENT_API_KEY: apiKey,
+    GAMEARENA_AGENT_API_URL: apiUrl,
+  };
 }
 
 export function buildActionorderEnv(

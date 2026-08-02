@@ -35,6 +35,36 @@ function resolveHostListBase(): string {
 
 const HOST_LIST_BASE = resolveHostListBase();
 
+export interface DeploySkillStatus {
+  skillId: string;
+  registryPath: string;
+  status: string;
+  configuration: Record<string, string>;
+  lastError?: string | null;
+  stats?: SkillStatsSummary | null;
+}
+
+export interface SkillStatsSummary {
+  skillId: string;
+  panel: string;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  unresolved: number;
+  matchesToday: number;
+  summary: string | null;
+  matches: Array<{
+    matchId: string;
+    gameType?: number;
+    wagerGs: number;
+    result: "won" | "lost" | "unresolved";
+    mode?: "offchain" | "onchain";
+    at: string;
+  }>;
+  logTail: string | null;
+  meta?: Record<string, string | number | boolean | null>;
+}
+
 export interface DeployAgent {
   id: string;
   displayName: string;
@@ -55,6 +85,7 @@ export interface DeployStatusResponse {
   displayName?: string;
   template?: string;
   skillId?: string | null;
+  skills?: DeploySkillStatus[];
   configuration?: string | null;
   status: string;
   ownerWallet?: string | null;
@@ -227,7 +258,9 @@ async function hostFetch<T>(
 export function createDeploy(input: {
   displayName: string;
   ownerWallet: string;
-  skillId: string;
+  skillId?: string;
+  skillIds?: string[];
+  skillConfigurations?: Record<string, SkillConfiguration>;
   configuration?: SkillConfiguration;
   telegramBotToken?: string;
   template?: string;
@@ -239,6 +272,8 @@ export function createDeploy(input: {
       displayName: input.displayName,
       ownerWallet: input.ownerWallet,
       skillId: input.skillId,
+      skillIds: input.skillIds,
+      skillConfigurations: input.skillConfigurations,
       configuration: input.configuration,
       telegramBotToken: input.telegramBotToken,
       template: input.template ?? "gaming",
@@ -338,12 +373,39 @@ export function updateDeployConfiguration(
   deployId: string,
   configuration: SkillConfiguration,
   auth: DeployControlAuth,
+  skillId?: string,
 ) {
-  return hostFetch<{ agent: DeployAgent; restarted: boolean }>(
-    `/deploy/${deployId}/configuration`,
-    {
-      method: "POST",
-      body: JSON.stringify({ configuration, ...auth }),
-    },
-  );
+  const path = skillId
+    ? `/deploy/${deployId}/skills/${encodeURIComponent(skillId)}/configuration`
+    : `/deploy/${deployId}/configuration`;
+  return hostFetch<{
+    agent: DeployAgent;
+    restarted: boolean;
+    skillId?: string;
+    skills?: DeploySkillStatus[];
+  }>(path, {
+    method: "POST",
+    body: JSON.stringify(
+      skillId ? { configuration, ...auth } : { configuration, skillId, ...auth },
+    ),
+  });
+}
+
+export function setDeploySkillEnabled(
+  deployId: string,
+  skillId: string,
+  enabled: boolean,
+  auth: DeployControlAuth,
+) {
+  const action = enabled ? "enable" : "disable";
+  return hostFetch<{
+    agent: DeployAgent;
+    restarted: boolean;
+    skillId: string;
+    status: string;
+    skills?: DeploySkillStatus[];
+  }>(`/deploy/${deployId}/skills/${encodeURIComponent(skillId)}/${action}`, {
+    method: "POST",
+    body: JSON.stringify(auth),
+  });
 }

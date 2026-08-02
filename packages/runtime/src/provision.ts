@@ -1,6 +1,7 @@
 import { execSync, spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type { RuntimeConfig } from "./config.js";
 import { agentDir } from "./wallet.js";
 
@@ -9,6 +10,27 @@ export interface SkillProvisionInput {
   skillDir: string;
   /** Injected into PM2 env so host PRIVATE_KEY cannot override skill .env */
   env?: Record<string, string>;
+  /** Option C: single agent-runtime process loading plugins from manifest.json */
+  runtimeV1?: {
+    manifestPath: string;
+    runtimeCli: string;
+  };
+}
+
+export function isRuntimeV1Enabled(): boolean {
+  return process.env.RUNTIME_V1 === "1";
+}
+
+export function resolveAgentRuntimeCli(): string {
+  const require = createRequire(import.meta.url);
+  const entry = require.resolve("@goodagent/agent-runtime");
+  const cli = resolve(dirname(entry), "cli.js");
+  if (!existsSync(cli)) {
+    throw new Error(
+      "@goodagent/agent-runtime dist/cli.js not found — run pnpm build",
+    );
+  }
+  return cli;
 }
 
 export function pm2ProcessName(deployId: string): string {
@@ -27,8 +49,15 @@ export function writeEcosystemConfig(
   const dir = agentDir(config.agentsRoot, input.deployId);
   mkdirSync(resolve(dir, "logs"), { recursive: true });
 
-  if (!existsSync(resolve(input.skillDir, "package.json"))) {
+  const useRuntimeV1 = Boolean(input.runtimeV1 ?? isRuntimeV1Enabled());
+  if (!useRuntimeV1 && !existsSync(resolve(input.skillDir, "package.json"))) {
     throw new Error(`skill package.json not found at ${input.skillDir}`);
+  }
+  if (useRuntimeV1) {
+    const manifestPath = input.runtimeV1?.manifestPath ?? resolve(dir, "manifest.json");
+    if (!existsSync(manifestPath)) {
+      throw new Error(`manifest.json not found at ${manifestPath}`);
+    }
   }
 
   const pm2Name = pm2ProcessName(input.deployId);
@@ -36,26 +65,73 @@ export function writeEcosystemConfig(
     NODE_ENV: "production",
     ...input.env,
   };
-  const ecosystem = `module.exports = {
-  apps: [{
-    name: ${JSON.stringify(pm2Name)},
-    cwd: ${JSON.stringify(input.skillDir)},
-    script: "npm",
-    args: "start",
-    env: ${JSON.stringify(pm2Env, null, 2)},
-    autorestart: true,
-    max_restarts: 10,
-    min_uptime: "10s",
-    error_file: ${JSON.stringify(resolve(dir, "logs/err.log"))},
-    out_file: ${JSON.stringify(resolve(dir, "logs/out.log"))},
-  }],
-};
-`;
+
+  const ecosystem = useRuntimeV1
+    ? buildRuntimeV1Ecosystem({
+        pm2Name,
+        agentDir: dir,
+        manifestPath: input.runtimeV1?.manifestPath ?? resolve(dir, "manifest.json"),
+        runtimeCli: input.runtimeV1?.runtimeCli ?? resolveAgentRuntimeCli(),
+        pm2Env,
+      })
+    : buildLegacySkillEcosystem({
+        pm2Name,
+        skillDir: input.skillDir,
+        pm2Env,
+        logDir: resolve(dir, "logs"),
+      });
 
   const ecoPath = resolve(dir, "ecosystem.config.cjs");
   writeFileSync(ecoPath, ecosystem, "utf8");
-  console.log(`[provision] wrote ${ecoPath}`);
+  console.log(`[provision] wrote ${ecoPath}${useRuntimeV1 ? " (runtime v1)" : ""}`);
   return ecoPath;
+}
+
+function buildLegacySkillEcosystem(opts: {
+  pm2Name: string;
+  skillDir: string;
+  pm2Env: Record<string, string>;
+  logDir: string;
+}): string {
+  return `module.exports = {
+  apps: [{
+    name: ${JSON.stringify(opts.pm2Name)},
+    cwd: ${JSON.stringify(opts.skillDir)},
+    script: "npm",
+    args: "start",
+    env: ${JSON.stringify(opts.pm2Env, null, 2)},
+    autorestart: true,
+    max_restarts: 10,
+    min_uptime: "10s",
+    error_file: ${JSON.stringify(resolve(opts.logDir, "err.log"))},
+    out_file: ${JSON.stringify(resolve(opts.logDir, "out.log"))},
+  }],
+};
+`;
+}
+
+function buildRuntimeV1Ecosystem(opts: {
+  pm2Name: string;
+  agentDir: string;
+  manifestPath: string;
+  runtimeCli: string;
+  pm2Env: Record<string, string>;
+}): string {
+  return `module.exports = {
+  apps: [{
+    name: ${JSON.stringify(opts.pm2Name)},
+    cwd: ${JSON.stringify(opts.agentDir)},
+    script: "node",
+    args: ${JSON.stringify([opts.runtimeCli, "--manifest", opts.manifestPath])},
+    env: ${JSON.stringify(opts.pm2Env, null, 2)},
+    autorestart: true,
+    max_restarts: 10,
+    min_uptime: "10s",
+    error_file: ${JSON.stringify(resolve(opts.agentDir, "logs/err.log"))},
+    out_file: ${JSON.stringify(resolve(opts.agentDir, "logs/out.log"))},
+  }],
+};
+`;
 }
 
 export function pm2Start(ecosystemPath: string): void {

@@ -30,8 +30,13 @@ export {
   pm2Status,
   pm2ProcessName,
   isPm2Available,
+  isRuntimeV1Enabled,
+  resolveAgentRuntimeCli,
 } from "./provision.js";
 export type { SkillProvisionInput } from "./provision.js";
+
+export { writeAgentManifestFile } from "./agent-manifest.js";
+export { ensureLegacySkillPlugin, skillHasNativePlugin } from "./legacy-plugin.js";
 
 export {
   fetchSkillsRegistry,
@@ -58,6 +63,7 @@ export {
   buildActionorderEnv,
   buildUbiReminderEnv,
   buildBalaioEnv,
+  resolveGamearenaAgentApiEnv,
   UBI_REMINDER_SKILL_ID,
   BALAIO_WORKER_SKILL_ID,
   writeSkillEnv,
@@ -66,6 +72,7 @@ export type { SkillConfiguration } from "./skill-env.js";
 
 export {
   applyDeployConfiguration,
+  applySkillInstallStatus,
   mergeDeployConfiguration,
   syncAgentAfterPassRename,
 } from "./apply-config.js";
@@ -85,6 +92,7 @@ export type {
   RunPipelineInput,
   RunPipelineResult,
   Pm2ProcessSnapshot,
+  PipelineSkillInput,
 } from "./pipeline.js";
 
 export {
@@ -100,6 +108,17 @@ export type {
   WalletPnL,
   MatchRecord,
 } from "./deploy-stats.js";
+
+export {
+  collectSkillStats,
+  collectDeploySkillStats,
+  resolveSkillStatsAdapter,
+} from "./skill-stats/index.js";
+export type {
+  SkillStatsSummary,
+  SkillStatsContext,
+  SkillStatsAdapter,
+} from "./skill-stats/index.js";
 export type {
   GamearenaLadder,
   EnrichedGamearenaLadder,

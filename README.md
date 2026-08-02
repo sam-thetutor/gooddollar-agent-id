@@ -226,3 +226,11 @@ One of the biggest things I gained was confidence. The encouragement, honest fee
 During the program, I had the opportunity to build GoodAgent, which has benefited tremendously from the insights, mentorship, and supportive environment the community provided. Those experiences didn't just help me build better products,they helped me become a better founder.
 
 I'm genuinely grateful to be part of the GoodBuilders community, and I'd recommend the program to anyone serious about building meaningful technology and growing alongside an incredible network of founders.
+
+
+
+
+
+
+Today I had a call with Rael, regarding the progress of the project.
+Here is a recap. We talked about the current status and collaborations that the project has so far(2). And we also set a target to five more project partnerships in th ecoming days. 

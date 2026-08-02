@@ -38,7 +38,7 @@ export function DeployPanel({
   }) => ReactNode;
 }) {
   const { config } = useWidget();
-  const { selectedSkillId, setSelectedSkillId, marketplace } =
+  const { selectedSkillIds, activeSkillId, toggleSkill, setActiveSkillId, ensureSkillSelection, marketplace, maxSkills } =
     useDeploySession();
   const {
     skills,
@@ -60,18 +60,18 @@ export function DeployPanel({
 
   useEffect(() => {
     if (!marketplace || skills.length === 0) return;
-    if (!skills.some((s) => s.skill_id === selectedSkillId)) {
-      setSelectedSkillId(skills[0]!.skill_id);
-    }
-  }, [marketplace, skills, selectedSkillId, setSelectedSkillId]);
+    ensureSkillSelection(skills.map((s) => s.skill_id));
+  }, [marketplace, skills, ensureSkillSelection]);
 
-  const selectedEntry = useMemo(
-    () => skills.find((s) => s.skill_id === flow.skillId),
-    [skills, flow.skillId],
+  const selectedEntries = useMemo(
+    () => skills.filter((s) => selectedSkillIds.includes(s.skill_id)),
+    [skills, selectedSkillIds],
   );
 
   const skillLabel = marketplace
-    ? (selectedEntry?.name ?? skillShortLabel(flow.skillId))
+    ? selectedEntries.length > 1
+      ? selectedEntries.map((s) => s.name).join(" + ")
+      : (selectedEntries[0]?.name ?? skillShortLabel(flow.skillId))
     : (config.skillLabel ?? skillShortLabel(flow.skillId));
   const hint = marketplace
     ? deployHintForSkill(flow.skillId)
@@ -97,10 +97,30 @@ export function DeployPanel({
           {marketplace && !registryLoading && skills.length > 0 && (
             <SkillPicker
               skills={skills}
-              selectedSkillId={selectedSkillId}
-              onSelect={setSelectedSkillId}
+              selectedSkillIds={selectedSkillIds}
+              activeSkillId={activeSkillId}
+              onToggle={toggleSkill}
+              onFocus={setActiveSkillId}
+              maxSkills={maxSkills}
               disabled={flow.busy}
             />
+          )}
+
+          {marketplace && selectedEntries.length > 1 && (
+            <div className="ga-widget-skill-tabs" role="tablist">
+              {selectedEntries.map((skill) => (
+                <button
+                  key={skill.skill_id}
+                  type="button"
+                  role="tab"
+                  className={`ga-widget-skill-tab${flow.skillId === skill.skill_id ? " is-active" : ""}`}
+                  onClick={() => setActiveSkillId(skill.skill_id)}
+                  disabled={flow.busy}
+                >
+                  {skill.name}
+                </button>
+              ))}
+            </div>
           )}
 
           <label className="ga-widget-field">

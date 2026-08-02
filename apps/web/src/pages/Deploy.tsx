@@ -42,7 +42,8 @@ import {
   type OnboardStep,
 } from "../components/DeployOnboardingWizard.js";
 
-const DEPLOY_DRAFT_KEY = "goodagent-deploy-draft-v1";
+const DEPLOY_DRAFT_KEY = "goodagent-deploy-draft-v2";
+import { MAX_DEPLOY_SKILLS } from "@goodagent/shared";
 
 const REGISTRY_URL =
   "https://raw.githubusercontent.com/sam-thetutor/goodagent-skills/main/registry.json";
@@ -649,11 +650,16 @@ export function Deploy() {
   );
 
   const [name, setName] = useState("My GameArena Agent");
-  const [skillId, setSkillId] = useState(DEFAULT_DEPLOY_SKILL_ID);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([
+    DEFAULT_DEPLOY_SKILL_ID,
+  ]);
+  const [activeSkillId, setActiveSkillId] = useState(DEFAULT_DEPLOY_SKILL_ID);
+  const [skillConfigs, setSkillConfigs] = useState<
+    Record<string, SkillConfiguration>
+  >(() => ({
+    [DEFAULT_DEPLOY_SKILL_ID]: defaultConfigForSkill(DEFAULT_DEPLOY_SKILL_ID),
+  }));
   const [botToken, setBotToken] = useState("");
-  const [config, setConfig] = useState<SkillConfiguration>(() =>
-    defaultConfigForSkill(DEFAULT_DEPLOY_SKILL_ID),
-  );
   const [busy, setBusy] = useState(false);
   const [startBusy, setStartBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -666,7 +672,34 @@ export function Deploy() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
 
+  const skillId = activeSkillId;
+  const config = skillConfigs[activeSkillId] ?? defaultConfigForSkill(activeSkillId);
+
   const selectedSkill = deployableSkills.find((s) => s.skill_id === skillId);
+  const selectedSkills = deployableSkills.filter((s) =>
+    selectedSkillIds.includes(s.skill_id),
+  );
+
+  function toggleSkill(nextSkillId: string) {
+    setSelectedSkillIds((prev) => {
+      const has = prev.includes(nextSkillId);
+      if (has) {
+        if (prev.length === 1) return prev;
+        const next = prev.filter((id) => id !== nextSkillId);
+        if (activeSkillId === nextSkillId) {
+          setActiveSkillId(next[0] ?? DEFAULT_DEPLOY_SKILL_ID);
+        }
+        return next;
+      }
+      if (prev.length >= MAX_DEPLOY_SKILLS) return prev;
+      setSkillConfigs((configs) => ({
+        ...configs,
+        [nextSkillId]: configs[nextSkillId] ?? defaultConfigForSkill(nextSkillId),
+      }));
+      setActiveSkillId(nextSkillId);
+      return [...prev, nextSkillId];
+    });
+  }
 
   useEffect(() => {
     if (deployId || searchParams.get("job")) return;
@@ -676,13 +709,27 @@ export function Deploy() {
       const draft = JSON.parse(raw) as {
         name?: string;
         skillId?: string;
+        selectedSkillIds?: string[];
+        activeSkillId?: string;
+        skillConfigs?: Record<string, SkillConfiguration>;
         config?: SkillConfiguration;
         botToken?: string;
         wizardStep?: WizardStep;
       };
       if (draft.name) setName(draft.name);
-      if (draft.skillId) setSkillId(draft.skillId);
-      if (draft.config) setConfig(draft.config);
+      if (draft.selectedSkillIds?.length) {
+        setSelectedSkillIds(draft.selectedSkillIds);
+      } else if (draft.skillId) {
+        setSelectedSkillIds([draft.skillId]);
+      }
+      if (draft.activeSkillId) setActiveSkillId(draft.activeSkillId);
+      else if (draft.skillId) setActiveSkillId(draft.skillId);
+      if (draft.skillConfigs) setSkillConfigs(draft.skillConfigs);
+      else if (draft.config && (draft.activeSkillId || draft.skillId)) {
+        setSkillConfigs({
+          [draft.activeSkillId ?? draft.skillId!]: draft.config,
+        });
+      }
       if (draft.botToken) setBotToken(draft.botToken);
       if (draft.wizardStep) setWizardStep(draft.wizardStep);
     } catch {
@@ -697,8 +744,9 @@ export function Deploy() {
         DEPLOY_DRAFT_KEY,
         JSON.stringify({
           name,
-          skillId,
-          config,
+          selectedSkillIds,
+          activeSkillId,
+          skillConfigs,
           botToken,
           wizardStep,
         }),
@@ -710,7 +758,7 @@ export function Deploy() {
       window.clearTimeout(saveTimer);
       window.clearTimeout(hideTimer);
     };
-  }, [name, skillId, config, botToken, wizardStep, deployId]);
+  }, [name, selectedSkillIds, activeSkillId, skillConfigs, botToken, wizardStep, deployId]);
 
   useEffect(() => {
     const job = searchParams.get("job");
@@ -738,32 +786,46 @@ export function Deploy() {
       fromUrl &&
       deployableSkills.some((s) => s.skill_id === fromUrl)
     ) {
-      setSkillId(fromUrl);
+      setSelectedSkillIds([fromUrl]);
+      setActiveSkillId(fromUrl);
+      setSkillConfigs((prev) => ({
+        ...prev,
+        [fromUrl]: prev[fromUrl] ?? defaultConfigForSkill(fromUrl),
+      }));
       return;
     }
     if (
       deployableSkills.length > 0 &&
-      !deployableSkills.some((s) => s.skill_id === skillId)
+      !selectedSkillIds.some((id) =>
+        deployableSkills.some((s) => s.skill_id === id),
+      )
     ) {
-      setSkillId(defaultSkillId);
+      setSelectedSkillIds([defaultSkillId]);
+      setActiveSkillId(defaultSkillId);
     }
-  }, [skillId, deployableSkills, defaultSkillId, searchParams]);
+  }, [selectedSkillIds, deployableSkills, defaultSkillId, searchParams]);
 
   useEffect(() => {
-    setConfig(defaultConfigForSkill(skillId));
-    if (skillId === "gaming/wagering/gamearena_1v1") {
+    setSkillConfigs((prev) => ({
+      ...prev,
+      [activeSkillId]: prev[activeSkillId] ?? defaultConfigForSkill(activeSkillId),
+    }));
+    if (activeSkillId === "gaming/wagering/gamearena_1v1") {
       setName("My GameArena Agent");
-    } else if (skillId === "gaming/card-fighter/actionorder_vshouse") {
+    } else if (activeSkillId === "gaming/card-fighter/actionorder_vshouse") {
       setName("My ACTION-ORDER Agent");
-    } else if (skillId === UBI_REMINDER_SKILL_ID) {
+    } else if (activeSkillId === UBI_REMINDER_SKILL_ID) {
       setName("My UBI Reminder Agent");
-    } else if (skillId === BALAIO_WORKER_SKILL_ID) {
+    } else if (activeSkillId === BALAIO_WORKER_SKILL_ID) {
       setName("My Balaio Worker");
     }
-  }, [skillId]);
+  }, [activeSkillId]);
 
   function updateConfig(key: string, value: string) {
-    setConfig((prev) => ({ ...prev, [key]: value }));
+    setSkillConfigs((prev) => ({
+      ...prev,
+      [activeSkillId]: { ...(prev[activeSkillId] ?? {}), [key]: value },
+    }));
   }
 
   async function handleDeploy() {
@@ -774,16 +836,18 @@ export function Deploy() {
       const { agent } = await createDeploy({
         displayName: name.trim(),
         ownerWallet: address,
-        skillId,
-        configuration: config,
-        telegramBotToken:
-          skillId === UBI_REMINDER_SKILL_ID ? botToken.trim() : undefined,
-        template:
-          skillId === UBI_REMINDER_SKILL_ID
-            ? "social"
-            : skillId === BALAIO_WORKER_SKILL_ID
-              ? "work"
-              : "gaming",
+        skillIds: selectedSkillIds,
+        skillConfigurations: Object.fromEntries(
+          selectedSkillIds.map((id) => [id, skillConfigs[id] ?? {}]),
+        ),
+        telegramBotToken: selectedSkillIds.includes(UBI_REMINDER_SKILL_ID)
+          ? botToken.trim()
+          : undefined,
+        template: selectedSkillIds.includes(UBI_REMINDER_SKILL_ID)
+          ? "social"
+          : selectedSkillIds.includes(BALAIO_WORKER_SKILL_ID)
+            ? "work"
+            : "gaming",
         skipPayment: true,
       });
       setDeployId(agent.id);
@@ -811,17 +875,34 @@ export function Deploy() {
   const fundingShort = deployFundingShort(skillId, balaioSkill, balaioCreator);
 
   const reviewConfigRows = useMemo(
-    () => deployReviewRows(skillId, config, botToken),
-    [skillId, config, botToken],
+    () =>
+      selectedSkillIds.flatMap((id) => {
+        const rows = deployReviewRows(
+          id,
+          skillConfigs[id] ?? {},
+          id === UBI_REMINDER_SKILL_ID ? botToken : undefined,
+        );
+        if (selectedSkillIds.length === 1) return rows;
+        const label = deployableSkills.find((s) => s.skill_id === id)?.name ?? id;
+        return rows.map((row) => ({
+          ...row,
+          label: `${label} · ${row.label}`,
+        }));
+      }),
+    [selectedSkillIds, skillConfigs, botToken, deployableSkills],
   );
 
   const step1Valid =
     name.trim().length > 0 &&
     deployableSkills.length > 0 &&
-    deployableSkills.some((s) => s.skill_id === skillId);
+    selectedSkillIds.length > 0 &&
+    selectedSkillIds.every((id) =>
+      deployableSkills.some((s) => s.skill_id === id),
+    );
   const step2Valid =
     step1Valid &&
-    (skillId !== UBI_REMINDER_SKILL_ID || botToken.trim().length > 0);
+    (!selectedSkillIds.includes(UBI_REMINDER_SKILL_ID) ||
+      botToken.trim().length > 0);
 
   const nameError =
     nameTouched && name.trim().length === 0
@@ -905,23 +986,38 @@ export function Deploy() {
 
                       {deployableSkills.length > 0 ? (
                         <OnboardField
-                          label="Skill"
-                          hint="Pick what this agent does — wallet, runtime, and limits depend on it."
+                          label="Skills"
+                          hint={`Choose up to ${MAX_DEPLOY_SKILLS} skills for one agent wallet.`}
                         >
-                          <select
-                            value={skillId}
-                            onChange={(e) => setSkillId(e.target.value)}
-                            disabled={formLocked}
-                          >
-                            {deployableSkills.map((skill) => (
-                              <option
-                                key={skill.skill_id}
-                                value={skill.skill_id}
-                              >
-                                {skill.name}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="onboard-skill-grid">
+                            {deployableSkills.map((skill) => {
+                              const checked = selectedSkillIds.includes(
+                                skill.skill_id,
+                              );
+                              return (
+                                <label
+                                  key={skill.skill_id}
+                                  className={`onboard-skill-option${checked ? " is-selected" : ""}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={
+                                      formLocked ||
+                                      (!checked &&
+                                        selectedSkillIds.length >=
+                                          MAX_DEPLOY_SKILLS)
+                                    }
+                                    onChange={() => toggleSkill(skill.skill_id)}
+                                  />
+                                  <span>
+                                    <strong>{skill.name}</strong>
+                                    <small>{skill.description.slice(0, 96)}</small>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
                         </OnboardField>
                       ) : (
                         <p className="error">
@@ -952,6 +1048,22 @@ export function Deploy() {
                             : "Tune behavior and limits before going live."
                         }
                       />
+                      {selectedSkills.length > 1 ? (
+                        <div className="onboard-segment" role="tablist">
+                          {selectedSkills.map((skill) => (
+                            <button
+                              key={skill.skill_id}
+                              type="button"
+                              role="tab"
+                              className={`onboard-segment-btn${activeSkillId === skill.skill_id ? " is-active" : ""}`}
+                              onClick={() => setActiveSkillId(skill.skill_id)}
+                              disabled={formLocked}
+                            >
+                              {skill.name}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="onboard-config-stack form">
                         {skillId === GAMEARENA_SKILL_ID && (
                           <GamearenaConfigFields
@@ -1006,7 +1118,11 @@ export function Deploy() {
                   {wizardStep === 3 && (
                     <OnboardReviewStep
                       name={name}
-                      skillName={selectedSkill?.name ?? skillId}
+                      skillName={
+                        selectedSkills.map((s) => s.name).join(" + ") ||
+                        selectedSkill?.name ||
+                        skillId
+                      }
                       highlights={previewTags}
                       configRows={reviewConfigRows}
                       fundingNote={fundingShort}

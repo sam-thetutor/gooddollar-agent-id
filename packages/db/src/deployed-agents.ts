@@ -1,4 +1,5 @@
 import type { DeployedAgent, SkillInstall } from "@prisma/client";
+import { assertDeploySkillCount } from "@goodagent/shared";
 import { prisma } from "./client.js";
 
 export type DeployStatus =
@@ -15,6 +16,7 @@ export type DeployStatus =
 export interface DeploySkillInput {
   skillId: string;
   registryPath: string;
+  configuration?: Record<string, string>;
 }
 
 export interface CreateDeployedAgentInput {
@@ -22,7 +24,10 @@ export interface CreateDeployedAgentInput {
   template?: string;
   ownerWallet?: string | null;
   skills?: DeploySkillInput[];
+  /** Legacy flat config — applied to primary skill when per-skill config absent */
   configuration?: Record<string, string> | null;
+  /** Per-skill config keyed by skillId (preferred) */
+  skillConfigurations?: Record<string, Record<string, string>> | null;
   telegramBotToken?: string | null;
   encryptionSecret?: string | null;
 }
@@ -47,6 +52,8 @@ export async function createDeployedAgent(
     throw new Error("at least one skill is required");
   }
 
+  assertDeploySkillCount(skills.map((s) => s.skillId));
+
   let telegramBotTokenEnc: string | null = null;
   if (input.telegramBotToken && input.encryptionSecret) {
     const { encryptSecret } = await import("./crypto.js");
@@ -61,6 +68,8 @@ export async function createDeployedAgent(
       ? JSON.stringify(input.configuration)
       : null;
 
+  const skillConfigurations = input.skillConfigurations ?? {};
+
   return prisma.deployedAgent.create({
     data: {
       displayName: input.displayName,
@@ -70,11 +79,22 @@ export async function createDeployedAgent(
       configuration,
       telegramBotTokenEnc,
       skills: {
-        create: skills.map((s) => ({
-          skillId: s.skillId,
-          registryPath: s.registryPath,
-          status: "pending",
-        })),
+        create: skills.map((s, index) => {
+          const perSkill =
+            skillConfigurations[s.skillId] ??
+            s.configuration ??
+            (index === 0 && input.configuration ? input.configuration : null);
+          const configJson =
+            perSkill && Object.keys(perSkill).length
+              ? JSON.stringify(perSkill)
+              : null;
+          return {
+            skillId: s.skillId,
+            registryPath: s.registryPath,
+            status: "pending",
+            configJson,
+          };
+        }),
       },
     },
     include: { skills: true },
@@ -179,14 +199,19 @@ export const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1";
 /** Deploy statuses that no longer block a new GameArena entry. */
 const GAMEARENA_NON_BLOCKING_STATUSES: DeployStatus[] = ["failed", "stopped"];
 
-/** All GameArena deploys with a provisioned play wallet (for leaderboard enrichment). */
+/** All GameArena deploys with enabled GameArena skill + provisioned play wallet. */
 export function listGamearenaDeployedAgents(): Promise<
   (DeployedAgent & { skills: SkillInstall[] })[]
 > {
   return prisma.deployedAgent.findMany({
     where: {
       agentAddress: { not: null },
-      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+      skills: {
+        some: {
+          skillId: GAMEARENA_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
     },
     orderBy: { createdAt: "desc" },
     include: { skills: true },
@@ -200,7 +225,12 @@ export function listGamearenaDeployedAgentsByOwner(
   return prisma.deployedAgent.findMany({
     where: {
       ownerWallet: ownerWallet.toLowerCase(),
-      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+      skills: {
+        some: {
+          skillId: GAMEARENA_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
     },
     orderBy: { createdAt: "desc" },
     include: { skills: true },
@@ -214,7 +244,12 @@ export function getFirstGamearenaDeployForOwner(
   return prisma.deployedAgent.findFirst({
     where: {
       ownerWallet: ownerWallet.toLowerCase(),
-      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+      skills: {
+        some: {
+          skillId: GAMEARENA_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
     },
     orderBy: { createdAt: "asc" },
     include: { skills: true },
@@ -230,7 +265,12 @@ export function findBlockingGamearenaDeployForOwner(
     where: {
       ownerWallet: ownerWallet.toLowerCase(),
       status: { notIn: GAMEARENA_NON_BLOCKING_STATUSES },
-      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+      skills: {
+        some: {
+          skillId: GAMEARENA_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
       ...(excludeDeployId ? { id: { not: excludeDeployId } } : {}),
     },
     orderBy: { createdAt: "desc" },
@@ -254,7 +294,12 @@ export async function findBlockingGamearenaDeployForHumanRoot(
     where: {
       agentAddress: { in: agentAddresses, mode: "insensitive" },
       status: { notIn: GAMEARENA_NON_BLOCKING_STATUSES },
-      skills: { some: { skillId: GAMEARENA_SKILL_ID } },
+      skills: {
+        some: {
+          skillId: GAMEARENA_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
       ...(excludeDeployId ? { id: { not: excludeDeployId } } : {}),
     },
     orderBy: { createdAt: "desc" },
@@ -272,4 +317,53 @@ export function parseDeployConfiguration(
   } catch {
     return {};
   }
+}
+
+export function updateSkillInstall(
+  deployedAgentId: string,
+  skillId: string,
+  data: Partial<{
+    status: string;
+    configJson: string | null;
+    lastError: string | null;
+    activatedAt: Date | null;
+  }>,
+): Promise<SkillInstall> {
+  return prisma.skillInstall.update({
+    where: {
+      deployedAgentId_skillId: { deployedAgentId, skillId },
+    },
+    data,
+  });
+}
+
+export function mergeSkillInstallConfiguration(
+  existing: string | null | undefined,
+  patch: Record<string, string>,
+): Record<string, string> {
+  const base: Record<string, string> = existing
+    ? (JSON.parse(existing) as Record<string, string>)
+    : {};
+  const merged = { ...base, ...patch };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === "") delete merged[key];
+  }
+  return merged;
+}
+
+export async function patchSkillInstallConfiguration(
+  deployedAgentId: string,
+  skillId: string,
+  patch: Record<string, string>,
+): Promise<SkillInstall> {
+  const install = await prisma.skillInstall.findUnique({
+    where: {
+      deployedAgentId_skillId: { deployedAgentId, skillId },
+    },
+  });
+  if (!install) throw new Error(`skill not installed: ${skillId}`);
+  const merged = mergeSkillInstallConfiguration(install.configJson, patch);
+  return updateSkillInstall(deployedAgentId, skillId, {
+    configJson: JSON.stringify(merged),
+  });
 }

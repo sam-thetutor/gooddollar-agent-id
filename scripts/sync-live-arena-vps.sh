@@ -110,6 +110,14 @@ for (const agentDir of fs.readdirSync(AGENTS_ROOT)) {
   envContent = upsertEnvLine(envContent, "DEPLOY_ID", agentDir);
   const secret = hostEnv.HOST_INTERNAL_SECRET?.trim();
   if (secret) envContent = upsertEnvLine(envContent, "HOST_INTERNAL_SECRET", secret);
+  const agentApiKey = hostEnv.GAMEARENA_AGENT_API_KEY?.trim();
+  if (agentApiKey) {
+    envContent = upsertEnvLine(envContent, "GAMEARENA_AGENT_API_KEY", agentApiKey);
+    const agentApiUrl =
+      hostEnv.GAMEARENA_AGENT_API_URL?.trim() ||
+      "https://game-backend-production-6130.up.railway.app";
+    envContent = upsertEnvLine(envContent, "GAMEARENA_AGENT_API_URL", agentApiUrl);
+  }
   fs.writeFileSync(path.join(skillDir, ".env"), envContent, { mode: 0o600 });
 
   const ecoPath = path.join(AGENTS_ROOT, agentDir, "ecosystem.config.cjs");
@@ -125,7 +133,7 @@ for (const agentDir of fs.readdirSync(AGENTS_ROOT)) {
   }
 
   execSync("npm ci", { cwd: skillDir, stdio: "inherit" });
-  console.log(\`[sync] \${agentDir} ROUND_PACE_MS=\${roundPace}\${proxy ? " proxy=set" : ""}\`);
+  console.log(\`[sync] \${agentDir} ROUND_PACE_MS=\${roundPace}\${proxy ? " proxy=set" : ""}\${agentApiKey ? " agent-api=set" : ""}\`);
   n++;
 }
 console.log(\`[sync] updated \${n} gamearena agent(s)\`);

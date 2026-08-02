@@ -5,7 +5,10 @@ import {
   type DeployStatusResponse,
 } from "../client/host.js";
 import { useWidget } from "../context.js";
-import { useActiveDeploySkillId } from "../deploy-session.js";
+import {
+  useActiveDeploySkillId,
+  useSelectedDeploySkillIds,
+} from "../deploy-session.js";
 import {
   defaultConfigForSkill,
   defaultDisplayNameForSkill,
@@ -15,6 +18,17 @@ import {
 import type { SkillConfiguration } from "../types.js";
 import { isDeployProvisioning } from "../lib/deploy-progress.js";
 
+function buildInitialSkillConfigs(
+  skillIds: string[],
+  partnerDefaults: SkillConfiguration,
+): Record<string, SkillConfiguration> {
+  const out: Record<string, SkillConfiguration> = {};
+  for (const id of skillIds) {
+    out[id] = { ...defaultConfigForSkill(id), ...partnerDefaults };
+  }
+  return out;
+}
+
 export function useDeployFlow(opts?: {
   deployId?: string;
   onDeployId?: (id: string) => void;
@@ -23,15 +37,17 @@ export function useDeployFlow(opts?: {
 }) {
   const { config, wallet, host } = useWidget();
   const skillId = useActiveDeploySkillId(config);
+  const selectedSkillIds = useSelectedDeploySkillIds(config);
 
   const [deployId, setDeployId] = useState(opts?.deployId ?? "");
   const [displayName, setDisplayName] = useState(
     config.defaultDisplayName ?? defaultDisplayNameForSkill(skillId),
   );
-  const [configValues, setConfigValues] = useState<SkillConfiguration>(() => ({
-    ...defaultConfigForSkill(skillId),
-    ...config.skillConfiguration,
-  }));
+  const [skillConfigs, setSkillConfigs] = useState<
+    Record<string, SkillConfiguration>
+  >(() =>
+    buildInitialSkillConfigs(selectedSkillIds, config.skillConfiguration),
+  );
   const [telegramBotToken, setTelegramBotToken] = useState(
     config.telegramBotToken ?? "",
   );
@@ -46,6 +62,8 @@ export function useDeployFlow(opts?: {
   const displayNameDirtyRef = useRef(false);
   const vouchNotifiedForDeployRef = useRef("");
 
+  const configValues = skillConfigs[skillId] ?? defaultConfigForSkill(skillId);
+
   const basePollMs = config.statusPollMs ?? 4000;
   const pollMs =
     status?.pipelineRunning ||
@@ -56,9 +74,20 @@ export function useDeployFlow(opts?: {
       : basePollMs;
 
   useEffect(() => {
-    setConfigValues({
-      ...defaultConfigForSkill(skillId),
-      ...config.skillConfiguration,
+    setSkillConfigs((prev) => {
+      const next = { ...prev };
+      for (const id of selectedSkillIds) {
+        if (!next[id]) {
+          next[id] = {
+            ...defaultConfigForSkill(id),
+            ...config.skillConfiguration,
+          };
+        }
+      }
+      for (const id of Object.keys(next)) {
+        if (!selectedSkillIds.includes(id)) delete next[id];
+      }
+      return next;
     });
     if (!displayNameDirtyRef.current) {
       setDisplayName(
@@ -67,6 +96,7 @@ export function useDeployFlow(opts?: {
     }
     setTelegramBotToken(config.telegramBotToken ?? "");
   }, [
+    selectedSkillIds,
     skillId,
     config.defaultDisplayName,
     config.telegramBotToken,
@@ -115,9 +145,15 @@ export function useDeployFlow(opts?: {
     onAwaitingVouchRef.current?.(status);
   }, [status, deployId]);
 
-  const updateConfig = useCallback((key: string, value: string) => {
-    setConfigValues((c) => ({ ...c, [key]: value }));
-  }, []);
+  const updateConfig = useCallback(
+    (key: string, value: string) => {
+      setSkillConfigs((prev) => ({
+        ...prev,
+        [skillId]: { ...(prev[skillId] ?? {}), [key]: value },
+      }));
+    },
+    [skillId],
+  );
 
   const setDisplayNameSafe = useCallback((value: string) => {
     displayNameDirtyRef.current = true;
@@ -126,24 +162,30 @@ export function useDeployFlow(opts?: {
 
   const deploy = useCallback(async () => {
     if (!wallet.address) throw new Error("Connect your wallet first");
-    if (skillId === UBI_REMINDER_SKILL_ID && !telegramBotToken.trim()) {
-      throw new Error("Telegram bot token is required for this skill");
+    if (
+      selectedSkillIds.includes(UBI_REMINDER_SKILL_ID) &&
+      !telegramBotToken.trim()
+    ) {
+      throw new Error("Telegram bot token is required for UBI reminder");
     }
     setError(null);
     setBusy(true);
     try {
+      const primarySkill = selectedSkillIds[0] ?? skillId;
       const { agent } = await host.createDeploy({
         displayName:
-          displayName.trim() || defaultDisplayNameForSkill(skillId),
+          displayName.trim() || defaultDisplayNameForSkill(primarySkill),
         ownerWallet: wallet.address,
-        skillId,
-        configuration: configValues,
+        skillIds: selectedSkillIds,
+        skillConfigurations: Object.fromEntries(
+          selectedSkillIds.map((id) => [id, skillConfigs[id] ?? {}]),
+        ),
         partnerId: config.partnerId,
-        template: config.deployTemplate ?? deployTemplateForSkill(skillId),
-        telegramBotToken:
-          skillId === UBI_REMINDER_SKILL_ID
-            ? telegramBotToken.trim()
-            : undefined,
+        template:
+          config.deployTemplate ?? deployTemplateForSkill(primarySkill),
+        telegramBotToken: selectedSkillIds.includes(UBI_REMINDER_SKILL_ID)
+          ? telegramBotToken.trim()
+          : undefined,
       });
       setDeployId(agent.id);
       opts?.onDeployId?.(agent.id);
@@ -162,7 +204,8 @@ export function useDeployFlow(opts?: {
     host,
     displayName,
     skillId,
-    configValues,
+    selectedSkillIds,
+    skillConfigs,
     config.partnerId,
     config.deployTemplate,
     telegramBotToken,
@@ -212,15 +255,19 @@ export function useDeployFlow(opts?: {
   }, [deployId, wallet, host, poll]);
 
   const canDeploy =
-    skillId !== UBI_REMINDER_SKILL_ID || telegramBotToken.trim().length > 0;
+    selectedSkillIds.length > 0 &&
+    (!selectedSkillIds.includes(UBI_REMINDER_SKILL_ID) ||
+      telegramBotToken.trim().length > 0);
 
   return {
     skillId,
+    selectedSkillIds,
     deployId,
     displayName,
     setDisplayName: setDisplayNameSafe,
     provisioning: isDeployProvisioning(status, deployId),
     configValues,
+    skillConfigs,
     updateConfig,
     telegramBotToken,
     setTelegramBotToken,

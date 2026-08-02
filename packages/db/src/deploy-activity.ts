@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { matchBelongsToSkill } from "@goodagent/shared";
 import { existsSync, readFileSync } from "node:fs";
 import { prisma } from "./client.js";
 
@@ -66,6 +67,7 @@ function parsePlayedAt(at: string): Date {
 export async function recordDeployMatch(
   deployedAgentId: string,
   rec: PersistedMatchRecord,
+  skillId?: string | null,
 ): Promise<void> {
   await prisma.deployMatch.upsert({
     where: {
@@ -76,6 +78,7 @@ export async function recordDeployMatch(
     },
     create: {
       deployedAgentId,
+      skillId: skillId ?? null,
       matchId: rec.matchId,
       gameType: rec.gameType,
       wagerGs: rec.wagerGs,
@@ -84,6 +87,7 @@ export async function recordDeployMatch(
       playedAt: parsePlayedAt(rec.at),
     },
     update: {
+      skillId: skillId ?? undefined,
       gameType: rec.gameType,
       wagerGs: rec.wagerGs,
       result: rec.result,
@@ -96,6 +100,7 @@ export async function recordDeployMatch(
 export async function recordDeployRefill(
   deployedAgentId: string,
   rec: PersistedRefillRecord,
+  skillId?: string | null,
 ): Promise<void> {
   await prisma.deployRefill.upsert({
     where: {
@@ -106,11 +111,13 @@ export async function recordDeployRefill(
     },
     create: {
       deployedAgentId,
+      skillId: skillId ?? null,
       priceGs: rec.priceGs,
       txHash: rec.txHash,
       refilledAt: parsePlayedAt(rec.at),
     },
     update: {
+      skillId: skillId ?? undefined,
       priceGs: rec.priceGs,
       refilledAt: parsePlayedAt(rec.at),
     },
@@ -121,6 +128,7 @@ export async function appendDeployLogLine(
   deployedAgentId: string,
   message: string,
   loggedAt?: string,
+  skillId?: string | null,
 ): Promise<void> {
   const trimmed = message.trim();
   if (!trimmed) return;
@@ -137,10 +145,50 @@ export async function appendDeployLogLine(
   await prisma.deployLogLine.create({
     data: {
       deployedAgentId,
+      skillId: skillId ?? null,
       message: trimmed,
       loggedAt: at,
     },
   });
+}
+
+function skillMatchFilter(
+  deployedAgentId: string,
+  skillId: string,
+  includeLegacy: boolean,
+) {
+  if (includeLegacy) {
+    return {
+      deployedAgentId,
+      OR: [{ skillId }, { skillId: null }],
+    };
+  }
+  return { deployedAgentId, skillId };
+}
+
+export async function listDeployMatchesForSkill(
+  deployedAgentId: string,
+  skillId: string,
+  opts?: { includeLegacy?: boolean },
+): Promise<PersistedMatchRecord[]> {
+  const rows = await prisma.deployMatch.findMany({
+    where: skillMatchFilter(
+      deployedAgentId,
+      skillId,
+      opts?.includeLegacy ?? false,
+    ),
+    orderBy: { playedAt: "asc" },
+  });
+  return rows
+    .map((row) => ({
+      matchId: row.matchId,
+      gameType: row.gameType,
+      wagerGs: Number(row.wagerGs),
+      result: row.result as PersistedMatchRecord["result"],
+      mode: row.mode as PersistedMatchRecord["mode"],
+      at: row.playedAt.toISOString(),
+    }))
+    .filter((row) => matchBelongsToSkill(skillId, row.matchId));
 }
 
 export async function listDeployMatches(
@@ -158,6 +206,43 @@ export async function listDeployMatches(
     mode: row.mode as PersistedMatchRecord["mode"],
     at: row.playedAt.toISOString(),
   }));
+}
+
+export async function getDeployLogTailForSkill(
+  deployedAgentId: string,
+  skillId: string,
+  lines = 12,
+  opts?: { includeLegacy?: boolean },
+): Promise<string | null> {
+  const where = opts?.includeLegacy
+    ? {
+        deployedAgentId,
+        OR: [{ skillId }, { skillId: null }],
+      }
+    : { deployedAgentId, skillId };
+  const rows = await prisma.deployLogLine.findMany({
+    where,
+    orderBy: { loggedAt: "desc" },
+    take: lines * 4,
+  });
+
+  const skillTag = `[${skillId}]`;
+  const shortTag = `[${skillId.split("/").pop()}]`;
+  const filtered = rows
+    .filter(
+      (row) =>
+        row.skillId === skillId ||
+        row.message.includes(skillTag) ||
+        row.message.includes(shortTag),
+    )
+    .slice(0, lines);
+
+  if (!filtered.length) return null;
+  return filtered
+    .slice()
+    .reverse()
+    .map((r) => r.message)
+    .join("\n");
 }
 
 export async function getDeployLogTail(
@@ -180,6 +265,7 @@ export async function getDeployLogTail(
 export async function syncGamearenaStateFile(
   deployedAgentId: string,
   statePath: string,
+  skillId = "gaming/wagering/gamearena_1v1",
 ): Promise<number> {
   if (!existsSync(statePath)) return 0;
 
@@ -192,31 +278,55 @@ export async function syncGamearenaStateFile(
 
   let synced = 0;
   for (const rec of raw.history ?? []) {
-    await recordDeployMatch(deployedAgentId, {
-      matchId: rec.matchId,
-      gameType: rec.gameType,
-      wagerGs: rec.wagerGs,
-      result: rec.result,
-      mode: rec.mode ?? "onchain",
-      at: rec.at,
-    });
+    await recordDeployMatch(
+      deployedAgentId,
+      {
+        matchId: rec.matchId,
+        gameType: rec.gameType,
+        wagerGs: rec.wagerGs,
+        result: rec.result,
+        mode: rec.mode ?? "onchain",
+        at: rec.at,
+      },
+      skillId,
+    );
     synced += 1;
   }
 
   for (const rec of raw.refillHistory ?? []) {
-    await recordDeployRefill(deployedAgentId, {
-      priceGs: rec.priceGs,
-      txHash: rec.txHash,
-      at: rec.at,
-    });
+    await recordDeployRefill(
+      deployedAgentId,
+      {
+        priceGs: rec.priceGs,
+        txHash: rec.txHash,
+        at: rec.at,
+      },
+      skillId,
+    );
   }
 
   return synced;
 }
 
+function inferSkillIdFromLogLine(
+  line: string,
+  skillIds: string[],
+): string | null {
+  for (const id of skillIds) {
+    if (line.includes(`[${id}]`)) return id;
+    const short = id.split("/").pop();
+    if (short && line.includes(`[${short}]`)) return id;
+  }
+  return null;
+}
+
 export async function syncDeployLogFile(
   deployedAgentId: string,
   logPath: string,
+  opts?: {
+    defaultSkillId?: string | null;
+    skillIds?: string[];
+  },
 ): Promise<number> {
   if (!existsSync(logPath)) return 0;
 
@@ -245,8 +355,11 @@ export async function syncDeployLogFile(
   }
 
   let synced = 0;
+  const skillIds = opts?.skillIds ?? [];
   for (const line of tailLines.slice(startIdx)) {
-    await appendDeployLogLine(deployedAgentId, line);
+    const skillId =
+      inferSkillIdFromLogLine(line, skillIds) ?? opts?.defaultSkillId ?? null;
+    await appendDeployLogLine(deployedAgentId, line, undefined, skillId);
     synced += 1;
   }
   return synced;

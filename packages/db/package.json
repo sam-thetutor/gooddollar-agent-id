@@ -20,6 +20,8 @@
     "db:generate": "prisma generate"
   },
   "dependencies": {
+    "@goodagent/shared": "workspace:*",
+    "@goodagent/skill-sdk": "workspace:*",
     "@prisma/client": "^6.9.0"
   },
   "devDependencies": {

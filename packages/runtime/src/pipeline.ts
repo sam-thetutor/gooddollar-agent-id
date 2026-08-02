@@ -16,7 +16,12 @@ import {
   pm2Start,
   pm2Stop,
   writeEcosystemConfig,
+  isRuntimeV1Enabled,
+  resolveAgentRuntimeCli,
 } from "./provision.js";
+import { writeAgentManifestFile } from "./agent-manifest.js";
+import { buildAgentManifestFromDeploy } from "@goodagent/db";
+import { resolvePluginEntry, DEFAULT_PLUGIN_ENTRY } from "@goodagent/skill-sdk";
 import { fetchSkillsRegistry, findRegistrySkill } from "./registry.js";
 import { isSkillDeployable } from "@goodagent/shared";
 import {
@@ -25,7 +30,9 @@ import {
   computeBalaioFundingGs,
   type SkillConfiguration,
   writeSkillEnv,
+  buildHostReportEnv,
 } from "./skill-env.js";
+import { buildAgentPm2Env, buildLegacySkillPm2Env } from "./agent-pm2-env.js";
 import { installSkillFromRegistry } from "./skill-install.js";
 import { writeBaselineIfAbsent } from "./baseline-balance.js";
 import {
@@ -36,10 +43,8 @@ import {
   agentDir,
   readAgentMeta,
 } from "./wallet.js";
-import {
-  GAMEARENA_SKILL_ID,
-  registerGamePassUsername,
-} from "./gamearena-pass.js";
+import { ensureLegacySkillPlugin } from "./legacy-plugin.js";
+import type { SkillInstall } from "@goodagent/db";
 
 export type PipelineStatus =
   | "provisioning"
@@ -50,6 +55,18 @@ export type PipelineStatus =
   | "failed"
   | "paused"
   | "stopped";
+
+import {
+  GAMEARENA_SKILL_ID,
+  registerGamePassUsername,
+} from "./gamearena-pass.js";
+
+export interface PipelineSkillInput {
+  skillId: string;
+  registryPath: string;
+  configuration?: SkillConfiguration;
+  installId?: string;
+}
 
 export interface DeployPersistHooks {
   onStatus: (
@@ -63,6 +80,10 @@ export interface DeployPersistHooks {
       operatorWallet?: string;
     },
   ) => Promise<void>;
+  onSkillInstalled?: (input: {
+    skillId: string;
+    configuration: SkillConfiguration;
+  }) => Promise<void>;
 }
 
 export interface RunPipelineInput {
@@ -70,8 +91,11 @@ export interface RunPipelineInput {
   displayName: string;
   ownerWallet: Address;
   template?: string;
-  skillId: string;
+  /** Legacy single-skill input */
+  skillId?: string;
   skillConfiguration?: SkillConfiguration;
+  /** Multi-skill install list (preferred) */
+  skills?: PipelineSkillInput[];
   telegramBotToken?: string | null;
   skipIdentity?: boolean;
   dryRun?: boolean;
@@ -88,10 +112,56 @@ export interface RunPipelineResult {
   derivationIndex: number;
   pm2Name: string;
   ecosystemPath: string;
+  /** Primary skill dir (legacy compat) */
   skillDir: string;
+  skillDirs: string[];
   verifyUrl?: string;
   identityIssued: boolean;
   gamePassUsername?: string | null;
+}
+
+function skillFolderFromRegistryPath(registryPath: string): string {
+  return registryPath.split("/").pop() ?? registryPath;
+}
+
+function resolvePipelineSkills(
+  input: RunPipelineInput,
+  registry: Awaited<ReturnType<typeof fetchSkillsRegistry>>,
+): PipelineSkillInput[] {
+  if (input.skills?.length) return input.skills;
+  const skillId = input.skillId;
+  if (!skillId) throw new Error("skillId or skills[] is required");
+  const entry = findRegistrySkill(registry, skillId);
+  if (!entry) throw new Error(`skill_id not in registry: ${skillId}`);
+  return [
+    {
+      skillId,
+      registryPath: entry.path,
+      configuration: input.skillConfiguration ?? {},
+    },
+  ];
+}
+
+function computeFundingTargetGs(
+  skills: PipelineSkillInput[],
+  baseGs: number,
+): number {
+  let target = baseGs;
+  for (const skill of skills) {
+    const config = skill.configuration ?? {};
+    if (skill.skillId === BALAIO_WORKER_SKILL_ID) {
+      target = Math.max(target, computeBalaioFundingGs(config, baseGs));
+    }
+  }
+  return target;
+}
+
+function skillNeedsAgentPrivateKey(skillId: string, spendsTokens: boolean): boolean {
+  return (
+    spendsTokens ||
+    skillId === GAMEARENA_SKILL_ID ||
+    skillId === BALAIO_WORKER_SKILL_ID
+  );
 }
 
 export async function runDeployPipeline(
@@ -99,18 +169,28 @@ export async function runDeployPipeline(
   input: RunPipelineInput,
   hooks: DeployPersistHooks,
 ): Promise<RunPipelineResult> {
-  const { deployId, displayName, skillId } = input;
+  const { deployId, displayName } = input;
   const template = input.template ?? "gaming";
 
   try {
     const registry = await fetchSkillsRegistry();
-    const skill = findRegistrySkill(registry, skillId);
-    if (!skill) {
-      throw new Error(`skill_id not in registry: ${skillId}`);
+    const pipelineSkills = resolvePipelineSkills(input, registry);
+    if (pipelineSkills.length > 1 && !isRuntimeV1Enabled()) {
+      throw new Error("multi-skill deploy requires RUNTIME_V1=1");
     }
-    if (!isSkillDeployable(skill)) {
-      throw new Error(`skill_id not available for deploy: ${skillId}`);
-    }
+
+    const registrySkills = pipelineSkills.map((skillInput) => {
+      const entry = findRegistrySkill(registry, skillInput.skillId);
+      if (!entry) {
+        throw new Error(`skill_id not in registry: ${skillInput.skillId}`);
+      }
+      if (!isSkillDeployable(entry)) {
+        throw new Error(`skill_id not available for deploy: ${skillInput.skillId}`);
+      }
+      return { skillInput, entry };
+    });
+
+    const primarySkillId = pipelineSkills[0]!.skillId;
 
     await hooks.onStatus("provisioning");
 
@@ -143,7 +223,7 @@ export async function runDeployPipeline(
 
     await fundAgentCelo(config, agentAddress);
     let gamePassUsername: string | null = null;
-    if (skillId === GAMEARENA_SKILL_ID) {
+    if (pipelineSkills.some((s) => s.skillId === GAMEARENA_SKILL_ID)) {
       const pass = await registerGamePassUsername({
         rpcUrl: config.rpcUrl,
         account: account as LocalAccount,
@@ -157,11 +237,11 @@ export async function runDeployPipeline(
         gamePassRegisteredAt: new Date().toISOString(),
       });
     }
-    const skillConfig = input.skillConfiguration ?? {};
-    const gsTarget =
-      skillId === BALAIO_WORKER_SKILL_ID
-        ? computeBalaioFundingGs(skillConfig, config.agentInitialGs)
-        : config.agentInitialGs;
+
+    const gsTarget = computeFundingTargetGs(
+      pipelineSkills,
+      config.agentInitialGs,
+    );
     await fundAgentGDollar(config, agentAddress, gsTarget);
     writeBaselineIfAbsent(
       config.agentsRoot,
@@ -180,43 +260,137 @@ export async function runDeployPipeline(
 
     await hooks.onStatus("installing", { agentAddress, walletDerivationIndex: index, pm2Name });
 
-    const skillDir = installSkillFromRegistry(config.agentsRoot, deployId, skill);
-    const skillEnv = buildSkillEnv(skillId, {
-      deployId,
-      agentAddress,
-      agentPrivateKey:
-        skill.spends_tokens ||
-        skillId === "gaming/wagering/gamearena_1v1" ||
-        skillId === BALAIO_WORKER_SKILL_ID
+    const skillDirs: string[] = [];
+    const skillInstallRows: SkillInstall[] = [];
+    const skillConfigs: Record<string, SkillConfiguration> = {};
+    const skillFolders: Record<string, string> = {};
+    const pluginEntries: Record<string, string> = {};
+
+    for (const { skillInput, entry } of registrySkills) {
+      const skillConfig = { ...(skillInput.configuration ?? {}) };
+      if (
+        gamePassUsername &&
+        skillInput.skillId === GAMEARENA_SKILL_ID &&
+        !skillConfig.PLAYER_NAME
+      ) {
+        skillConfig.PLAYER_NAME = gamePassUsername;
+        skillConfig.GAME_PASS_USERNAME = gamePassUsername;
+      }
+
+      const skillDir = installSkillFromRegistry(config.agentsRoot, deployId, entry);
+      skillDirs.push(skillDir);
+
+      const pluginEntry = resolvePluginEntry(entry.runtime);
+      if (isRuntimeV1Enabled() && !existsSync(resolve(skillDir, pluginEntry))) {
+        ensureLegacySkillPlugin(skillDir, skillInput.skillId);
+      }
+
+      const skillEnv = buildSkillEnv(skillInput.skillId, {
+        deployId,
+        agentAddress,
+        agentPrivateKey: skillNeedsAgentPrivateKey(
+          skillInput.skillId,
+          entry.spends_tokens,
+        )
           ? agentPrivateKey
           : null,
-      rpcUrl: config.rpcUrl,
-      displayName,
-      config: input.skillConfiguration ?? {},
-      telegramBotToken: input.telegramBotToken ?? null,
-      apiBase: config.apiBase,
-    });
-    writeSkillEnv(skillDir, skillEnv);
+        rpcUrl: config.rpcUrl,
+        displayName,
+        config: skillConfig,
+        telegramBotToken: input.telegramBotToken ?? null,
+        apiBase: config.apiBase,
+      });
+      writeSkillEnv(skillDir, skillEnv);
 
-    if (gamePassUsername && skillId === GAMEARENA_SKILL_ID) {
-      writeSkillEnv(skillDir, {
-        ...skillEnv,
-        PLAYER_NAME: gamePassUsername,
-        GAME_PASS_USERNAME: gamePassUsername,
+      skillConfigs[skillInput.skillId] = skillConfig;
+      skillFolders[skillInput.skillId] = skillFolderFromRegistryPath(
+        skillInput.registryPath,
+      );
+      pluginEntries[skillInput.skillId] = isRuntimeV1Enabled()
+        ? DEFAULT_PLUGIN_ENTRY
+        : pluginEntry;
+
+      skillInstallRows.push({
+        id: skillInput.installId ?? `${deployId}-${skillInput.skillId}`,
+        deployedAgentId: deployId,
+        skillId: skillInput.skillId,
+        registryPath: skillInput.registryPath,
+        status: "installed",
+        configJson: JSON.stringify(skillConfig),
+        lastError: null,
+        activatedAt: new Date(),
+      });
+
+      await hooks.onSkillInstalled?.({
+        skillId: skillInput.skillId,
+        configuration: skillConfig,
       });
     }
 
+    const primarySkillDir = skillDirs[0]!;
+    const deployDir = agentDir(config.agentsRoot, deployId);
+    const hostReportEnv = buildHostReportEnv(deployId);
+    const primaryConfig = skillConfigs[primarySkillId] ?? {};
+
+    let runtimeV1:
+      | { manifestPath: string; runtimeCli: string }
+      | undefined;
+    if (isRuntimeV1Enabled()) {
+      const hostUrl = hostReportEnv.GOODAGENT_HOST_URL ?? "http://127.0.0.1:3002";
+      const manifest = buildAgentManifestFromDeploy({
+        agent: {
+          id: deployId,
+          displayName,
+          agentAddress,
+          configuration: JSON.stringify(primaryConfig),
+        },
+        skills: skillInstallRows,
+        rpcUrl: config.rpcUrl,
+        apiBase: config.apiBase,
+        hostUrl,
+        hostSecret: hostReportEnv.HOST_INTERNAL_SECRET,
+        skillFolders,
+        pluginEntries,
+        skillConfigs,
+      });
+      const manifestPath = writeAgentManifestFile(deployDir, manifest);
+      runtimeV1 = {
+        manifestPath,
+        runtimeCli: resolveAgentRuntimeCli(),
+      };
+    }
+
+    const primaryEnv = buildSkillEnv(primarySkillId, {
+      deployId,
+      agentAddress,
+      agentPrivateKey: skillNeedsAgentPrivateKey(
+        primarySkillId,
+        registrySkills[0]!.entry.spends_tokens,
+      )
+        ? agentPrivateKey
+        : null,
+      rpcUrl: config.rpcUrl,
+      displayName,
+      config: primaryConfig,
+      telegramBotToken: input.telegramBotToken ?? null,
+      apiBase: config.apiBase,
+    });
+
+    const pm2Env = isRuntimeV1Enabled()
+      ? buildAgentPm2Env(
+          config,
+          deployId,
+          skillInstallRows,
+          agentAddress,
+          index,
+        )
+      : buildLegacySkillPm2Env(deployId, primaryEnv);
+
     const ecosystemPath = writeEcosystemConfig(config, {
       deployId,
-      skillDir,
-      env:
-        gamePassUsername && skillId === GAMEARENA_SKILL_ID
-          ? {
-              ...skillEnv,
-              PLAYER_NAME: gamePassUsername,
-              GAME_PASS_USERNAME: gamePassUsername,
-            }
-          : skillEnv,
+      skillDir: primarySkillDir,
+      env: pm2Env,
+      runtimeV1,
     });
 
     const verifyUrl = `${config.apiBase}/agent/verify/${agentAddress}`;
@@ -228,7 +402,8 @@ export async function runDeployPipeline(
         derivationIndex: index,
         pm2Name,
         ecosystemPath,
-        skillDir,
+        skillDir: primarySkillDir,
+        skillDirs,
         verifyUrl,
         identityIssued: false,
       };
@@ -247,7 +422,8 @@ export async function runDeployPipeline(
       derivationIndex: index,
       pm2Name,
       ecosystemPath,
-      skillDir,
+      skillDir: primarySkillDir,
+      skillDirs,
       verifyUrl,
       identityIssued: false,
       gamePassUsername,

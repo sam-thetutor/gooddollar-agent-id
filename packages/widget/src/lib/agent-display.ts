@@ -73,6 +73,11 @@ export function skillLabelForDeploy(
   agent: DeployAgent,
   partnerSkillLabel?: string,
 ): string {
+  if (agent.skills && agent.skills.length > 1) {
+    return agent.skills
+      .map((s) => skillShortLabel(s.skillId))
+      .join(" + ");
+  }
   const skillId = skillIdForDeploy(agent);
   if (partnerSkillLabel && skillId?.includes("gamearena")) {
     return partnerSkillLabel;

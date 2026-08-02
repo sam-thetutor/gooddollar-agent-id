@@ -1,6 +1,6 @@
 {
   "name": "@goodagent/widget",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Embeddable GoodAgent widget — marketplace or single-skill deploy, vouch, and dashboard for partner sites",
   "type": "module",
   "keywords": [
@@ -68,11 +68,12 @@
     }
   },
   "dependencies": {
-    "@goodagent/live-arena": "workspace:*",
     "@goodsdks/citizen-sdk": "^1.2.5",
     "viem": "^2.31.3"
   },
   "devDependencies": {
+    "@goodagent/live-arena": "workspace:*",
+    "@goodagent/shared": "workspace:*",
     "@privy-io/react-auth": "^2.25.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

@@ -25,6 +25,13 @@ import {
   unsubscribeWallet,
   deactivateChats,
   updateDeployedAgent,
+  patchSkillInstallConfiguration,
+  updateSkillInstall,
+  resolveSkillConfiguration,
+  findGamearenaSkillInstall,
+  findEnabledGamearenaSkillInstall,
+  primarySkillInstall,
+  skillFolderFromRegistryPath,
   recordDeployMatch,
   recordDeployRefill,
   appendDeployLogLine,
@@ -33,6 +40,7 @@ import {
   setActiveArenaMatchId,
   getActiveArenaMatchId,
   listDeployMatches,
+  listDeployMatchesForSkill,
   getDeployLogTail,
   syncGamearenaStateFile,
   syncDeployLogFile,
@@ -51,6 +59,7 @@ import {
   stopDeployedAgent,
   setDeployBaselineBalance,
   applyDeployConfiguration,
+  applySkillInstallStatus,
   assertOwnerVouchedForAgent,
   buildGamearenaRegistryFromAgents,
   enrichGamearenaLadder,
@@ -62,14 +71,22 @@ import {
   agentDir,
   readGamePassProfile,
   GAMEARENA_SKILL_ID,
+  collectDeploySkillStats,
+  collectSkillStats,
+  type SkillStatsSummary,
   type PipelineStatus,
   type DeployAgentRecord,
 } from "@goodagent/runtime";
 import { inferLiveMatchFromLogTail } from "@goodagent/live-arena";
 import {
   isSkillDeployable,
+  assertDeploySkillCount,
   GOODAGENT_API_URL,
   GOODAGENT_HOST_URL,
+  isActionOrderSkillId,
+  isGamearenaMatchId,
+  isActionOrderMatchId,
+  type RegistrySkillWithDashboard,
 } from "@goodagent/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -106,6 +123,8 @@ function scheduleDeployFileSync(
   agentId: string,
   statePath: string | null,
   outLog: string | null,
+  skillIds: string[] = [],
+  defaultSkillId?: string | null,
 ): void {
   const now = Date.now();
   const last = lastFileSyncAt.get(agentId) ?? 0;
@@ -116,7 +135,10 @@ function scheduleDeployFileSync(
       await syncGamearenaStateFile(agentId, statePath).catch(() => undefined);
     }
     if (outLog && existsSync(outLog)) {
-      await syncDeployLogFile(agentId, outLog).catch(() => undefined);
+      await syncDeployLogFile(agentId, outLog, {
+        skillIds,
+        defaultSkillId: defaultSkillId ?? null,
+      }).catch(() => undefined);
     }
   })();
 }
@@ -157,14 +179,21 @@ function readAgentLogTail(
   deployId: string,
   lines = 24,
 ): string | null {
-  const outLog = resolve(agentDir(agentsRoot, deployId), "logs", "out.log");
-  if (!existsSync(outLog)) return null;
-  try {
-    const raw = readFileSync(outLog, "utf8");
-    return raw.trim().split("\n").slice(-lines).join("\n") || null;
-  } catch {
-    return null;
+  const logDir = resolve(agentDir(agentsRoot, deployId), "logs");
+  const candidates = ["out.log", "err.log"];
+  const chunks: string[] = [];
+  for (const name of candidates) {
+    const path = resolve(logDir, name);
+    if (!existsSync(path)) continue;
+    try {
+      const raw = readFileSync(path, "utf8").trim();
+      if (raw) chunks.push(raw);
+    } catch {
+      /* ignore */
+    }
   }
+  if (!chunks.length) return null;
+  return chunks.join("\n").split("\n").slice(-lines).join("\n") || null;
 }
 
 function gamearenaFirstAgentConflict(existing: {
@@ -296,8 +325,7 @@ async function scheduleDeployPipeline(
   agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
   opts: { skipIdentity?: boolean; dryRun?: boolean },
 ): Promise<void> {
-  const primarySkill = agent.skills[0];
-  if (!primarySkill) {
+  if (!agent.skills.length) {
     throw new Error("NO_SKILLS");
   }
 
@@ -321,8 +349,12 @@ async function scheduleDeployPipeline(
         displayName: agent.displayName,
         ownerWallet: agent.ownerWallet as `0x${string}`,
         template: agent.template,
-        skillId: primarySkill.skillId,
-        skillConfiguration: parseDeployConfiguration(agent),
+        skills: agent.skills.map((install) => ({
+          skillId: install.skillId,
+          registryPath: install.registryPath,
+          configuration: resolveSkillConfiguration(agent, install),
+          installId: install.id,
+        })),
         telegramBotToken,
         skipIdentity: opts.skipIdentity,
         dryRun: opts.dryRun,
@@ -340,6 +372,14 @@ async function scheduleDeployPipeline(
           await updateDeployedAgent(id, {
             status: pipelineToDeployStatus(status),
             ...fields,
+          });
+        },
+        onSkillInstalled: async ({ skillId, configuration }) => {
+          await updateSkillInstall(id, skillId, {
+            status: "installed",
+            configJson: JSON.stringify(configuration),
+            activatedAt: new Date(),
+            lastError: null,
           });
         },
       },
@@ -367,7 +407,54 @@ function publicAgent<T extends { telegramBotTokenEnc?: string | null }>(
 function primarySkillId(
   agent: Awaited<ReturnType<typeof getDeployedAgent>>,
 ): string | null {
-  return agent?.skills[0]?.skillId ?? null;
+  return primarySkillInstall(agent?.skills ?? [])?.skillId ?? null;
+}
+
+function buildSkillStatusPayload(
+  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
+  skillStats?: Record<string, SkillStatsSummary>,
+) {
+  return agent.skills.map((install) => ({
+    skillId: install.skillId,
+    registryPath: install.registryPath,
+    status: install.status,
+    lastError: install.lastError,
+    configuration: resolveSkillConfiguration(agent, install),
+    stats: skillStats?.[install.skillId] ?? null,
+  }));
+}
+
+function resolveActivitySkillId(
+  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
+  body: { skillId?: string; type?: string; matchId?: string },
+): string | null {
+  const explicit = body.skillId?.trim();
+  if (explicit) {
+    if (agent.skills.some((s) => s.skillId === explicit)) return explicit;
+    return explicit;
+  }
+  if (body.type === "match" && body.matchId) {
+    if (isGamearenaMatchId(body.matchId)) {
+      return findEnabledGamearenaSkillInstall(agent.skills)?.skillId ?? null;
+    }
+    if (isActionOrderMatchId(body.matchId)) {
+      return (
+        agent.skills.find((s) => isActionOrderSkillId(s.skillId))?.skillId ?? null
+      );
+    }
+  }
+  if (
+    body.type === "live_match" ||
+    body.type === "live_clear" ||
+    body.type === "arena_match" ||
+    body.type === "refill"
+  ) {
+    return findEnabledGamearenaSkillInstall(agent.skills)?.skillId ?? null;
+  }
+  if (body.type === "match" || body.type === "log") {
+    return findEnabledGamearenaSkillInstall(agent.skills)?.skillId ?? primarySkillId(agent);
+  }
+  return primarySkillId(agent);
 }
 
 function deployAgentRecord(
@@ -383,6 +470,9 @@ function deployAgentRecord(
     skills: agent.skills.map((s) => ({
       skillId: s.skillId,
       registryPath: s.registryPath,
+      configJson: s.configJson,
+      status: s.status,
+      id: s.id,
     })),
   };
 }
@@ -412,7 +502,10 @@ app.get("/deploy/:id/ladder", async (c) => {
           id: row.id,
           displayName: row.displayName,
           agentAddress: row.agentAddress!,
-          skillId: row.skills[0]?.skillId ?? null,
+          skillId:
+            findEnabledGamearenaSkillInstall(row.skills)?.skillId ??
+            row.skills[0]?.skillId ??
+            null,
           verified: false,
         })),
     });
@@ -422,7 +515,9 @@ app.get("/deploy/:id/ladder", async (c) => {
         deployId: agent.id,
         displayName: agent.displayName,
         agentAddress: agent.agentAddress,
-        skillId: agent.skills[0]?.skillId ?? GAMEARENA_SKILL_ID,
+        skillId:
+          findEnabledGamearenaSkillInstall(agent.skills)?.skillId ??
+          GAMEARENA_SKILL_ID,
         gamePassUsername: null,
         verified: false,
         source: "goodagent",
@@ -623,6 +718,7 @@ app.post("/deploy", async (c) => {
     ownerWallet?: string;
     skillId?: string;
     skillIds?: string[];
+    skillConfigurations?: Record<string, Record<string, string>>;
     configuration?: Record<string, string>;
     telegramBotToken?: string;
     skipPayment?: boolean;
@@ -661,6 +757,13 @@ app.post("/deploy", async (c) => {
           ? [body.skillId]
           : ["gaming/wagering/gamearena_1v1"];
 
+    try {
+      assertDeploySkillCount(requestedSkillIds);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ error: message }, 400);
+    }
+
     const registry = await fetchSkillsRegistry();
     skills = requestedSkillIds.map((skillId) => {
       const entry = findRegistrySkill(registry, skillId);
@@ -685,6 +788,7 @@ app.post("/deploy", async (c) => {
     ownerWallet: body.ownerWallet,
     skills,
     configuration: Object.keys(configuration).length ? configuration : null,
+    skillConfigurations: body.skillConfigurations ?? null,
     telegramBotToken,
     encryptionSecret,
   });
@@ -708,7 +812,8 @@ app.get("/deploy/:id/live-snapshot", async (c) => {
   const agent = await getDeployedAgent(c.req.param("id"));
   if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
 
-  const skillId = agent.skills[0]?.skillId ?? null;
+  const gamearenaSkill = findEnabledGamearenaSkillInstall(agent.skills);
+  const skillId = gamearenaSkill?.skillId ?? primarySkillId(agent);
   if (!skillId?.includes("gamearena")) {
     return c.json({
       liveMatch: null,
@@ -760,9 +865,13 @@ app.get("/deploy/:id/status", async (c) => {
     : Promise.resolve(null);
 
   if (lite) {
-    const skillId = agent.skills[0]?.skillId ?? null;
+    const primary = primarySkillInstall(agent.skills);
+    const skillId = primary?.skillId ?? null;
+    const primaryConfig = primary
+      ? resolveSkillConfiguration(agent, primary)
+      : parseDeployConfiguration(agent);
     let logTail: string | null = null;
-    if (skillId?.includes("gamearena")) {
+    if (findEnabledGamearenaSkillInstall(agent.skills)) {
       loadRuntimeEnv();
       const config = getRuntimeConfig();
       logTail = readAgentLogTail(config.agentsRoot, agent.id, 48);
@@ -783,7 +892,8 @@ app.get("/deploy/:id/status", async (c) => {
       displayName: agent.displayName,
       template: agent.template,
       skillId,
-      configuration: agent.configuration,
+      skills: buildSkillStatusPayload(agent),
+      configuration: JSON.stringify(primaryConfig),
       status: agent.status,
       ownerWallet: agent.ownerWallet,
       agentAddress: agent.agentAddress,
@@ -805,7 +915,14 @@ app.get("/deploy/:id/status", async (c) => {
     try {
       loadRuntimeEnv();
       const config = getRuntimeConfig();
-      const skillConfig = parseDeployConfiguration(agent);
+      const skillConfig = (() => {
+        const gamearena = findEnabledGamearenaSkillInstall(agent.skills);
+        if (gamearena) return resolveSkillConfiguration(agent, gamearena);
+        const primary = primarySkillInstall(agent.skills);
+        return primary
+          ? resolveSkillConfiguration(agent, primary)
+          : parseDeployConfiguration(agent);
+      })();
 
       let agentRegistry: Awaited<
         ReturnType<typeof buildGamearenaRegistryFromAgents>
@@ -821,7 +938,10 @@ app.get("/deploy/:id/status", async (c) => {
               id: row.id,
               displayName: row.displayName,
               agentAddress: row.agentAddress!,
-              skillId: row.skills[0]?.skillId ?? null,
+              skillId:
+                findEnabledGamearenaSkillInstall(row.skills)?.skillId ??
+                row.skills[0]?.skillId ??
+                null,
               verified: false,
             })),
         });
@@ -832,7 +952,9 @@ app.get("/deploy/:id/status", async (c) => {
               deployId: agent.id,
               displayName: agent.displayName,
               agentAddress: agent.agentAddress,
-              skillId: agent.skills[0]?.skillId ?? "gaming/wagering/gamearena_1v1",
+              skillId:
+                findEnabledGamearenaSkillInstall(agent.skills)?.skillId ??
+                "gaming/wagering/gamearena_1v1",
               gamePassUsername: null,
               verified: false,
               source: "goodagent",
@@ -841,16 +963,17 @@ app.get("/deploy/:id/status", async (c) => {
         }
       }
 
-      const skillId = agent.skills[0]?.skillId ?? null;
+      const gamearenaSkill = findEnabledGamearenaSkillInstall(agent.skills);
+      const skillId = gamearenaSkill?.skillId ?? primarySkillId(agent);
       let persistedMatches: Awaited<ReturnType<typeof listDeployMatches>> = [];
       let persistedLogTail: string | null = null;
 
-      if (skillId?.includes("gamearena")) {
+      if (gamearenaSkill) {
         const deployDir = agentDir(config.agentsRoot, agent.id);
         const statePath = resolve(
           deployDir,
           "skills",
-          "gamearena-player",
+          skillFolderFromRegistryPath(gamearenaSkill.registryPath),
           "state.json",
         );
         const outLog = resolve(deployDir, "logs", "out.log");
@@ -858,9 +981,13 @@ app.get("/deploy/:id/status", async (c) => {
           agent.id,
           existsSync(statePath) ? statePath : null,
           existsSync(outLog) ? outLog : null,
+          agent.skills.map((s) => s.skillId),
+          gamearenaSkill.skillId,
         );
         [persistedMatches, persistedLogTail] = await Promise.all([
-          listDeployMatches(agent.id),
+          listDeployMatchesForSkill(agent.id, gamearenaSkill.skillId, {
+            includeLegacy: true,
+          }),
           getDeployLogTail(agent.id, 12),
         ]);
       }
@@ -896,12 +1023,49 @@ app.get("/deploy/:id/status", async (c) => {
   const liveMatchPromise = getDeployLiveMatch(agent.id);
   const activeArenaMatchIdPromise = getActiveArenaMatchId(agent.id);
 
-  const [verify, stats, liveMatch, activeArenaMatchId] = await Promise.all([
-    verifyPromise,
-    statsPromise,
-    liveMatchPromise,
-    activeArenaMatchIdPromise,
-  ]);
+  const skillStatsPromise = (async (): Promise<
+    Record<string, SkillStatsSummary>
+  > => {
+    if (!agent.agentAddress) return {};
+    try {
+      loadRuntimeEnv();
+      const config = getRuntimeConfig();
+      const registry = await fetchSkillsRegistry();
+      const registryEntries: Record<
+        string,
+        Pick<RegistrySkillWithDashboard, "skill_id" | "dashboard">
+      > = {};
+      for (const install of agent.skills) {
+        const entry = findRegistrySkill(registry, install.skillId);
+        if (entry) registryEntries[install.skillId] = entry;
+      }
+      return await collectDeploySkillStats({
+        agentsRoot: config.agentsRoot,
+        deployId: agent.id,
+        agentAddress: agent.agentAddress as `0x${string}`,
+        rpcUrl: config.rpcUrl,
+        skills: agent.skills.map((install) => ({
+          skillId: install.skillId,
+          registryPath: install.registryPath,
+          status: install.status,
+          configuration: resolveSkillConfiguration(agent, install),
+        })),
+        registryEntries,
+      });
+    } catch (err) {
+      console.warn(`[host] skill stats for ${agent.id}:`, err);
+      return {};
+    }
+  })();
+
+  const [verify, stats, skillStats, liveMatch, activeArenaMatchId] =
+    await Promise.all([
+      verifyPromise,
+      statsPromise,
+      skillStatsPromise,
+      liveMatchPromise,
+      activeArenaMatchIdPromise,
+    ]);
 
   if (stats?.ladder && agent.agentAddress && verify?.valid) {
     const key = agent.agentAddress.toLowerCase();
@@ -921,12 +1085,18 @@ app.get("/deploy/:id/status", async (c) => {
     activeArenaMatchId,
   );
 
+  const primary = primarySkillInstall(agent.skills);
+  const primaryConfig = primary
+    ? resolveSkillConfiguration(agent, primary)
+    : parseDeployConfiguration(agent);
+
   return c.json({
     id: agent.id,
     displayName: agent.displayName,
     template: agent.template,
-    skillId: agent.skills[0]?.skillId ?? null,
-    configuration: agent.configuration,
+    skillId: primary?.skillId ?? null,
+    skills: buildSkillStatusPayload(agent, skillStats),
+    configuration: JSON.stringify(primaryConfig),
     status: agent.status,
     ownerWallet: agent.ownerWallet,
     agentAddress: agent.agentAddress,
@@ -1012,8 +1182,7 @@ app.post("/deploy/:id/run-pipeline", async (c) => {
     return c.json({ error: "PIPELINE_ALREADY_RUNNING" }, 409);
   }
 
-  const primarySkill = agent.skills[0];
-  if (!primarySkill) {
+  if (!agent.skills.length) {
     return c.json({ error: "NO_SKILLS" }, 400);
   }
 
@@ -1044,6 +1213,7 @@ app.post("/deploy/:id/activity", async (c) => {
 
   const body = await c.req.json<{
     type?: string;
+    skillId?: string;
     matchId?: string;
     gameType?: number;
     wagerGs?: number;
@@ -1070,18 +1240,24 @@ app.post("/deploy/:id/activity", async (c) => {
     action?: "start" | "end";
   }>();
 
+  const activitySkillId = resolveActivitySkillId(agent, body);
+
   if (body.type === "match") {
     if (!body.matchId || !body.result || body.gameType == null) {
       return c.json({ error: "INVALID_MATCH" }, 400);
     }
-    await recordDeployMatch(id, {
-      matchId: body.matchId,
-      gameType: body.gameType,
-      wagerGs: Number(body.wagerGs ?? 0),
-      result: body.result,
-      mode: body.mode ?? "offchain",
-      at: body.at ?? new Date().toISOString(),
-    });
+    await recordDeployMatch(
+      id,
+      {
+        matchId: body.matchId,
+        gameType: body.gameType,
+        wagerGs: Number(body.wagerGs ?? 0),
+        result: body.result,
+        mode: body.mode ?? "offchain",
+        at: body.at ?? new Date().toISOString(),
+      },
+      activitySkillId,
+    );
     return c.json({ ok: true });
   }
 
@@ -1089,17 +1265,21 @@ app.post("/deploy/:id/activity", async (c) => {
     if (!body.txHash || body.priceGs == null) {
       return c.json({ error: "INVALID_REFILL" }, 400);
     }
-    await recordDeployRefill(id, {
-      priceGs: Number(body.priceGs),
-      txHash: body.txHash,
-      at: body.at ?? new Date().toISOString(),
-    });
+    await recordDeployRefill(
+      id,
+      {
+        priceGs: Number(body.priceGs),
+        txHash: body.txHash,
+        at: body.at ?? new Date().toISOString(),
+      },
+      activitySkillId,
+    );
     return c.json({ ok: true });
   }
 
   if (body.type === "log") {
     if (!body.message?.trim()) return c.json({ error: "INVALID_LOG" }, 400);
-    await appendDeployLogLine(id, body.message, body.at);
+    await appendDeployLogLine(id, body.message, body.at, activitySkillId);
     return c.json({ ok: true });
   }
 
@@ -1299,7 +1479,7 @@ app.post("/deploy/:id/start", async (c) => {
   }
 
   if (
-    primarySkillId(agent) === GAMEARENA_SKILL_ID &&
+    findGamearenaSkillInstall(agent.skills) &&
     agent.ownerWallet
   ) {
     const first = await getFirstGamearenaDeployForOwner(agent.ownerWallet);
@@ -1387,8 +1567,118 @@ app.post("/deploy/:id/baseline", async (c) => {
   return c.json({ ok: true, balanceGs });
 });
 
+async function applyDeploySkillConfiguration(
+  id: string,
+  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
+  targetSkillId: string | undefined,
+  sanitized: Record<string, string>,
+) {
+  loadRuntimeEnv();
+  const runtimeConfig = getRuntimeConfig();
+  const { merged, skillId, restarted } = applyDeployConfiguration(
+    runtimeConfig,
+    deployAgentRecord(agent, agent.displayName),
+    sanitized,
+    targetSkillId,
+  );
+  await patchSkillInstallConfiguration(id, skillId, merged);
+  const primary = primarySkillInstall(agent.skills);
+  if (primary?.skillId === skillId) {
+    await updateDeployedAgent(id, {
+      configuration: JSON.stringify(merged),
+    });
+  }
+  const refreshed = await getDeployedAgent(id);
+  if (!refreshed) throw new Error("NOT_FOUND");
+  return {
+    agent: publicAgent(refreshed),
+    skillId,
+    restarted,
+    skills: buildSkillStatusPayload(refreshed),
+  };
+}
+
+async function applyDeploySkillEnabled(
+  id: string,
+  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
+  skillId: string,
+  enabled: boolean,
+) {
+  const install = agent.skills.find((s) => s.skillId === skillId);
+  if (!install) throw new Error(`skill not installed: ${skillId}`);
+
+  loadRuntimeEnv();
+  const runtimeConfig = getRuntimeConfig();
+  const record = deployAgentRecord(agent, agent.displayName);
+  const { restarted, status } = applySkillInstallStatus(
+    runtimeConfig,
+    record,
+    skillId,
+    enabled,
+  );
+  await updateSkillInstall(id, skillId, { status });
+  const refreshed = await getDeployedAgent(id);
+  if (!refreshed) throw new Error("NOT_FOUND");
+  return {
+    agent: publicAgent(refreshed),
+    skillId,
+    status,
+    restarted,
+    skills: buildSkillStatusPayload(refreshed),
+  };
+}
+
 app.post("/deploy/:id/configuration", async (c) => {
   const id = c.req.param("id");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const body = await c.req.json<{
+    skillId?: string;
+    configuration?: Record<string, string>;
+  } & Record<string, unknown>>();
+  const authErr = await verifyDeployControl(
+    "configuration",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  const patch = body.configuration;
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    return c.json({ error: "configuration object required" }, 400);
+  }
+
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (typeof value === "string") sanitized[key] = value;
+  }
+  if (!Object.keys(sanitized).length) {
+    return c.json({ error: "configuration must include at least one field" }, 400);
+  }
+
+  loadRuntimeEnv();
+  try {
+    const targetSkillId =
+      body.skillId?.trim() || primarySkillId(agent) || undefined;
+    const result = await applyDeploySkillConfiguration(
+      id,
+      agent,
+      targetSkillId,
+      sanitized,
+    );
+    return c.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message === "NOT_FOUND") return c.json({ error: "NOT_FOUND" }, 404);
+    return c.json({ error: "CONFIG_APPLY_FAILED", message }, 500);
+  }
+});
+
+app.post("/deploy/:id/skills/:skillId/configuration", async (c) => {
+  const id = c.req.param("id");
+  const skillId = c.req.param("skillId");
   const agent = await getDeployedAgent(id);
   if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
 
@@ -1416,39 +1706,112 @@ app.post("/deploy/:id/configuration", async (c) => {
     return c.json({ error: "configuration must include at least one field" }, 400);
   }
 
-  loadRuntimeEnv();
-  let runtimeConfig;
   try {
-    runtimeConfig = getRuntimeConfig();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: "HOST_CONFIG", message }, 500);
-  }
-
-  try {
-    const { merged, restarted } = applyDeployConfiguration(
-      runtimeConfig,
-      {
-        id: agent.id,
-        displayName: agent.displayName,
-        agentAddress: agent.agentAddress,
-        walletDerivationIndex: agent.walletDerivationIndex,
-        configuration: agent.configuration,
-        skills: agent.skills.map((s) => ({
-          skillId: s.skillId,
-          registryPath: s.registryPath,
-        })),
-      },
+    const result = await applyDeploySkillConfiguration(
+      id,
+      agent,
+      skillId,
       sanitized,
     );
-    const updated = await updateDeployedAgent(id, {
-      configuration: JSON.stringify(merged),
-    });
-    return c.json({ agent: updated, restarted });
+    return c.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (message === "NOT_FOUND") return c.json({ error: "NOT_FOUND" }, 404);
     return c.json({ error: "CONFIG_APPLY_FAILED", message }, 500);
   }
+});
+
+app.post("/deploy/:id/skills/:skillId/enable", async (c) => {
+  const id = c.req.param("id");
+  const skillId = c.req.param("skillId");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const body = await c.req.json<Record<string, unknown>>();
+  const authErr = await verifyDeployControl(
+    "configuration",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  try {
+    const result = await applyDeploySkillEnabled(id, agent, skillId, true);
+    return c.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message === "NOT_FOUND") return c.json({ error: "NOT_FOUND" }, 404);
+    return c.json({ error: "SKILL_ENABLE_FAILED", message }, 500);
+  }
+});
+
+app.post("/deploy/:id/skills/:skillId/disable", async (c) => {
+  const id = c.req.param("id");
+  const skillId = c.req.param("skillId");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const body = await c.req.json<Record<string, unknown>>();
+  const authErr = await verifyDeployControl(
+    "configuration",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  try {
+    const result = await applyDeploySkillEnabled(id, agent, skillId, false);
+    return c.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message === "NOT_FOUND") return c.json({ error: "NOT_FOUND" }, 404);
+    return c.json({ error: "SKILL_DISABLE_FAILED", message }, 500);
+  }
+});
+
+app.get("/deploy/:id/skills/:skillId", async (c) => {
+  const id = c.req.param("id");
+  const skillId = c.req.param("skillId");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const install = agent.skills.find((s) => s.skillId === skillId);
+  if (!install) return c.json({ error: "SKILL_NOT_FOUND" }, 404);
+
+  let stats: SkillStatsSummary | null = null;
+  if (agent.agentAddress) {
+    try {
+      loadRuntimeEnv();
+      const config = getRuntimeConfig();
+      const registry = await fetchSkillsRegistry();
+      const entry = findRegistrySkill(registry, install.skillId);
+      stats = await collectSkillStats(
+        {
+          agentsRoot: config.agentsRoot,
+          deployId: id,
+          skillId: install.skillId,
+          registryPath: install.registryPath,
+          configuration: resolveSkillConfiguration(agent, install),
+          agentAddress: agent.agentAddress as `0x${string}`,
+          rpcUrl: config.rpcUrl,
+        },
+        entry,
+      );
+    } catch (err) {
+      console.warn(`[host] skill detail stats for ${id}/${skillId}:`, err);
+    }
+  }
+
+  return c.json({
+    skillId: install.skillId,
+    registryPath: install.registryPath,
+    status: install.status,
+    lastError: install.lastError,
+    configuration: resolveSkillConfiguration(agent, install),
+    stats,
+  });
 });
 
 app.get("/deploy/:id/gamepass-username", async (c) => {
@@ -1461,7 +1824,7 @@ app.get("/deploy/:id/gamepass-username", async (c) => {
     return c.json({ error: "displayName query required" }, 400);
   }
 
-  if (primarySkillId(agent) !== GAMEARENA_SKILL_ID) {
+  if (!findGamearenaSkillInstall(agent.skills)) {
     return c.json({ applicable: false });
   }
   if (!agent.agentAddress) {
@@ -1515,7 +1878,7 @@ app.post("/deploy/:id/display-name", async (c) => {
     return c.json({ agent: publicAgent(agent) });
   }
 
-  const gamearena = primarySkillId(agent) === GAMEARENA_SKILL_ID;
+  const gamearena = Boolean(findGamearenaSkillInstall(agent.skills));
   let gamePassUsername: string | undefined;
   let gamePassTxHash: string | undefined;
   let restarted = false;

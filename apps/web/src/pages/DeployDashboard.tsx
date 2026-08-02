@@ -13,6 +13,7 @@ import {
   setDeployBaseline,
   startDeploy,
   stopDeploy,
+  setDeploySkillEnabled,
   updateDeployConfiguration,
   type DeployStatusResponse,
   type GamearenaLadder,
@@ -27,6 +28,8 @@ import {
   useArenaLiveSpectator,
 } from "@goodagent/live-arena";
 import { BalaioConfigFields } from "../components/BalaioConfigFields.js";
+import { ActionOrderConfigFields } from "../components/ActionOrderConfigFields.js";
+import { SkillStatsPanel } from "../components/SkillStatsPanel.js";
 import {
   balaioRoleSummary,
   isBalaioSkill,
@@ -37,9 +40,21 @@ import {
   strategyLabelFromConfig,
 } from "../lib/gamearena-config.js";
 import { parseSkillConfig } from "../lib/skill-config.js";
+import {
+  configurableSkillsFromStatus,
+  configForSkill,
+  dashboardPanelForSkillId,
+  formatSkillList,
+  hasGamearenaInStatus,
+  isActionOrderSkillId,
+  isSkillEnabled,
+  skillInstallStatusLabel,
+  skillShortLabel,
+  skillsFromStatus,
+} from "../lib/deploy-skills.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
 
-type HealthState = "live" | "paused" | "stopped" | "failed" | "deploying" | "awaiting_vouch" | "unknown";
+type HealthState = "live" | "paused" | "stopped" | "crashed" | "failed" | "deploying" | "awaiting_vouch" | "unknown";
 
 const REFRESH_MS = 20_000;
 const MATCHES_PAGE_SIZE = 10;
@@ -50,8 +65,9 @@ function processHealth(s: DeployStatusResponse): HealthState {
   if (s.status === "paused") return "paused";
   if (s.status === "awaiting_vouch") return "awaiting_vouch";
   if (s.pm2?.online) return "live";
+  if (s.pm2?.status === "errored") return "crashed";
   if (s.pm2) {
-    if (s.pm2.status === "stopped" || s.pm2.status === "errored") return "stopped";
+    if (s.pm2.status === "stopped") return "stopped";
     return "stopped";
   }
   if (["provisioning", "installing", "starting"].includes(s.status)) {
@@ -64,6 +80,7 @@ const HEALTH_LABEL: Record<HealthState, string> = {
   live: "Live",
   paused: "Paused",
   stopped: "Stopped",
+  crashed: "Crashed",
   failed: "Failed",
   deploying: "Deploying",
   awaiting_vouch: "Awaiting vouch",
@@ -168,8 +185,11 @@ export function DeployDashboard() {
   const [baselineInput, setBaselineInput] = useState("");
   const [matchesPage, setMatchesPage] = useState(0);
   const [editingConfig, setEditingConfig] = useState(false);
+  const [settingsSkillId, setSettingsSkillId] = useState<string | null>(null);
   const [draftConfig, setDraftConfig] = useState<SkillConfiguration>({});
   const [configBusy, setConfigBusy] = useState(false);
+  const [skillToggleBusy, setSkillToggleBusy] = useState<string | null>(null);
+  const [dashboardTab, setDashboardTab] = useState<string>("overview");
   const refreshInFlight = useRef(false);
   const liveSnapshotInFlight = useRef(false);
   const showedLite = useRef(false);
@@ -268,23 +288,7 @@ export function DeployDashboard() {
     [status],
   );
 
-  const gamearenaSkill = isGamearenaSkill(status?.skillId);
-
-  const {
-    sseMatchId,
-    sseStatus,
-    liveDisplay,
-    liveFeedState,
-    sseBadgeLabel,
-  } = useArenaLiveSpectator({
-    enabled: gamearenaSkill,
-    debugMatchId: debugSseMatchId,
-    activeArenaMatchId: status?.activeArenaMatchId,
-    liveMatch: status?.liveMatch,
-    logTail: status?.stats?.logTail,
-    playerLabel: status?.displayName,
-    agentLive: health === "live",
-  });
+  const gamearenaSkill = hasGamearenaInStatus(status ?? {});
 
   useEffect(() => {
     if (!id || !gamearenaSkill) return;
@@ -323,27 +327,115 @@ export function DeployDashboard() {
   const closeSettingsModal = () => {
     if (configBusy) return;
     setEditingConfig(false);
+    setSettingsSkillId(null);
   };
 
   const perf = status?.stats?.performance;
-  const config = useMemo(
-    () => parseConfig(status?.configuration),
-    [status?.configuration],
+  const configurableSkills = useMemo(
+    () => (status ? configurableSkillsFromStatus(status) : []),
+    [status],
   );
-  const playMode = isGamearenaSkill(status?.skillId)
+
+  const installedSkills = useMemo(
+    () => (status ? skillsFromStatus(status) : []),
+    [status],
+  );
+
+  useEffect(() => {
+    if (!installedSkills.length) return;
+    setDashboardTab((prev) => {
+      if (prev === "overview") return prev;
+      if (installedSkills.some((s) => s.skillId === prev)) return prev;
+      return installedSkills.length === 1 ? installedSkills[0]!.skillId : "overview";
+    });
+  }, [installedSkills]);
+
+  const isMultiSkillOverview =
+    installedSkills.length > 1 && dashboardTab === "overview";
+
+  const showGamearenaPanel =
+    gamearenaSkill &&
+    !isMultiSkillOverview &&
+    (installedSkills.length <= 1 ||
+      dashboardPanelForSkillId(dashboardTab) === "gamearena");
+
+  const {
+    sseMatchId,
+    sseStatus,
+    liveDisplay,
+    liveFeedState,
+    sseBadgeLabel,
+  } = useArenaLiveSpectator({
+    enabled: showGamearenaPanel,
+    debugMatchId: debugSseMatchId,
+    activeArenaMatchId: status?.activeArenaMatchId,
+    liveMatch: status?.liveMatch,
+    logTail: status?.stats?.logTail,
+    playerLabel: status?.displayName,
+    agentLive: health === "live",
+  });
+
+  const showActionOrderPanel =
+    dashboardTab !== "overview" &&
+    dashboardPanelForSkillId(dashboardTab) === "actionorder";
+
+  const displaySkillId = useMemo(() => {
+    if (!status) return null;
+    const gamearena = configurableSkillsFromStatus(status).find((s) =>
+      isGamearenaSkill(s.skillId),
+    );
+    return gamearena?.skillId ?? status.skillId ?? null;
+  }, [status]);
+
+  const activeSettingsSkillId =
+    settingsSkillId ?? configurableSkills[0]?.skillId ?? status?.skillId ?? null;
+
+  const config = useMemo(
+    () =>
+      displaySkillId && status
+        ? configForSkill(status, displaySkillId)
+        : parseConfig(status?.configuration),
+    [status, displaySkillId],
+  );
+  const playMode = hasGamearenaInStatus(status ?? {})
     ? parsePlayMode(config)
     : null;
   const offchainPlay =
-    (isGamearenaSkill(status?.skillId) && playMode !== "onchain") ||
+    (hasGamearenaInStatus(status ?? {}) && playMode !== "onchain") ||
     perf?.playMode === "offchain";
   const onchainGamearena =
-    isGamearenaSkill(status?.skillId) &&
+    hasGamearenaInStatus(status ?? {}) &&
     (playMode === "onchain" || (!offchainPlay && playMode !== "auto"));
   const autoGamearena = playMode === "auto";
   const walletPnL = status?.stats?.walletPnL;
   const balances = status?.stats?.balances;
   const gBalance = formatBalance(balances?.gDollarFormatted, 0);
-  const allMatches = perf?.matches ?? perf?.recentMatches ?? [];
+
+  const tabSkillStats = useMemo(() => {
+    if (!status || dashboardTab === "overview") return null;
+    return status.skills?.find((s) => s.skillId === dashboardTab)?.stats ?? null;
+  }, [status, dashboardTab]);
+
+  const displayPerf = useMemo(() => {
+    if (tabSkillStats) {
+      return {
+        wins: tabSkillStats.wins,
+        losses: tabSkillStats.losses,
+        gamesPlayed: tabSkillStats.gamesPlayed,
+        matchesToday: tabSkillStats.matchesToday,
+        matches: tabSkillStats.matches,
+        recentMatches: tabSkillStats.matches.slice(0, 5),
+        summary: tabSkillStats.summary,
+        netPnLGs: 0,
+        todayNetPnLGs: 0,
+        playMode: tabSkillStats.meta?.playMode as "offchain" | "onchain" | undefined,
+        wagerGs: 0,
+      };
+    }
+    return perf;
+  }, [tabSkillStats, perf]);
+
+  const allMatches = displayPerf?.matches ?? displayPerf?.recentMatches ?? [];
   const matchesTotalPages = Math.max(
     1,
     Math.ceil(allMatches.length / MATCHES_PAGE_SIZE),
@@ -355,9 +447,9 @@ export function DeployDashboard() {
   );
 
   const winRate = useMemo(() => {
-    if (!perf || perf.gamesPlayed === 0) return null;
-    return Math.round((perf.wins / perf.gamesPlayed) * 100);
-  }, [perf]);
+    if (!displayPerf || displayPerf.gamesPlayed === 0) return null;
+    return Math.round((displayPerf.wins / displayPerf.gamesPlayed) * 100);
+  }, [displayPerf]);
 
   const canControl = isDeployOwner(address, status?.ownerWallet);
 
@@ -437,18 +529,31 @@ export function DeployDashboard() {
     }
   };
 
-  const beginEditConfig = () => {
-    setDraftConfig({ ...config });
+  const beginEditConfig = (skillId?: string) => {
+    const target =
+      skillId ??
+      configurableSkills[0]?.skillId ??
+      status?.skillId ??
+      null;
+    if (!target || !status) return;
+    setSettingsSkillId(target);
+    setDraftConfig({ ...configForSkill(status, target) });
     setEditingConfig(true);
   };
 
   const submitConfig = async () => {
-    if (!id) return;
+    if (!id || !activeSettingsSkillId) return;
     setConfigBusy(true);
     try {
       const auth = await signControl("configuration");
-      await updateDeployConfiguration(id, draftConfig, auth);
+      await updateDeployConfiguration(
+        id,
+        draftConfig,
+        auth,
+        activeSettingsSkillId,
+      );
       setEditingConfig(false);
+      setSettingsSkillId(null);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -456,6 +561,76 @@ export function DeployDashboard() {
       setConfigBusy(false);
     }
   };
+
+  const toggleSkillEnabled = async (skillId: string, enabled: boolean) => {
+    if (!id || !canControl) return;
+    setSkillToggleBusy(skillId);
+    try {
+      const auth = await signControl("configuration");
+      await setDeploySkillEnabled(id, skillId, enabled, auth);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSkillToggleBusy(null);
+    }
+  };
+
+  const actionOrderConfig =
+    showActionOrderPanel && status
+      ? configForSkill(status, dashboardTab)
+      : {};
+
+  const actionOrderStats = useMemo(() => {
+    if (!status || !showActionOrderPanel) return null;
+    return status.skills?.find((s) => s.skillId === dashboardTab)?.stats ?? null;
+  }, [status, showActionOrderPanel, dashboardTab]);
+
+  const activeSkillStats = useMemo(() => {
+    if (!status || dashboardTab === "overview") return null;
+    return status.skills?.find((s) => s.skillId === dashboardTab)?.stats ?? null;
+  }, [status, dashboardTab]);
+
+  const showGenericPanel =
+    dashboardTab !== "overview" &&
+    !showGamearenaPanel &&
+    !showActionOrderPanel;
+
+  const runtimeLogTail = status?.stats?.logTail ?? null;
+  const crashHint = useMemo(() => {
+    if (!runtimeLogTail) return null;
+    const fatal = runtimeLogTail
+      .split("\n")
+      .find((line) => /fatal|SyntaxError|Error:/i.test(line));
+    return fatal?.replace(/^\[runtime\]\s*fatal\s*/i, "") ?? null;
+  }, [runtimeLogTail]);
+
+  const skillStatsFor = useCallback(
+    (skillId: string) =>
+      status?.skills?.find((s) => s.skillId === skillId)?.stats ?? null,
+    [status?.skills],
+  );
+
+  const totalSkillRecord = useMemo(() => {
+    let wins = 0;
+    let losses = 0;
+    let played = 0;
+    for (const skill of installedSkills) {
+      const stats = skillStatsFor(skill.skillId);
+      if (!stats) continue;
+      wins += stats.wins;
+      losses += stats.losses;
+      played += stats.gamesPlayed;
+    }
+    if (played === 0 && perf) {
+      return {
+        wins: perf.wins,
+        losses: perf.losses,
+        played: perf.gamesPlayed,
+      };
+    }
+    return { wins, losses, played };
+  }, [installedSkills, skillStatsFor, perf]);
 
   if (!id) {
     return (
@@ -478,7 +653,7 @@ export function DeployDashboard() {
     ? `https://celoscan.io/address/${status.agentAddress}`
     : null;
 
-  const wagerGs = config.WAGER_GS ?? String(perf?.wagerGs ?? "—");
+  const wagerGs = config.WAGER_GS ?? String(displayPerf?.wagerGs ?? "—");
   const lowBalance =
     onchainGamearena &&
     balances &&
@@ -510,14 +685,13 @@ export function DeployDashboard() {
                 {gBalance} G$
               </span>
               {canControl &&
-                (isGamearenaSkill(status?.skillId) ||
-                  isBalaioSkill(status?.skillId)) &&
+                configurableSkills.length > 0 &&
                 isConnected && (
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
                     disabled={configBusy}
-                    onClick={beginEditConfig}
+                    onClick={() => beginEditConfig()}
                   >
                     Edit
                   </button>
@@ -638,7 +812,7 @@ export function DeployDashboard() {
                 </Link>
                 <h1>{status.displayName ?? `Deploy ${id.slice(0, 8)}…`}</h1>
                 <p className="deploy-console-subtitle">
-                  {skillLabel(status.skillId)}
+                  {formatSkillList(status.skills, status.skillId)}
                   {status.verify?.valid && (
                     <>
                       <span className="deploy-console-sep">·</span>
@@ -709,6 +883,235 @@ export function DeployDashboard() {
               </div>
             </header>
 
+            {installedSkills.length > 1 ? (
+              <div
+                className="onboard-segment deploy-console-skill-tabs"
+                role="tablist"
+                aria-label="Skill views"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  className={`onboard-segment-btn${dashboardTab === "overview" ? " is-active" : ""}`}
+                  onClick={() => setDashboardTab("overview")}
+                >
+                  Overview
+                </button>
+                {installedSkills.map((skill) => (
+                  <button
+                    key={skill.skillId}
+                    type="button"
+                    role="tab"
+                    className={`onboard-segment-btn${dashboardTab === skill.skillId ? " is-active" : ""}`}
+                    onClick={() => setDashboardTab(skill.skillId)}
+                  >
+                    {skillShortLabel(skill.skillId)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {dashboardTab === "overview" ? (
+              <section className="deploy-overview" aria-label="Agent overview">
+                {(health === "crashed" || health === "stopped") && (
+                  <div
+                    className={`deploy-overview-alert${health === "crashed" ? " is-error" : ""}`}
+                  >
+                    <div className="deploy-overview-alert-copy">
+                      <strong>
+                        {health === "crashed"
+                          ? "Agent process crashed"
+                          : "Agent is stopped"}
+                      </strong>
+                      <p className="muted">
+                        {health === "crashed"
+                          ? `PM2 restarted ${status.pm2?.restarts ?? 0} times and the runtime is not playing matches.`
+                          : "Start the agent to begin playing matches."}
+                        {crashHint ? (
+                          <>
+                            {" "}
+                            Last error: <code>{crashHint}</code>
+                          </>
+                        ) : null}
+                      </p>
+                    </div>
+                    {canControl && health !== "live" ? (
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={busy || !status.pm2Name || !isConnected}
+                        onClick={() => {
+                          setBusy(true);
+                          void signControl("resume")
+                            .then((auth) => startDeploy(id!, auth))
+                            .then(() => setError(null))
+                            .then(() => refresh())
+                            .catch((e) =>
+                              setError(e instanceof Error ? e.message : String(e)),
+                            )
+                            .finally(() => setBusy(false));
+                        }}
+                      >
+                        {busy ? "Starting…" : "Start agent"}
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+
+                <div className="deploy-overview-pulse">
+                  <div className="deploy-overview-pulse-item">
+                    <span className="deploy-overview-pulse-label">Status</span>
+                    <span
+                      className={`deploy-overview-pulse-value deploy-overview-pulse-${health}`}
+                    >
+                      {HEALTH_LABEL[health]}
+                    </span>
+                  </div>
+                  <div className="deploy-overview-pulse-item">
+                    <span className="deploy-overview-pulse-label">Balance</span>
+                    <span className="deploy-overview-pulse-value tabular">
+                      {gBalance} G$
+                    </span>
+                  </div>
+                  <div className="deploy-overview-pulse-item">
+                    <span className="deploy-overview-pulse-label">Record</span>
+                    <span className="deploy-overview-pulse-value tabular">
+                      {totalSkillRecord.wins}–{totalSkillRecord.losses}
+                    </span>
+                  </div>
+                  <div className="deploy-overview-pulse-item">
+                    <span className="deploy-overview-pulse-label">Uptime</span>
+                    <span className="deploy-overview-pulse-value tabular">
+                      {formatUptime(status.pm2?.uptimeMs)}
+                    </span>
+                  </div>
+                </div>
+
+                {installedSkills.length > 0 ? (
+                  <div className="deploy-overview-skills">
+                    <div className="deploy-overview-skills-head">
+                      <h2>Installed skills</h2>
+                      <span className="muted">
+                        {installedSkills.length} skill
+                        {installedSkills.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <div className="deploy-overview-skill-grid">
+                      {installedSkills.map((skill) => {
+                        const stats = skillStatsFor(skill.skillId);
+                        const skillConfig = status
+                          ? configForSkill(status, skill.skillId)
+                          : {};
+                        return (
+                          <article
+                            key={skill.skillId}
+                            className="deploy-skill-card"
+                          >
+                            <header className="deploy-skill-card-head">
+                              <div>
+                                <h3>{skillShortLabel(skill.skillId)}</h3>
+                                <p className="deploy-skill-card-id muted">
+                                  {skill.skillId.split("/").pop()}
+                                </p>
+                              </div>
+                              <span
+                                className={`deploy-skill-status-chip${isSkillEnabled(skill.status) ? " is-active" : ""}`}
+                              >
+                                {skillInstallStatusLabel(skill.status)}
+                              </span>
+                            </header>
+
+                            <dl className="deploy-skill-card-stats">
+                              <div>
+                                <dt>Record</dt>
+                                <dd className="tabular">
+                                  {stats && stats.gamesPlayed > 0
+                                    ? `${stats.wins}–${stats.losses}`
+                                    : "0–0"}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>Today</dt>
+                                <dd className="tabular">
+                                  {stats?.matchesToday ?? 0}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>Interval</dt>
+                                <dd className="tabular">
+                                  {skillConfig.MATCH_INTERVAL_SECONDS ?? "—"}s
+                                </dd>
+                              </div>
+                            </dl>
+
+                            {stats?.summary ? (
+                              <p className="deploy-skill-card-summary muted">
+                                {stats.summary}
+                              </p>
+                            ) : health === "live" ? (
+                              <p className="deploy-skill-card-summary muted">
+                                Waiting for first match…
+                              </p>
+                            ) : (
+                              <p className="deploy-skill-card-summary muted">
+                                Start the agent to run this skill.
+                              </p>
+                            )}
+
+                            <div className="deploy-skill-card-actions">
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setDashboardTab(skill.skillId)}
+                              >
+                                Open
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => beginEditConfig(skill.skillId)}
+                                disabled={!canControl}
+                              >
+                                Settings
+                              </button>
+                              {canControl && isSkillEnabled(skill.status) ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={
+                                    skillToggleBusy === skill.skillId || !isConnected
+                                  }
+                                  onClick={() =>
+                                    void toggleSkillEnabled(skill.skillId, false)
+                                  }
+                                >
+                                  Disable
+                                </button>
+                              ) : null}
+                              {canControl && !isSkillEnabled(skill.status) ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={
+                                    skillToggleBusy === skill.skillId || !isConnected
+                                  }
+                                  onClick={() =>
+                                    void toggleSkillEnabled(skill.skillId, true)
+                                  }
+                                >
+                                  Enable
+                                </button>
+                              ) : null}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             {status && deployNeedsUserVouch(status) && status.agentAddress && id && (
               <section className="deploy-vouch-card deploy-console-vouch" aria-label="Vouch required">
                 <h2 className="card-title">Vouch required before play</h2>
@@ -737,6 +1140,7 @@ export function DeployDashboard() {
               </p>
             )}
 
+            {!isMultiSkillOverview ? (
             <section className="deploy-console-hero" aria-label="Performance summary">
               <div className="deploy-hero-primary">
                 <span className="deploy-hero-label">Balance</span>
@@ -751,15 +1155,15 @@ export function DeployDashboard() {
                 </span>
                 <span
                   className={`deploy-hero-value tabular${
-                    offchainPlay ? "" : pnlClass(walletPnL?.walletDeltaGs ?? perf?.netPnLGs)
+                    offchainPlay ? "" : pnlClass(walletPnL?.walletDeltaGs ?? displayPerf?.netPnLGs)
                   }`}
                 >
                   {offchainPlay
-                    ? `${perf?.matchesToday ?? 0}`
+                    ? `${displayPerf?.matchesToday ?? 0}`
                     : walletPnL?.walletDeltaGs != null
                       ? signedGs(walletPnL.walletDeltaGs)
-                      : perf
-                        ? signedGs(perf.netPnLGs)
+                      : displayPerf
+                        ? signedGs(displayPerf.netPnLGs)
                         : "0"}
                   <small>{offchainPlay ? "played" : "G$"}</small>
                 </span>
@@ -813,13 +1217,13 @@ export function DeployDashboard() {
               <div className="deploy-hero-stat">
                 <span className="deploy-hero-label">Record</span>
                 <span className="deploy-hero-value tabular">
-                  {perf?.wins ?? 0}
+                  {displayPerf?.wins ?? 0}
                   <span className="deploy-hero-record-sep">–</span>
-                  {perf?.losses ?? 0}
+                  {displayPerf?.losses ?? 0}
                 </span>
-                {perf && perf.gamesPlayed > 0 && (
+                {displayPerf && displayPerf.gamesPlayed > 0 && (
                   <span className="deploy-hero-meta muted">
-                    {perf.gamesPlayed}
+                    {displayPerf.gamesPlayed}
                     {winRate != null ? ` · ${winRate}%` : ""}
                   </span>
                 )}
@@ -838,10 +1242,11 @@ export function DeployDashboard() {
                 )}
               </div>
             </section>
+            ) : null}
 
             <div className="deploy-console-body">
               <div className="deploy-console-main">
-                {gamearenaSkill && (
+                {gamearenaSkill && showGamearenaPanel && (
                   <div className="deploy-console-section deploy-console-live-section">
                     <GameArenaLiveSection
                       liveDisplay={liveDisplay}
@@ -856,6 +1261,47 @@ export function DeployDashboard() {
                   </div>
                 )}
 
+                {showActionOrderPanel ? (
+                  <SkillStatsPanel
+                    title="Action Order"
+                    stats={actionOrderStats}
+                    canEdit={canControl}
+                    onEditSettings={() => beginEditConfig(dashboardTab)}
+                    configRows={[
+                      {
+                        label: "Character",
+                        value: actionOrderConfig.CHARACTER_ID ?? "riven",
+                      },
+                      {
+                        label: "Strategy",
+                        value: actionOrderConfig.STRATEGY ?? "anti_strike",
+                      },
+                      {
+                        label: "Difficulty",
+                        value: actionOrderConfig.DIFFICULTY ?? "0",
+                      },
+                      {
+                        label: "Max matches/day",
+                        value: actionOrderConfig.MAX_MATCHES ?? "5",
+                      },
+                      {
+                        label: "Match interval",
+                        value: `${actionOrderConfig.MATCH_INTERVAL_SECONDS ?? "10"}s`,
+                      },
+                    ]}
+                  />
+                ) : null}
+
+                {showGenericPanel ? (
+                  <SkillStatsPanel
+                    title={skillShortLabel(dashboardTab)}
+                    stats={activeSkillStats}
+                    canEdit={canControl}
+                    onEditSettings={() => beginEditConfig(dashboardTab)}
+                  />
+                ) : null}
+
+                {gamearenaSkill && showGamearenaPanel ? (
                 <section className="deploy-console-section">
                   <div className="deploy-section-head">
                     <h2>Match history</h2>
@@ -866,18 +1312,18 @@ export function DeployDashboard() {
                     )}
                   </div>
 
-                  {perf && perf.gamesPlayed > 0 && (
+                  {displayPerf && displayPerf.gamesPlayed > 0 && (
                     <div className="deploy-wl-bar" aria-hidden>
                       <div
                         className="deploy-wl-bar-wins"
                         style={{
-                          flexGrow: Math.max(perf.wins, 0.05),
+                          flexGrow: Math.max(displayPerf.wins, 0.05),
                         }}
                       />
                       <div
                         className="deploy-wl-bar-losses"
                         style={{
-                          flexGrow: Math.max(perf.losses, 0.05),
+                          flexGrow: Math.max(displayPerf.losses, 0.05),
                         }}
                       />
                     </div>
@@ -973,10 +1419,11 @@ export function DeployDashboard() {
                     </p>
                   )}
 
-                  {perf?.summary && (
-                    <p className="deploy-console-summary muted">{perf.summary}</p>
+                  {displayPerf?.summary && (
+                    <p className="deploy-console-summary muted">{displayPerf.summary}</p>
                   )}
                 </section>
+                ) : null}
 
                 {status.lastError && (
                   <section className="deploy-console-section deploy-console-error-section">
@@ -1220,9 +1667,9 @@ export function DeployDashboard() {
                       </dd>
                     </div>
                     <div>
-                      <dt>Skill</dt>
+                      <dt>Skills</dt>
                       <dd>
-                        <code>{status.skillId ?? "—"}</code>
+                        <code>{formatSkillList(status.skills, status.skillId)}</code>
                       </dd>
                     </div>
                     <div>
@@ -1243,8 +1690,7 @@ export function DeployDashboard() {
         )}
       </main>
 
-      {editingConfig &&
-        (isGamearenaSkill(status?.skillId) || isBalaioSkill(status?.skillId)) && (
+      {editingConfig && configurableSkills.length > 0 && (
         <div
           className="modal-overlay"
           role="presentation"
@@ -1259,11 +1705,7 @@ export function DeployDashboard() {
           >
             <header className="modal-header">
               <div>
-                <h2 id="deploy-settings-modal-title">
-                  {isBalaioSkill(status?.skillId)
-                    ? "Balaio settings"
-                    : "Play settings"}
-                </h2>
+                <h2 id="deploy-settings-modal-title">Skill settings</h2>
                 <p className="muted">
                   Changes apply after you sign and the agent restarts.
                 </p>
@@ -1278,8 +1720,35 @@ export function DeployDashboard() {
                 ×
               </button>
             </header>
+            {configurableSkills.length > 1 ? (
+              <div className="onboard-segment deploy-settings-tabs" role="tablist">
+                {configurableSkills.map((skill) => (
+                  <button
+                    key={skill.skillId}
+                    type="button"
+                    role="tab"
+                    className={`onboard-segment-btn${activeSettingsSkillId === skill.skillId ? " is-active" : ""}`}
+                    onClick={() => {
+                      if (!status) return;
+                      setSettingsSkillId(skill.skillId);
+                      setDraftConfig({ ...configForSkill(status, skill.skillId) });
+                    }}
+                  >
+                    {skillLabel(skill.skillId)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className="modal-body form">
-              {isGamearenaSkill(status?.skillId) && (
+              {isActionOrderSkillId(activeSettingsSkillId ?? "") && (
+                <ActionOrderConfigFields
+                  config={draftConfig}
+                  onChange={(key, value) =>
+                    setDraftConfig((prev) => ({ ...prev, [key]: value }))
+                  }
+                />
+              )}
+              {isGamearenaSkill(activeSettingsSkillId) && (
                 <GamearenaConfigFields
                   config={draftConfig}
                   onChange={(key, value) =>
@@ -1287,7 +1756,7 @@ export function DeployDashboard() {
                   }
                 />
               )}
-              {isBalaioSkill(status?.skillId) && (
+              {isBalaioSkill(activeSettingsSkillId) && (
                 <BalaioConfigFields
                   config={draftConfig}
                   onChange={(key, value) =>

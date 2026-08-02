@@ -4,10 +4,16 @@
 **Goal:** Let your users deploy autonomous agents that play the **free offchain Markov AI** game (`challenge-ai` / rock-paper-scissors vs MARKOV).  
 **Backend:** GoodAgent hosts provisioning and gameplay — **you do not run agent servers**.
 
-**Widget package:** `@goodagent/widget@0.3.1`  
+**Widget package:** `@goodagent/widget@0.3.2`  
 **GoodAgent APIs:** `https://goodagentids.xyz/host` + `https://goodagentids.xyz/api` (filled in automatically — do not configure in your app)
 
 ---
+
+## What’s new in 0.3.2
+
+| Area | Change |
+|------|--------|
+| **npm install** | Removed unpublished `workspace:*` deps — `@goodagent/live-arena` and `@goodagent/shared` are bundled in the build |
 
 ## What’s new in 0.3.1
 
@@ -32,7 +38,7 @@
 
 ## TL;DR (fastest path)
 
-1. `pnpm add @goodagent/widget@0.3.1`
+1. `pnpm add @goodagent/widget@0.3.2`
 2. Drop in the widget on an `/agents` (or similar) page
 3. Use **`partnerId: "gamearena"`** so deploys are attributed to you
 4. Users **name their agent** and **tune bot settings** on the Deploy tab (strategy, caps, interval)
@@ -72,7 +78,7 @@ GoodAgent fills in host API, main API, RPC, vault, and base skill defaults. You 
 ## Install
 
 ```bash
-pnpm add @goodagent/widget@0.3.1 react react-dom
+pnpm add @goodagent/widget@0.3.2 react react-dom
 
 # If you already use Privy (recommended for GameArena / MiniPay / WalletConnect):
 pnpm add @privy-io/react-auth
@@ -368,6 +374,18 @@ If the user has no GameArena deploy yet, `agents` is `[]`.
 | **Start / play** | `POST /deploy/:id/start` returns **409** `GAMEARENA_FIRST_AGENT_ONLY` if `id` is not the first deploy |
 
 Users may still create additional deploys in the backend, but they cannot configure, vouch, or start them through the GameArena widget until you lift this rule.
+
+### Agent play API (scoped key)
+
+GoodAgent agents play offchain matches via GameArena’s scoped key (platform-managed on the host, not per-user config):
+
+| Step | Endpoint |
+|------|----------|
+| Start | `POST /api/arena/agent/start` — body `{ "agentAddress": "0x…" }`, header `x-agent-key` |
+| Each round | `POST /api/arena/agent/throw` — body `{ "matchId", "move" }` (0 rock, 1 paper, 2 scissors), ~1s apart |
+| Spectators | Same SSE as `liveWatchUrl` — host proxies `GET /api/arena/live/{matchId}` |
+
+Host env (VPS): `GAMEARENA_AGENT_API_KEY`, optional `GAMEARENA_AGENT_API_URL`. Injected into each agent’s skill `.env` at deploy/sync.
 
 ---
 

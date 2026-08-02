@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DeployAgent } from "../client/host.js";
 import { deployNeedsUserVouch, signDeployControl } from "../client/host.js";
 import {
@@ -21,9 +21,20 @@ import {
   skillLabelForDeploy,
   statusTone,
 } from "../lib/agent-display.js";
+import {
+  configurableSkills,
+  configForSkill,
+  dashboardPanelForSkillId,
+  hasGamearenaSkill,
+  isSkillEnabled,
+  skillInstallStatusLabel,
+  skillShortLabel,
+  skillsFromStatus,
+} from "../lib/deploy-skills.js";
 import { useDashboard } from "../hooks/useDashboard.js";
 import { AgentSelect } from "./AgentSelect.js";
 import { SkillConfigFields } from "./SkillConfigFields.js";
+import { SkillStatsPanel } from "./SkillStatsPanel.js";
 import type { SkillConfiguration } from "../types.js";
 
 function sortDashboardDeploys(deploys: DeployAgent[]): DeployAgent[] {
@@ -124,8 +135,25 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
   const { wallet, host, config } = useWidget();
   const d = useDashboard(deploy.id, deploy);
   const status = d.status;
+  const gamearenaSkillId = status
+    ? configurableSkills(status).find((s) => s.skillId.includes("gamearena"))
+        ?.skillId
+    : null;
   const skillId =
-    status?.skillId ?? skillIdForDeploy(deploy) ?? "gaming/wagering/gamearena_1v1";
+    gamearenaSkillId ??
+    status?.skillId ??
+    skillIdForDeploy(deploy) ??
+    "gaming/wagering/gamearena_1v1";
+  const editableSkills = status ? configurableSkills(status) : [];
+  const installedSkills = useMemo(
+    () => (status ? skillsFromStatus(status) : []),
+    [status],
+  );
+  const [dashboardTab, setDashboardTab] = useState<string>("overview");
+  const [skillToggleBusy, setSkillToggleBusy] = useState<string | null>(null);
+  const [settingsSkillId, setSettingsSkillId] = useState<string | null>(null);
+  const activeSettingsSkillId =
+    settingsSkillId ?? editableSkills[0]?.skillId ?? skillId;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editName, setEditName] = useState(deploy.displayName);
   const [editConfig, setEditConfig] = useState<SkillConfiguration>(() =>
@@ -137,16 +165,84 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
 
   useEffect(() => {
     setEditName(status?.displayName ?? deploy.displayName);
-    setEditConfig(
-      parseConfigSummary(status?.configuration ?? deploy.configuration),
-    );
+    if (status && activeSettingsSkillId) {
+      setEditConfig(configForSkill(status, activeSettingsSkillId));
+    } else {
+      setEditConfig(
+        parseConfigSummary(status?.configuration ?? deploy.configuration),
+      );
+    }
   }, [
     deploy.id,
     deploy.displayName,
     deploy.configuration,
     status?.displayName,
     status?.configuration,
+    status?.skills,
+    activeSettingsSkillId,
   ]);
+
+  useEffect(() => {
+    if (!installedSkills.length) return;
+    setDashboardTab((prev) => {
+      if (prev === "overview") return prev;
+      if (installedSkills.some((s) => s.skillId === prev)) return prev;
+      return installedSkills.length === 1 ? installedSkills[0]!.skillId : "overview";
+    });
+  }, [installedSkills]);
+
+  const showGamearenaPanel =
+    dashboardTab === "overview" ||
+    dashboardPanelForSkillId(dashboardTab) === "gamearena";
+  const showActionOrderPanel =
+    dashboardTab !== "overview" &&
+    dashboardPanelForSkillId(dashboardTab) === "actionorder";
+  const showGenericPanel =
+    dashboardTab !== "overview" &&
+    !showGamearenaPanel &&
+    !showActionOrderPanel;
+
+  const actionOrderConfig =
+    showActionOrderPanel && status
+      ? configForSkill(status, dashboardTab)
+      : {};
+
+  const actionOrderStats = useMemo(() => {
+    if (!status || !showActionOrderPanel) return null;
+    return status.skills?.find((s) => s.skillId === dashboardTab)?.stats ?? null;
+  }, [status, showActionOrderPanel, dashboardTab]);
+
+  const activeSkillStats = useMemo(() => {
+    if (!status || dashboardTab === "overview") return null;
+    return status.skills?.find((s) => s.skillId === dashboardTab)?.stats ?? null;
+  }, [status, dashboardTab]);
+
+  const beginEditConfig = useCallback((skillId: string) => {
+    setSettingsSkillId(skillId);
+    if (status) {
+      setEditConfig(configForSkill(status, skillId));
+    }
+    setSettingsOpen(true);
+  }, [status]);
+
+  const toggleSkillEnabled = useCallback(
+    async (skillId: string, enabled: boolean) => {
+      if (!d.isOwner || !wallet.address) return;
+      setSkillToggleBusy(skillId);
+      setSettingsError(null);
+      try {
+        const auth = await signDeployControl(wallet, "configuration", deploy.id);
+        await host.setSkillEnabled(deploy.id, auth, skillId, enabled);
+        await d.pollLite();
+        void d.poll();
+      } catch (e) {
+        setSettingsError((e as Error).message);
+      } finally {
+        setSkillToggleBusy(null);
+      }
+    },
+    [d, wallet, host, deploy.id],
+  );
 
   const saveSettings = useCallback(async () => {
     if (!d.isOwner || !wallet.address) return;
@@ -164,9 +260,9 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         await host.updateDisplayName(deploy.id, nameAuth, editName.trim());
       }
 
-      const currentConfig = parseConfigSummary(
-        status?.configuration ?? deploy.configuration,
-      );
+      const currentConfig = status
+        ? configForSkill(status, activeSettingsSkillId)
+        : parseConfigSummary(deploy.configuration);
       const patch: Record<string, string> = {};
       for (const [key, value] of Object.entries(editConfig)) {
         if (currentConfig[key] !== value) patch[key] = value;
@@ -177,7 +273,12 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
           "configuration",
           deploy.id,
         );
-        await host.updateConfiguration(deploy.id, configAuth, patch);
+        await host.updateConfiguration(
+          deploy.id,
+          configAuth,
+          patch,
+          activeSettingsSkillId,
+        );
       }
 
       await d.pollLite();
@@ -199,7 +300,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
     editName,
     editConfig,
     status?.displayName,
-    status?.configuration,
+    activeSettingsSkillId,
   ]);
 
   const perf = status?.stats?.performance;
@@ -238,7 +339,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
   const { config: widgetConfig } = useWidget();
   const skillIdResolved =
     status?.skillId ?? skillIdForDeploy(deploy) ?? null;
-  const gamearenaSkill = isGamearenaSkill(skillIdResolved);
+  const gamearenaSkill = status ? hasGamearenaSkill(status) : isGamearenaSkill(skillIdResolved);
 
   const {
     sseMatchId,
@@ -247,7 +348,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
     liveFeedState,
     sseBadgeLabel,
   } = useArenaLiveSpectator({
-    enabled: gamearenaSkill,
+    enabled: gamearenaSkill && showGamearenaPanel,
     hostBaseUrl: widgetConfig.hostBaseUrl,
     activeArenaMatchId: status?.activeArenaMatchId,
     liveMatch: status?.liveMatch,
@@ -321,6 +422,82 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         </div>
       </div>
 
+      {installedSkills.length > 1 ? (
+        <div className="ga-widget-skill-tabs" role="tablist" aria-label="Skill views">
+          <button
+            type="button"
+            role="tab"
+            className={`ga-widget-skill-tab${dashboardTab === "overview" ? " is-active" : ""}`}
+            onClick={() => setDashboardTab("overview")}
+          >
+            Overview
+          </button>
+          {installedSkills.map((skill) => (
+            <button
+              key={skill.skillId}
+              type="button"
+              role="tab"
+              className={`ga-widget-skill-tab${dashboardTab === skill.skillId ? " is-active" : ""}`}
+              onClick={() => setDashboardTab(skill.skillId)}
+            >
+              {skillShortLabel(skill.skillId)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {dashboardTab === "overview" && installedSkills.length > 1 ? (
+        <div className="ga-widget-dash-section">
+          <div className="ga-widget-dash-section-head">
+            <h4>Skills</h4>
+          </div>
+          <ul className="ga-widget-skills-overview">
+            {installedSkills.map((skill) => (
+              <li key={skill.skillId} className="ga-widget-skills-overview-item">
+                <div>
+                  <strong>{skillShortLabel(skill.skillId)}</strong>
+                  <span
+                    className={`ga-widget-skill-status${isSkillEnabled(skill.status) ? " is-active" : ""}`}
+                  >
+                    {skillInstallStatusLabel(skill.status)}
+                  </span>
+                </div>
+                <div className="ga-widget-skills-overview-actions">
+                  <button
+                    type="button"
+                    className="ga-widget-btn ga-widget-btn-compact"
+                    disabled={!canControl}
+                    onClick={() => beginEditConfig(skill.skillId)}
+                  >
+                    Settings
+                  </button>
+                  {canControl && isSkillEnabled(skill.status) ? (
+                    <button
+                      type="button"
+                      className="ga-widget-btn ga-widget-btn-compact"
+                      disabled={skillToggleBusy === skill.skillId}
+                      onClick={() => void toggleSkillEnabled(skill.skillId, false)}
+                    >
+                      {skillToggleBusy === skill.skillId ? "…" : "Disable"}
+                    </button>
+                  ) : null}
+                  {canControl && !isSkillEnabled(skill.status) ? (
+                    <button
+                      type="button"
+                      className="ga-widget-btn ga-widget-btn-primary ga-widget-btn-compact"
+                      disabled={skillToggleBusy === skill.skillId}
+                      onClick={() => void toggleSkillEnabled(skill.skillId, true)}
+                    >
+                      {skillToggleBusy === skill.skillId ? "…" : "Enable"}
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="ga-widget-dash-metrics">
         <Metric
           label="G$"
@@ -352,7 +529,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         />
       </div>
 
-      {gamearenaSkill && (
+      {gamearenaSkill && showGamearenaPanel && (
         <GameArenaLiveSection
           liveDisplay={liveDisplay}
           liveFeedState={liveFeedState}
@@ -364,6 +541,46 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
           title="Live arena"
         />
       )}
+
+      {showActionOrderPanel ? (
+        <SkillStatsPanel
+          title="Action Order"
+          stats={actionOrderStats}
+          canEdit={canControl}
+          onEditSettings={() => beginEditConfig(dashboardTab)}
+          configRows={[
+            {
+              label: "Character",
+              value: actionOrderConfig.CHARACTER_ID ?? "riven",
+            },
+            {
+              label: "Strategy",
+              value: actionOrderConfig.STRATEGY ?? "anti_strike",
+            },
+            {
+              label: "Difficulty",
+              value: actionOrderConfig.DIFFICULTY ?? "0",
+            },
+            {
+              label: "Max matches/day",
+              value: actionOrderConfig.MAX_MATCHES ?? "5",
+            },
+            {
+              label: "Match interval",
+              value: `${actionOrderConfig.MATCH_INTERVAL_SECONDS ?? "10"}s`,
+            },
+          ]}
+        />
+      ) : null}
+
+      {showGenericPanel ? (
+        <SkillStatsPanel
+          title={skillShortLabel(dashboardTab)}
+          stats={activeSkillStats}
+          canEdit={canControl}
+          onEditSettings={() => beginEditConfig(dashboardTab)}
+        />
+      ) : null}
 
       <div className="ga-widget-dash-status-row">
         <span
@@ -395,7 +612,7 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
         )}
       </div>
 
-      {(status && (recentMatches.length > 0 || statsPending)) && (
+      {(status && showGamearenaPanel && (recentMatches.length > 0 || statsPending)) && (
         <div className="ga-widget-dash-matches">
           <div className="ga-widget-dash-matches-head">
             <h5 className="ga-widget-dash-matches-title">Recent matches</h5>
@@ -490,8 +707,28 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
               placeholder="Agent name"
             />
           </label>
+          {editableSkills.length > 1 ? (
+            <div className="ga-widget-skill-tabs" role="tablist">
+              {editableSkills.map((skill) => (
+                <button
+                  key={skill.skillId}
+                  type="button"
+                  role="tab"
+                  className={`ga-widget-skill-tab${activeSettingsSkillId === skill.skillId ? " is-active" : ""}`}
+                  onClick={() => {
+                    setSettingsSkillId(skill.skillId);
+                    if (status) {
+                      setEditConfig(configForSkill(status, skill.skillId));
+                    }
+                  }}
+                >
+                  {skill.skillId.split("/").pop()}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <SkillConfigFields
-            skillId={skillId}
+            skillId={activeSettingsSkillId}
             config={editConfig}
             compact
             onChange={(key, value) =>

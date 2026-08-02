@@ -10,6 +10,7 @@ import {
   type DeployStatusResponse,
 } from "../lib/host.js";
 import { deployAgentNeedsVouch, issueAgentHref } from "../lib/deploy-vouch.js";
+import { deployKindLabel, deploySkillsLabel } from "../lib/deploy-skills.js";
 import { isGamearenaOffchain } from "../lib/gamearena-config.js";
 import { parseSkillConfig } from "../lib/skill-config.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
@@ -42,17 +43,11 @@ const HEALTH_LABEL: Record<RowHealth, string> = {
 };
 
 function skillName(agent: DeployAgent): string {
-  const skill = agent.skills?.[0]?.skillId;
-  if (!skill) return "—";
-  return skill.split("/").pop() ?? skill;
+  return deploySkillsLabel(agent);
 }
 
 function skillKind(agent: DeployAgent): string {
-  const skill = agent.skills?.[0]?.skillId ?? "";
-  if (skill.includes("gamearena")) return "GameArena";
-  if (skill.includes("claim")) return "Claim agent";
-  if (skill.includes("actionorder")) return "ActionOrder";
-  return "Agent";
+  return deployKindLabel(agent);
 }
 
 function isTestDeploy(name: string): boolean {
@@ -330,13 +325,19 @@ export function MyDeployments() {
                   <tbody>
                     {filtered.map(({ agent, status, health }) => {
                       const perf = status?.stats?.performance;
+                      const gamearenaSkillId =
+                        status?.skills?.find((s) =>
+                          s.skillId.includes("gamearena"),
+                        )?.skillId ??
+                        agent.skills?.find((s) => s.skillId.includes("gamearena"))
+                          ?.skillId;
                       const offchain = isGamearenaOffchain(
-                        agent.skills?.[0]?.skillId,
+                        gamearenaSkillId,
                         parseSkillConfig(agent.configuration ?? status?.configuration),
                       );
                       const pnl = formatPnL(
                         status?.stats ?? null,
-                        agent.skills?.[0]?.skillId,
+                        gamearenaSkillId,
                         agent.configuration ?? status?.configuration,
                       );
                       const pnlNum =

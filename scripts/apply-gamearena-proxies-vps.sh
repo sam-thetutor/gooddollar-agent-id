@@ -133,6 +133,14 @@ for (const agentDir of fs.readdirSync(AGENTS_ROOT)) {
   let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
   envContent = upsertEnvLine(envContent, "GAMEARENA_PROXY", proxy);
   envContent = upsertEnvLine(envContent, "ROUND_PACE_MS", process.env.ROUND_PACE_MS || "1000");
+  const agentApiKey = hostEnv.GAMEARENA_AGENT_API_KEY?.trim();
+  if (agentApiKey) {
+    envContent = upsertEnvLine(envContent, "GAMEARENA_AGENT_API_KEY", agentApiKey);
+    const agentApiUrl =
+      hostEnv.GAMEARENA_AGENT_API_URL?.trim() ||
+      "https://game-backend-production-6130.up.railway.app";
+    envContent = upsertEnvLine(envContent, "GAMEARENA_AGENT_API_URL", agentApiUrl);
+  }
   fs.writeFileSync(envPath, envContent, { mode: 0o600 });
 
   const ecoPath = path.join(AGENTS_ROOT, agentDir, "ecosystem.config.cjs");

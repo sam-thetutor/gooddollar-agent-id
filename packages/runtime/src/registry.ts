@@ -10,7 +10,11 @@ import {
   filterListedSkills,
   isSkillDeployable,
   isSkillListed,
+  type RegistrySkillCapabilities,
+  type RegistrySkillCompatibility,
+  type RegistrySkillDashboard,
   type RegistrySkillFlags,
+  type RegistrySkillRuntime,
 } from "@goodagent/shared";
 
 export type { RegistrySkillFlags };
@@ -27,6 +31,10 @@ export interface RegistrySkill extends RegistrySkillFlags {
   token?: string;
   game?: string;
   game_url?: string;
+  runtime?: RegistrySkillRuntime;
+  capabilities?: RegistrySkillCapabilities;
+  compatibility?: RegistrySkillCompatibility;
+  dashboard?: RegistrySkillDashboard;
 }
 
 export interface SkillsRegistry {

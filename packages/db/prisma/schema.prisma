@@ -107,6 +107,7 @@ model DeployedAgent {
 model DeployMatch {
   id              String   @id @default(cuid())
   deployedAgentId String   @map("deployed_agent_id")
+  skillId         String?  @map("skill_id")
   matchId         String   @map("match_id")
   gameType        Int      @map("game_type")
   wagerGs         Decimal  @map("wager_gs")
@@ -118,6 +119,7 @@ model DeployMatch {
   deployedAgent DeployedAgent @relation(fields: [deployedAgentId], references: [id], onDelete: Cascade)
 
   @@unique([deployedAgentId, matchId])
+  @@index([deployedAgentId, skillId, playedAt])
   @@index([deployedAgentId, playedAt])
   @@map("deploy_matches")
 }
@@ -125,6 +127,7 @@ model DeployMatch {
 model DeployRefill {
   id              String   @id @default(cuid())
   deployedAgentId String   @map("deployed_agent_id")
+  skillId         String?  @map("skill_id")
   priceGs         Decimal  @map("price_gs")
   txHash          String   @map("tx_hash")
   refilledAt      DateTime @map("refilled_at")
@@ -133,6 +136,7 @@ model DeployRefill {
   deployedAgent DeployedAgent @relation(fields: [deployedAgentId], references: [id], onDelete: Cascade)
 
   @@unique([deployedAgentId, txHash])
+  @@index([deployedAgentId, skillId, refilledAt])
   @@index([deployedAgentId, refilledAt])
   @@map("deploy_refills")
 }
@@ -140,12 +144,14 @@ model DeployRefill {
 model DeployLogLine {
   id              String   @id @default(cuid())
   deployedAgentId String   @map("deployed_agent_id")
+  skillId         String?  @map("skill_id")
   message         String   @db.Text
   loggedAt        DateTime @map("logged_at")
   createdAt       DateTime @default(now()) @map("created_at")
 
   deployedAgent DeployedAgent @relation(fields: [deployedAgentId], references: [id], onDelete: Cascade)
 
+  @@index([deployedAgentId, skillId, loggedAt])
   @@index([deployedAgentId, loggedAt])
   @@map("deploy_log_lines")
 }

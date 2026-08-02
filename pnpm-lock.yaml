@@ -207,6 +207,25 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@22.20.0)
 
+  packages/agent-runtime:
+    dependencies:
+      '@goodagent/skill-sdk':
+        specifier: workspace:*
+        version: link:../skill-sdk
+      viem:
+        specifier: ^2.31.3
+        version: 2.53.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.32
+        version: 22.20.0
+      tsx:
+        specifier: ^4.20.3
+        version: 4.22.4
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
   packages/chain:
     dependencies:
       '@goodagent/shared':
@@ -227,6 +246,12 @@ importers:
 
   packages/db:
     dependencies:
+      '@goodagent/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@goodagent/skill-sdk':
+        specifier: workspace:*
+        version: link:../skill-sdk
       '@prisma/client':
         specifier: ^6.9.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -288,12 +313,18 @@ importers:
       '@goodagent/agent-id':
         specifier: workspace:*
         version: link:../agent-id
+      '@goodagent/agent-runtime':
+        specifier: workspace:*
+        version: link:../agent-runtime
       '@goodagent/db':
         specifier: workspace:*
         version: link:../db
       '@goodagent/shared':
         specifier: workspace:*
         version: link:../shared
+      '@goodagent/skill-sdk':
+        specifier: workspace:*
+        version: link:../skill-sdk
       dotenv:
         specifier: ^16.5.0
         version: 16.6.1
@@ -321,11 +352,30 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
+  packages/skill-sdk:
+    dependencies:
+      zod:
+        specifier: ^3.25.67
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.32
+        version: 22.20.0
+      tsx:
+        specifier: ^4.20.3
+        version: 4.22.4
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
   packages/widget:
     dependencies:
       '@goodagent/live-arena':
         specifier: workspace:*
         version: link:../live-arena
+      '@goodagent/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@goodsdks/citizen-sdk':
         specifier: ^1.2.5
         version: 1.2.5(@microsoft/api-extractor@7.58.12(@types/node@22.20.0))(jiti@2.7.0)(postcss@8.5.16)(tsx@4.22.4)(typescript@5.9.3)(viem@2.53.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(wagmi@3.6.21(@coinbase/wallet-sdk@4.3.6(@types/react@19.2.17)(bufferutil@4.1.0)(react@19.2.7)(typescript@5.9.3)(use-sync-external-store@1.6.0(react@19.2.7))(utf-8-validate@6.0.6)(zod@3.25.76))(@safe-global/safe-apps-provider@0.18.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(@safe-global/safe-apps-sdk@9.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(@tanstack/query-core@5.101.2)(@tanstack/react-query@5.101.2(react@19.2.7))(@types/react@19.2.17)(@walletconnect/ethereum-provider@2.21.7(@types/react@19.2.17)(bufferutil@4.1.0)(encoding@0.1.13)(react@19.2.7)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(react@19.2.7)(typescript@5.9.3)(viem@2.53.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)))

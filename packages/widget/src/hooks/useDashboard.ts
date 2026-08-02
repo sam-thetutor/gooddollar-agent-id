@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 import {
-  isGamearenaSkill,
-} from "@goodagent/live-arena";
-import {
   isDeployOwner,
   signDeployControl,
   type DeployAgent,
@@ -15,6 +12,7 @@ import {
   fetchAgentBalancesDisplay,
   type AgentBalanceDisplay,
 } from "../lib/agent-balances.js";
+import { hasGamearenaSkill } from "../lib/deploy-skills.js";
 
 export type DashboardControlBusy = "stopping" | "starting" | null;
 
@@ -179,13 +177,11 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
     return pollFull({ background: true });
   }, [pollLite, pollFull]);
 
-  const skillId =
-    status?.skillId ?? deploy?.skills?.[0]?.skillId ?? null;
   const agentOnline =
     status?.pm2?.online ??
     (status?.status === "running" || deploy?.status === "running");
   const gamearenaOnline =
-    isGamearenaSkill(skillId) && agentOnline;
+    Boolean(status && hasGamearenaSkill(status)) && agentOnline;
   const litePollMs = gamearenaOnline ? 5000 : (config.statusPollMs ?? 5000);
   const livePollMs = gamearenaOnline ? 1000 : null;
   const fullPollMs = gamearenaOnline ? 20_000 : 30_000;

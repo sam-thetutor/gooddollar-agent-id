@@ -18,6 +18,16 @@ rsync -az --delete \
   --exclude dist \
   --exclude .turbo \
   "${ROOT}/packages/runtime/" "${REMOTE}:${REMOTE_ROOT}/packages/runtime/"
+rsync -az --delete \
+  --exclude node_modules \
+  --exclude dist \
+  --exclude .turbo \
+  "${ROOT}/packages/skill-sdk/" "${REMOTE}:${REMOTE_ROOT}/packages/skill-sdk/"
+rsync -az --delete \
+  --exclude node_modules \
+  --exclude dist \
+  --exclude .turbo \
+  "${ROOT}/packages/agent-runtime/" "${REMOTE}:${REMOTE_ROOT}/packages/agent-runtime/"
 rsync -az \
   "${ROOT}/packages/db/prisma/" "${REMOTE}:${REMOTE_ROOT}/packages/db/prisma/"
 rsync -az \
@@ -95,6 +105,7 @@ append_or_replace HOST_PORT "3010" "$REMOTE_ENV"
 append_or_replace HOST_DEV_SKIP_PAYMENT "1" "$REMOTE_ENV"
 append_or_replace AGENT_INITIAL_GS "200" "$REMOTE_ENV"
 append_or_replace AGENT_INITIAL_CELO "0.5" "$REMOTE_ENV"
+append_or_replace RUNTIME_V1 "1" "$REMOTE_ENV"
 # Postgres runs on the same VPS — localhost avoids flaky public-IP connections
 if grep -q '@80.241.209.225:5432' "$REMOTE_ENV" 2>/dev/null; then
   sed -i 's|@80.241.209.225:5432|@127.0.0.1:6543|g' "$REMOTE_ENV"
@@ -135,7 +146,7 @@ set -euo pipefail
 export PATH="\$HOME/.local/share/pnpm:\$HOME/.npm-global/bin:\$PATH"
 cd /home/geinz/gcopilot
 command -v pnpm >/dev/null || npm i -g pnpm@9.15.0
-pnpm install --filter @goodagent/host... --filter @goodagent/runtime... --filter @goodagent/db... --filter @goodagent/shared... --filter @goodagent/live-arena...
+pnpm install --filter @goodagent/host... --filter @goodagent/runtime... --filter @goodagent/agent-runtime... --filter @goodagent/skill-sdk... --filter @goodagent/db... --filter @goodagent/shared... --filter @goodagent/live-arena...
 # Prisma db push needs session pool (5432), not transaction pool (6543/pgbouncer).
 # Transaction pool hangs indefinitely on DDL; schema is usually already in sync.
 SESSION_DB_URL="\$(grep '^DATABASE_URL=' .env | cut -d= -f2- | sed 's|6543/postgres?pgbouncer=true&|5432/postgres?|')"
@@ -145,8 +156,10 @@ else
   echo "WARN: db push skipped or timed out — continuing build (runtime uses 6543 pool)"
 fi
 pnpm --filter @goodagent/shared build
+pnpm --filter @goodagent/skill-sdk build
 pnpm --filter @goodagent/live-arena build
 pnpm --filter @goodagent/db build
+pnpm --filter @goodagent/agent-runtime build
 pnpm --filter @goodagent/runtime build
 pnpm --filter @goodagent/host build
 command -v git >/dev/null || (echo "git required for skill clone" && exit 1)

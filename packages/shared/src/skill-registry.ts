@@ -13,6 +13,25 @@ export interface RegistrySkillFlags {
   enabled?: boolean;
 }
 
+/** Registry v2 optional runtime block for plugin-based skills. */
+export interface RegistrySkillRuntime {
+  /** Plugin entry relative to skill package root (default dist/plugin.js) */
+  entry?: string;
+  /** Skill SDK API version (default 1) */
+  apiVersion?: 1;
+}
+
+export interface RegistrySkillCapabilities {
+  spendsTokens?: boolean;
+  requiresTelegram?: boolean;
+  requiresPrivateKey?: boolean;
+}
+
+export interface RegistrySkillCompatibility {
+  minRuntimeVersion?: string;
+  chains?: string[];
+}
+
 export function isSkillListed(skill: RegistrySkillFlags): boolean {
   return skill.listed !== false && skill.enabled !== false;
 }

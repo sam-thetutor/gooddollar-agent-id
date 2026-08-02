@@ -4,11 +4,21 @@ import {
   type DeployControlAuth,
 } from "../deploy-auth.js";
 import type { GoodAgentWalletAdapter } from "../types.js";
+import type { SkillStatsView } from "@goodagent/shared";
 import type { GameArenaLiveMatch } from "@goodagent/live-arena";
 import type { SkillConfiguration } from "../types.js";
 import type { DeployTemplate } from "../skill-config.js";
 
 export type { DeployControlAction, DeployControlAuth };
+
+export interface DeploySkillStatus {
+  skillId: string;
+  registryPath: string;
+  status: string;
+  configuration: Record<string, string>;
+  lastError?: string | null;
+  stats?: SkillStatsView | null;
+}
 
 export interface DeployAgent {
   id: string;
@@ -33,6 +43,7 @@ export interface DeployStatusResponse {
   displayName?: string;
   template?: string;
   skillId?: string | null;
+  skills?: DeploySkillStatus[];
   configuration?: string | null;
   status: string;
   ownerWallet?: string | null;
@@ -139,7 +150,9 @@ export function createHostClient(hostBaseUrl: string) {
     createDeploy(input: {
       displayName: string;
       ownerWallet: string;
-      skillId: string;
+      skillId?: string;
+      skillIds?: string[];
+      skillConfigurations?: Record<string, SkillConfiguration>;
       configuration?: SkillConfiguration;
       partnerId?: string;
       template?: DeployTemplate;
@@ -151,6 +164,8 @@ export function createHostClient(hostBaseUrl: string) {
           displayName: input.displayName,
           ownerWallet: input.ownerWallet,
           skillId: input.skillId,
+          skillIds: input.skillIds,
+          skillConfigurations: input.skillConfigurations,
           configuration: input.configuration,
           template: input.template ?? "gaming",
           skipPayment: true,
@@ -216,15 +231,39 @@ export function createHostClient(hostBaseUrl: string) {
       deployId: string,
       auth: DeployControlAuth,
       configuration: Record<string, string>,
+      skillId?: string,
     ) {
-      return hostFetch<{ agent: DeployAgent; restarted?: boolean }>(
+      const path = skillId
+        ? `/deploy/${deployId}/skills/${encodeURIComponent(skillId)}/configuration`
+        : `/deploy/${deployId}/configuration`;
+      return hostFetch<{ agent: DeployAgent; restarted?: boolean; skillId?: string }>(
         base,
-        `/deploy/${deployId}/configuration`,
+        path,
         {
           method: "POST",
-          body: JSON.stringify({ ...auth, configuration }),
+          body: JSON.stringify(
+            skillId ? { ...auth, configuration } : { ...auth, configuration, skillId },
+          ),
         },
       );
+    },
+
+    setSkillEnabled(
+      deployId: string,
+      auth: DeployControlAuth,
+      skillId: string,
+      enabled: boolean,
+    ) {
+      const action = enabled ? "enable" : "disable";
+      return hostFetch<{
+        agent: DeployAgent;
+        restarted?: boolean;
+        skillId: string;
+        status: string;
+      }>(base, `/deploy/${deployId}/skills/${encodeURIComponent(skillId)}/${action}`, {
+        method: "POST",
+        body: JSON.stringify(auth),
+      });
     },
 
     updateDisplayName(
