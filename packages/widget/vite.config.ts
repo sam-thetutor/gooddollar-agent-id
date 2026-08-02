@@ -14,6 +14,7 @@ export default defineConfig({
       entry: {
         index: resolve(__dirname, "src/index.ts"),
         privy: resolve(__dirname, "src/privy.ts"),
+        "partner-gamearena": resolve(__dirname, "src/partner-gamearena.ts"),
       },
       formats: ["es"],
       fileName: (format, entryName) => `${entryName}.js`,
@@ -30,6 +31,15 @@ export default defineConfig({
       ],
       output: {
         assetFileNames: "widget.css",
+        inlineDynamicImports: false,
+        manualChunks(id) {
+          if (
+            id.includes("@goodagent/live-arena") ||
+            id.includes("/live-arena/")
+          ) {
+            return "live-arena";
+          }
+        },
       },
     },
     cssCodeSplit: false,

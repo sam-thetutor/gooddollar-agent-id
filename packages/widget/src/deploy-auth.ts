@@ -5,7 +5,8 @@ export type DeployControlAction =
   | "configuration"
   | "display-name"
   | "run-pipeline"
-  | "confirm-vouch";
+  | "confirm-vouch"
+  | "play";
 
 export interface DeployControlAuth {
   ownerWallet: string;

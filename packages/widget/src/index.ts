@@ -87,6 +87,7 @@ export {
 } from "./defaults.js";
 
 export type {
+  GoodAgentOnboardComplete,
   GoodAgentWidgetConfig,
   GoodAgentWidgetPartnerConfig,
   GoodAgentWidgetProps,

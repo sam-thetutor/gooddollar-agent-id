@@ -173,6 +173,7 @@ Deploy  →  Verify  →  Dashboard
 | `mode` prop | Tabs shown |
 |-------------|------------|
 | `"full"` | Deploy + Verify + Dashboard (default) |
+| `"onboard"` | Deploy + Verify only — use `onOnboardComplete` then your own UI (e.g. GameArena partner API) |
 | `"deploy"` | Deploy only |
 | `"vouch"` | Verify only |
 | `"dashboard"` | Dashboard only |
@@ -213,6 +214,14 @@ Single-skill configs accept the same optional overrides: `defaultDisplayName`, `
 ```tsx
 import "@goodagent/widget/styles.css";
 ```
+
+### GameArena partner API (no widget UI)
+
+```tsx
+import { createGameArenaPartnerClient } from "@goodagent/widget/partner-gamearena";
+```
+
+Use after `mode="onboard"` completes. See [GAMEARENA_PARTNER_API.md](./GAMEARENA_PARTNER_API.md).
 
 Wrap the widget and override CSS variables under a parent class (see Agent Haus `goodagent-embed` pattern): `--ga-bg`, `--ga-primary`, `--ga-border`, etc.
 

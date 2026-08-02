@@ -95,7 +95,11 @@ export function createGoodAgentWidgetConfig(
   return resolveWidgetConfig({ skillId, ...overrides });
 }
 
-/** Preset for GameArena free offchain MARKOV agents — minimal partner setup. */
+/**
+ * Preset for GameArena free offchain MARKOV agents — minimal partner setup.
+ * For GameArena native UI, embed with `mode="onboard"` and use the partner API
+ * after `onOnboardComplete`. Other partners should use `mode="full"` (default).
+ */
 export function createGameArenaWidgetConfig(
   opts: {
     partnerId: string;

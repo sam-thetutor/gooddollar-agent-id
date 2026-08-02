@@ -180,11 +180,14 @@ export function useDashboard(deployId: string, deploy?: DeployAgent) {
   const agentOnline =
     status?.pm2?.online ??
     (status?.status === "running" || deploy?.status === "running");
+  const basePollMs = config.statusPollMs ?? 4000;
   const gamearenaOnline =
     Boolean(status && hasGamearenaSkill(status)) && agentOnline;
-  const litePollMs = gamearenaOnline ? 5000 : (config.statusPollMs ?? 5000);
-  const livePollMs = gamearenaOnline ? 1000 : null;
-  const fullPollMs = gamearenaOnline ? 20_000 : 30_000;
+  const livePollMs = gamearenaOnline ? 2000 : null;
+  const litePollMs = gamearenaOnline
+    ? Math.max(basePollMs * 2, 10_000)
+    : basePollMs;
+  const fullPollMs = 30_000;
 
   useEffect(() => {
     if (!deployId) return;

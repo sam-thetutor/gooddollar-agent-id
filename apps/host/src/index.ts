@@ -72,6 +72,8 @@ import {
   GAMEARENA_SKILL_ID,
   collectDeploySkillStats,
   collectSkillStats,
+  pauseGamearenaAgentAtDailyCap,
+  patchAllGamearenaDailyCapGuards,
   type SkillStatsSummary,
   type PipelineStatus,
   type DeployAgentRecord,
@@ -195,6 +197,39 @@ function readAgentLogTail(
   }
   if (!chunks.length) return null;
   return chunks.join("\n").split("\n").slice(-lines).join("\n") || null;
+}
+
+async function maybePauseGamearenaAtDailyCap(
+  agent: {
+    id: string;
+    status: string;
+    skills: Parameters<typeof findEnabledGamearenaSkillInstall>[0];
+  },
+  logTail?: string | null,
+): Promise<void> {
+  if (agent.status !== "running") return;
+  if (!findEnabledGamearenaSkillInstall(agent.skills)) return;
+  loadRuntimeEnv();
+  const config = getRuntimeConfig();
+  await pauseGamearenaAgentAtDailyCap(config, agent.id, {
+    logTail,
+    onPaused: async () => {
+      await updateDeployedAgent(agent.id, { status: "paused" });
+    },
+  });
+}
+
+async function sweepGamearenaDailyCaps(): Promise<void> {
+  try {
+    loadRuntimeEnv();
+    const agents = await listGamearenaDeployedAgents();
+    for (const agent of agents) {
+      if (agent.status !== "running") continue;
+      await maybePauseGamearenaAtDailyCap(agent);
+    }
+  } catch (err) {
+    console.warn("[host] daily cap sweep failed:", err);
+  }
 }
 
 function gamearenaFirstAgentConflict(existing: {
@@ -752,6 +787,8 @@ app.get("/deploy/:id/live-snapshot", async (c) => {
     activeArenaMatchId,
   );
 
+  void maybePauseGamearenaAtDailyCap(agent, logTail);
+
   return c.json({
     liveMatch: resolved.liveMatch,
     activeArenaMatchId: resolved.activeArenaMatchId,
@@ -795,6 +832,7 @@ app.get("/deploy/:id/status", async (c) => {
       liveMatch,
       activeArenaMatchId,
     );
+    void maybePauseGamearenaAtDailyCap(agent, logTail);
     return c.json({
       id: agent.id,
       displayName: agent.displayName,
@@ -1893,4 +1931,22 @@ app.post("/deploy/:id/display-name", async (c) => {
 });
 
 console.log(`[host] listening on :${HOST_PORT}`);
+
+try {
+  loadRuntimeEnv();
+  const config = getRuntimeConfig();
+  const patch = patchAllGamearenaDailyCapGuards(config);
+  if (patch.patched > 0) {
+    console.log(
+      `[host] GameArena daily-cap guards: patched=${patch.patched} stoppedAtCap=${patch.stoppedAtCap}`,
+    );
+  }
+} catch (err) {
+  console.warn("[host] GameArena daily-cap guard patch failed:", err);
+}
+
+setInterval(() => {
+  void sweepGamearenaDailyCaps();
+}, 90_000);
+
 serve({ fetch: app.fetch, port: HOST_PORT });

@@ -87,12 +87,24 @@ export interface GoodAgentWidgetConfig {
   registryUrl: string;
 }
 
-export type GoodAgentWidgetMode = "deploy" | "vouch" | "dashboard" | "full";
+export type GoodAgentWidgetMode =
+  | "deploy"
+  | "vouch"
+  | "dashboard"
+  | "full"
+  /** Deploy + Verify tabs only — for partners with their own post-verify UI (e.g. GameArena native dashboard). */
+  | "onboard";
+
+/** Payload for `onOnboardComplete` after Agent ID is issued in `onboard` mode. */
+export interface GoodAgentOnboardComplete {
+  deployId: string;
+  agentAddress: string;
+}
 
 export interface GoodAgentWidgetProps {
   config: GoodAgentWidgetPartnerConfig;
   wallet: GoodAgentWalletAdapter;
-  /** Which surface to show. `full` = tabbed deploy → vouch → dashboard. */
+  /** Which surface to show. `full` = tabbed deploy → vouch → dashboard. `onboard` = deploy → vouch only. */
   mode?: GoodAgentWidgetMode;
   /** Pre-selected deploy on the Verify tab (legacy: also used as dashboard default). */
   deployId?: string;
@@ -108,7 +120,12 @@ export interface GoodAgentWidgetProps {
   onDashboardSelect?: (deployId: string) => void;
   /** Called after Agent ID is issued. */
   onVouched?: (agentAddress: string) => void;
-  /** Called when agent reaches running status. */
+  /**
+   * Called when verify finishes in `onboard` mode — hand off to your app
+   * (e.g. GameArena partner API for settings / start / stop).
+   */
+  onOnboardComplete?: (result: GoodAgentOnboardComplete) => void;
+  /** Called when agent reaches running status (dashboard tab in `full` mode). */
   onLive?: (deployId: string) => void;
   className?: string;
   /** Replace built-in skill settings UI (advanced partners). */

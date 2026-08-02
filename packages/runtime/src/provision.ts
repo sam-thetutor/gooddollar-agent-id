@@ -3,6 +3,11 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import type { RuntimeConfig } from "./config.js";
+import {
+  GAMEARENA_DAILY_CAP_EXIT_CODE,
+  isGamearenaSkillDir,
+  writeGamearenaPm2StartGuard,
+} from "./gamearena-daily-cap.js";
 import { agentDir } from "./wallet.js";
 
 export interface SkillProvisionInput {
@@ -10,6 +15,8 @@ export interface SkillProvisionInput {
   skillDir: string;
   /** Injected into PM2 env so host PRIVATE_KEY cannot override skill .env */
   env?: Record<string, string>;
+  /** Force legacy npm/skill PM2 even when RUNTIME_V1=1 (GameArena guard patches). */
+  legacyOnly?: boolean;
   /** Option C: single agent-runtime process loading plugins from manifest.json */
   runtimeV1?: {
     manifestPath: string;
@@ -49,7 +56,8 @@ export function writeEcosystemConfig(
   const dir = agentDir(config.agentsRoot, input.deployId);
   mkdirSync(resolve(dir, "logs"), { recursive: true });
 
-  const useRuntimeV1 = Boolean(input.runtimeV1 ?? isRuntimeV1Enabled());
+  const useRuntimeV1 =
+    !input.legacyOnly && Boolean(input.runtimeV1 ?? isRuntimeV1Enabled());
   if (!useRuntimeV1 && !existsSync(resolve(input.skillDir, "package.json"))) {
     throw new Error(`skill package.json not found at ${input.skillDir}`);
   }
@@ -66,6 +74,11 @@ export function writeEcosystemConfig(
     ...input.env,
   };
 
+  const gamearenaGuard =
+    !useRuntimeV1 && isGamearenaSkillDir(input.skillDir)
+      ? writeGamearenaPm2StartGuard(input.skillDir)
+      : null;
+
   const ecosystem = useRuntimeV1
     ? buildRuntimeV1Ecosystem({
         pm2Name,
@@ -79,6 +92,10 @@ export function writeEcosystemConfig(
         skillDir: input.skillDir,
         pm2Env,
         logDir: resolve(dir, "logs"),
+        startScript: gamearenaGuard?.startScript,
+        stopExitCodes: gamearenaGuard
+          ? [GAMEARENA_DAILY_CAP_EXIT_CODE]
+          : undefined,
       });
 
   const ecoPath = resolve(dir, "ecosystem.config.cjs");
@@ -92,17 +109,31 @@ function buildLegacySkillEcosystem(opts: {
   skillDir: string;
   pm2Env: Record<string, string>;
   logDir: string;
+  startScript?: string;
+  stopExitCodes?: number[];
 }): string {
+  const script = opts.startScript
+    ? JSON.stringify(opts.startScript)
+    : JSON.stringify("npm");
+  const args = opts.startScript ? JSON.stringify("") : JSON.stringify("start");
+  const interpreter = opts.startScript
+    ? `\n    interpreter: "bash",`
+    : "";
+  const stopExitCodes =
+    opts.stopExitCodes?.length ?
+      `\n    stop_exit_codes: ${JSON.stringify(opts.stopExitCodes)},`
+    : "";
+
   return `module.exports = {
   apps: [{
     name: ${JSON.stringify(opts.pm2Name)},
     cwd: ${JSON.stringify(opts.skillDir)},
-    script: "npm",
-    args: "start",
+    script: ${script},
+    args: ${args},${interpreter}
     env: ${JSON.stringify(opts.pm2Env, null, 2)},
     autorestart: true,
     max_restarts: 10,
-    min_uptime: "10s",
+    min_uptime: "10s",${stopExitCodes}
     error_file: ${JSON.stringify(resolve(opts.logDir, "err.log"))},
     out_file: ${JSON.stringify(resolve(opts.logDir, "out.log"))},
   }],

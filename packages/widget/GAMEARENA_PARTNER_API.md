@@ -514,6 +514,36 @@ Server-Sent Events stream. GoodAgent proxies GameArena’s upstream SSE with the
 
 ---
 
+## TypeScript client
+
+Use the optional subpath export (does not load the full widget UI):
+
+```tsx
+import { createGameArenaPartnerClient } from "@goodagent/widget/partner-gamearena";
+
+const partner = createGameArenaPartnerClient({
+  // optional when host sets GAMEARENA_PARTNER_API_KEY
+  partnerKey: import.meta.env.VITE_GAMEARENA_PARTNER_KEY,
+});
+
+// After widget mode="onboard" + onOnboardComplete
+const { agents } = await partner.getAgents(wallet.address!);
+const agent = agents[0];
+
+const settings = await partner.getSettings(wallet.address!);
+await partner.updateSettings(wallet.address!, wallet, {
+  MARKOV_STRATEGY: "sequence",
+  RPS_SEQUENCE: "rock,paper,scissors",
+});
+
+const play = await partner.playByDeployId(agent!.deployId, wallet);
+const sseUrl = partner.arenaLiveSseUrl(play.matchId);
+```
+
+Signed write methods use the same wallet `signMessage` flow as the widget dashboard. Errors throw `GameArenaPartnerApiError` with `status`, `code`, and `body`.
+
+---
+
 ## End-to-end integration flow
 
 ```

@@ -283,7 +283,41 @@ createGameArenaWidgetConfig({
 <GoodAgentWidget mode="dashboard" ... /> // monitor existing agents
 ```
 
-For most GameArena flows, **`mode="full"`** (three tabs) is simplest.
+## Recommended: `mode="onboard"` for native GameArena UI
+
+If GameArena hosts deploy + verify in the widget but runs settings, start/stop, and live play in your own app, use **`mode="onboard"`** (Deploy + Verify tabs only). After Agent ID is issued, **`onOnboardComplete`** gives you `{ deployId, agentAddress }` — wire that to the [partner API](./GAMEARENA_PARTNER_API.md).
+
+```tsx
+<GoodAgentWidget
+  mode="onboard"
+  wallet={wallet}
+  config={createGameArenaWidgetConfig({ partnerId: "gamearena" })}
+  onOnboardComplete={({ deployId, agentAddress }) => {
+    // e.g. redirect to your agent dashboard; call partner API with owner wallet
+  }}
+/>
+```
+
+For a self-contained embed (all three steps in-widget), use **`mode="full"`**.
+
+Wire post-verify control with the partner API client:
+
+```tsx
+import { createGameArenaPartnerClient } from "@goodagent/widget/partner-gamearena";
+
+const partner = createGameArenaPartnerClient();
+
+<GoodAgentWidget
+  mode="onboard"
+  ...
+  onOnboardComplete={async ({ deployId }) => {
+    const live = await partner.getLiveByDeployId(deployId);
+    // render your Challenge AI UI
+  }}
+/>
+```
+
+See [GAMEARENA_PARTNER_API.md](./GAMEARENA_PARTNER_API.md) for routes and the full client API.
 
 ---
 

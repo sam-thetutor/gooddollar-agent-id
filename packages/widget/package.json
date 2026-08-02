@@ -36,6 +36,10 @@
     "./privy": {
       "types": "./dist/privy.d.ts",
       "import": "./dist/privy.js"
+    },
+    "./partner-gamearena": {
+      "types": "./dist/partner-gamearena.d.ts",
+      "import": "./dist/partner-gamearena.js"
     }
   },
   "files": [

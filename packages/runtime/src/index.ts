@@ -168,3 +168,24 @@ export {
   playGamearenaMatchOnce,
 } from "./gamearena-play-once.js";
 export type { PlayGamearenaMatchOnceResult } from "./gamearena-play-once.js";
+
+export {
+  GAMEARENA_DAILY_CAP_EXIT_CODE,
+  detectDailyCapFromLog,
+  gamearenaSkillDir,
+  isGamearenaDailyCapReached,
+  isGamearenaSkillDir,
+  readDailyMatchCap,
+  readGamearenaDailyCapState,
+  utcDayString,
+  writeGamearenaPm2StartGuard,
+} from "./gamearena-daily-cap.js";
+
+export {
+  pauseGamearenaAgentAtDailyCap,
+  patchAllGamearenaDailyCapGuards,
+} from "./gamearena-daily-cap-enforce.js";
+export type {
+  PauseGamearenaDailyCapResult,
+  PatchGamearenaDailyCapGuardsResult,
+} from "./gamearena-daily-cap-enforce.js";

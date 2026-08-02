@@ -4,7 +4,6 @@ import { deployNeedsUserVouch } from "../client/host.js";
 import type { DeployStatusResponse } from "../client/host.js";
 import { resolveWidgetConfig } from "../defaults.js";
 import { DeploySessionProvider } from "../deploy-session.js";
-import { useDeployFlow } from "../hooks/useDeployFlow.js";
 import { useOwnerDeploys } from "../hooks/useOwnerDeploys.js";
 import { parseFvCallback } from "../gooddollar.js";
 import { isDeployProvisioning } from "../lib/deploy-progress.js";
@@ -13,7 +12,7 @@ import {
   saveWidgetSession,
   type WidgetSessionTab,
 } from "../session-storage.js";
-import type { GoodAgentWidgetProps } from "../types.js";
+import type { GoodAgentWidgetMode, GoodAgentWidgetProps } from "../types.js";
 import { DeployPanel } from "./DeployPanel.js";
 import { DashboardPanel } from "./DashboardPanel.js";
 import { VouchPanel } from "./VouchPanel.js";
@@ -22,6 +21,36 @@ import { GAMEARENA_SKILL_ID } from "../skill-config.js";
 import "../styles/widget.css";
 
 type Tab = WidgetSessionTab;
+
+function isTabbedWidgetMode(
+  mode: GoodAgentWidgetMode,
+): mode is "full" | "onboard" {
+  return mode === "full" || mode === "onboard";
+}
+
+function visibleTabsForMode(
+  mode: GoodAgentWidgetMode,
+): readonly Tab[] {
+  return mode === "onboard"
+    ? (["deploy", "vouch"] as const)
+    : (["deploy", "vouch", "dashboard"] as const);
+}
+
+function resolveInitialTab(
+  mode: GoodAgentWidgetMode,
+  opts: {
+    fv: boolean;
+    initialTab?: Tab;
+    savedTab?: Tab;
+  },
+): Tab {
+  if (mode === "vouch") return "vouch";
+  if (mode === "dashboard") return "dashboard";
+  if (opts.fv) return "vouch";
+  let tab = opts.initialTab ?? opts.savedTab ?? "deploy";
+  if (mode === "onboard" && tab === "dashboard") tab = "vouch";
+  return tab;
+}
 
 function pickDefaultDashboardDeploy(
   agents: Array<{ id: string; status: string; agentAddress: string | null }>,
@@ -63,6 +92,7 @@ function GoodAgentWidgetBody({
   onVouchSelect,
   onDashboardSelect,
   onVouched,
+  onOnboardComplete,
   onLive,
   className,
   renderSkillConfig,
@@ -108,15 +138,24 @@ function GoodAgentWidgetBody({
     null,
   );
   const autoSwitchedForDeployRef = useRef("");
-  const [tab, setTab] = useState<Tab>(() => {
-    if (mode === "vouch") return "vouch";
-    if (mode === "dashboard") return "dashboard";
-    if (fv) return "vouch";
-    return initialTab ?? saved?.tab ?? "deploy";
-  });
+  const [tab, setTab] = useState<Tab>(() =>
+    resolveInitialTab(mode, {
+      fv: Boolean(fv),
+      initialTab,
+      savedTab: saved?.tab,
+    }),
+  );
   const [hydrated, setHydrated] = useState(false);
 
-  const showTabs = mode === "full";
+  const tabbedMode = isTabbedWidgetMode(mode);
+  const visibleTabs = visibleTabsForMode(mode);
+  const showTabs = tabbedMode;
+  const showDeployPanel =
+    mode === "deploy" || (tabbedMode && tab === "deploy");
+  const showVouchPanel =
+    mode === "vouch" || (tabbedMode && tab === "vouch");
+  const showDashboardPanel =
+    mode === "dashboard" || (mode === "full" && tab === "dashboard");
   const provisioningActive = isDeployProvisioning(deployStatus, deployActiveId);
   const pendingVouchCount = countPendingVouch(ownerDeploys, deployStatus);
 
@@ -158,12 +197,13 @@ function GoodAgentWidgetBody({
       const list =
         ownerDeploys.length > 0 ? ownerDeploys : await refreshDeploys();
 
-      let dashId = saved?.dashboardDeployId ?? "";
-      if (!dashId && list.length) {
-        dashId = pickDefaultDashboardDeploy(list);
+      if (mode !== "onboard") {
+        let dashId = saved?.dashboardDeployId ?? "";
+        if (!dashId && list.length) {
+          dashId = pickDefaultDashboardDeploy(list);
+        }
+        if (dashId) setDashboardDeployId(dashId);
       }
-
-      if (dashId) setDashboardDeployId(dashId);
 
       if (vouchDeployId && !vouchAgentAddress) {
         const match = list.find((d) => d.id === vouchDeployId);
@@ -183,6 +223,7 @@ function GoodAgentWidgetBody({
   }, [
     wallet.address,
     hydrated,
+    mode,
     saved?.dashboardDeployId,
     ownerDeploys,
     refreshDeploys,
@@ -192,17 +233,20 @@ function GoodAgentWidgetBody({
   ]);
 
   useEffect(() => {
+    if (mode === "onboard") return;
     if (!wallet.address || dashboardDeployId || ownerDeploys.length === 0) {
       return;
     }
     const dashId = pickDefaultDashboardDeploy(ownerDeploys);
     if (dashId) setDashboardDeployId(dashId);
-  }, [wallet.address, dashboardDeployId, ownerDeploys]);
+  }, [wallet.address, dashboardDeployId, ownerDeploys, mode]);
 
   useEffect(() => {
     if (!wallet.address) return;
+    const sessionTab =
+      mode === "onboard" && tab === "dashboard" ? "vouch" : tab;
     saveWidgetSession(config.partnerId, wallet.address, {
-      tab,
+      tab: sessionTab,
       deployActiveId: deployActiveId || undefined,
       vouchDeployId: vouchDeployId || undefined,
       vouchAgentAddress: vouchAgentAddress || undefined,
@@ -216,13 +260,14 @@ function GoodAgentWidgetBody({
     dashboardDeployId,
     wallet.address,
     config.partnerId,
+    mode,
   ]);
 
   useEffect(() => {
-    if (tab === "vouch" || tab === "dashboard") {
+    if (tab === "vouch" || (mode === "full" && tab === "dashboard")) {
       void refreshDeploys();
     }
-  }, [tab, refreshDeploys]);
+  }, [tab, refreshDeploys, mode]);
 
   useEffect(() => {
     if (!deployActiveId || !provisioningActive) return;
@@ -263,7 +308,7 @@ function GoodAgentWidgetBody({
 
       {wallet.isConnected && showTabs && (
         <div className="ga-widget-tabs" role="tablist">
-          {(["deploy", "vouch", "dashboard"] as const).map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t}
               type="button"
@@ -282,52 +327,42 @@ function GoodAgentWidgetBody({
         </div>
       )}
 
-      {wallet.isConnected && (mode === "deploy" || showTabs) && (
-        <div
-          className={
-            showTabs && tab !== "deploy" && mode === "full"
-              ? "ga-widget-tab-hidden"
-              : undefined
-          }
-          aria-hidden={showTabs && tab !== "deploy" && mode === "full"}
-        >
-          <DeployPanel
-            deployId={deployActiveId}
-            renderSkillConfig={renderSkillConfig}
-            onStatusChange={handleDeployStatus}
-            onDeployId={(id) => {
-              autoSwitchedForDeployRef.current = "";
-              setDeployActiveId(id);
-              onDeployId?.(id);
-              void refreshDeploys();
-            }}
-            onAwaitingVouch={(agent, id) => {
-              selectVouchTarget(id, agent);
-              void refreshDeploys();
-              if (
-                showTabs &&
-                tab === "deploy" &&
-                autoSwitchedForDeployRef.current !== id
-              ) {
-                autoSwitchedForDeployRef.current = id;
-                setTab("vouch");
-              }
-            }}
-            onGoToVerify={() => {
-              void refreshDeploys();
-              if (showTabs) setTab("vouch");
-            }}
-            onStartNew={() => {
-              autoSwitchedForDeployRef.current = "";
-              setDeployActiveId("");
-              setDeployStatus(null);
-            }}
-          />
-        </div>
+      {wallet.isConnected && showDeployPanel && (
+        <DeployPanel
+          deployId={deployActiveId}
+          renderSkillConfig={renderSkillConfig}
+          onStatusChange={handleDeployStatus}
+          onDeployId={(id) => {
+            autoSwitchedForDeployRef.current = "";
+            setDeployActiveId(id);
+            onDeployId?.(id);
+            void refreshDeploys();
+          }}
+          onAwaitingVouch={(agent, id) => {
+            selectVouchTarget(id, agent);
+            void refreshDeploys();
+            if (
+              tabbedMode &&
+              tab === "deploy" &&
+              autoSwitchedForDeployRef.current !== id
+            ) {
+              autoSwitchedForDeployRef.current = id;
+              setTab("vouch");
+            }
+          }}
+          onGoToVerify={() => {
+            void refreshDeploys();
+            if (tabbedMode) setTab("vouch");
+          }}
+          onStartNew={() => {
+            autoSwitchedForDeployRef.current = "";
+            setDeployActiveId("");
+            setDeployStatus(null);
+          }}
+        />
       )}
 
-      {wallet.isConnected &&
-        (mode === "vouch" || (showTabs && tab === "vouch")) && (
+      {wallet.isConnected && showVouchPanel && (
           <VouchPanel
             deployId={vouchDeployId}
             agentAddress={vouchAgentAddress}
@@ -338,16 +373,26 @@ function GoodAgentWidgetBody({
             onIssued={(a) => {
               onVouched?.(a);
               void refreshDeploys();
-              if (dashboardDeployId !== vouchDeployId && vouchDeployId) {
-                selectDashboardTarget(vouchDeployId);
+              if (mode === "onboard") {
+                if (vouchDeployId) {
+                  onOnboardComplete?.({
+                    deployId: vouchDeployId,
+                    agentAddress: a,
+                  });
+                }
+                return;
               }
-              if (showTabs) setTab("dashboard");
+              if (mode === "full") {
+                if (dashboardDeployId !== vouchDeployId && vouchDeployId) {
+                  selectDashboardTarget(vouchDeployId);
+                }
+                setTab("dashboard");
+              }
             }}
           />
         )}
 
-      {wallet.isConnected &&
-        (mode === "dashboard" || (showTabs && tab === "dashboard")) && (
+      {wallet.isConnected && showDashboardPanel && (
           <DashboardPanel
             deployId={dashboardDeployId}
             ownerDeploys={ownerDeploys}
@@ -356,12 +401,9 @@ function GoodAgentWidgetBody({
             onSelectDeploy={(id) => {
               selectDashboardTarget(id);
             }}
+            onLive={onLive}
           />
         )}
-
-      {wallet.isConnected && mode === "full" && dashboardDeployId && (
-        <LiveWatcher deployId={dashboardDeployId} onLive={onLive} />
-      )}
     </div>
   );
 }
@@ -382,18 +424,3 @@ export function GoodAgentWidget({
   );
 }
 
-function LiveWatcher({
-  deployId,
-  onLive,
-}: {
-  deployId: string;
-  onLive?: (id: string) => void;
-}) {
-  const { isLive } = useDeployFlow({ deployId });
-
-  useEffect(() => {
-    if (isLive) onLive?.(deployId);
-  }, [isLive, deployId, onLive]);
-
-  return null;
-}

@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DeployAgent } from "../client/host.js";
 import { deployNeedsUserVouch, signDeployControl } from "../client/host.js";
-import {
-  GameArenaLiveSection,
-  isGamearenaSkill,
-  useArenaLiveSpectator,
-} from "@goodagent/live-arena";
 import { useWidget } from "../context.js";
 import {
   celoscanUrl,
@@ -26,6 +21,7 @@ import {
   configForSkill,
   dashboardPanelForSkillId,
   hasGamearenaSkill,
+  isGamearenaSkillId,
   isSkillEnabled,
   skillInstallStatusLabel,
   skillShortLabel,
@@ -33,6 +29,7 @@ import {
 } from "../lib/deploy-skills.js";
 import { useDashboard } from "../hooks/useDashboard.js";
 import { AgentSelect } from "./AgentSelect.js";
+import { GameArenaLiveBlock } from "./GameArenaLiveBlock.js";
 import { SkillConfigFields } from "./SkillConfigFields.js";
 import { SkillStatsPanel } from "./SkillStatsPanel.js";
 import type { SkillConfiguration } from "../types.js";
@@ -58,12 +55,14 @@ export function DashboardPanel({
   deploysLoading = false,
   deploysError = null,
   onSelectDeploy,
+  onLive,
 }: {
   deployId: string;
   ownerDeploys?: DeployAgent[];
   deploysLoading?: boolean;
   deploysError?: string | null;
   onSelectDeploy?: (deployId: string, agentAddress?: string | null) => void;
+  onLive?: (deployId: string) => void;
 }) {
   const agents = sortDashboardDeploys(
     ownerDeploys.filter((a) => a.agentAddress),
@@ -126,12 +125,18 @@ export function DashboardPanel({
         label="Your agents"
       />
 
-      {selected && <DashboardDetail deploy={selected} />}
+      {selected && <DashboardDetail deploy={selected} onLive={onLive} />}
     </div>
   );
 }
 
-function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
+function DashboardDetail({
+  deploy,
+  onLive,
+}: {
+  deploy: DeployAgent;
+  onLive?: (deployId: string) => void;
+}) {
   const { wallet, host, config } = useWidget();
   const d = useDashboard(deploy.id, deploy);
   const status = d.status;
@@ -339,23 +344,14 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
   const { config: widgetConfig } = useWidget();
   const skillIdResolved =
     status?.skillId ?? skillIdForDeploy(deploy) ?? null;
-  const gamearenaSkill = status ? hasGamearenaSkill(status) : isGamearenaSkill(skillIdResolved);
+  const gamearenaSkill = status
+    ? hasGamearenaSkill(status)
+    : isGamearenaSkillId(skillIdResolved ?? "");
 
-  const {
-    sseMatchId,
-    sseStatus,
-    liveDisplay,
-    liveFeedState,
-    sseBadgeLabel,
-  } = useArenaLiveSpectator({
-    enabled: gamearenaSkill && showGamearenaPanel,
-    hostBaseUrl: widgetConfig.hostBaseUrl,
-    activeArenaMatchId: status?.activeArenaMatchId,
-    liveMatch: status?.liveMatch,
-    logTail: status?.stats?.logTail,
-    playerLabel: displayName,
-    agentLive: online,
-  });
+  useEffect(() => {
+    if (!onLive || !online) return;
+    onLive(deploy.id);
+  }, [onLive, online, deploy.id]);
 
   return (
     <div className="ga-widget-dash-deck">
@@ -530,13 +526,12 @@ function DashboardDetail({ deploy }: { deploy: DeployAgent }) {
       </div>
 
       {gamearenaSkill && showGamearenaPanel && (
-        <GameArenaLiveSection
-          liveDisplay={liveDisplay}
-          liveFeedState={liveFeedState}
-          sseMatchId={sseMatchId}
-          sseStatus={sseStatus}
-          sseBadgeLabel={sseBadgeLabel}
-          agentName={displayName}
+        <GameArenaLiveBlock
+          hostBaseUrl={widgetConfig.hostBaseUrl}
+          activeArenaMatchId={status?.activeArenaMatchId}
+          liveMatch={status?.liveMatch}
+          logTail={status?.stats?.logTail}
+          playerLabel={displayName}
           agentLive={online}
           title="Live arena"
         />

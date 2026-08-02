@@ -1,10 +1,11 @@
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { spawnSync } from "node:child_process";
 import type { RuntimeConfig } from "./config.js";
 import { agentDir } from "./wallet.js";
 
 const START_LINE = /\[start\] match (\S+)/;
+const DEFAULT_START_TIMEOUT_MS = 90_000;
 
 function parseDotEnv(content: string): Record<string, string> {
   const vars: Record<string, string> = {};
@@ -36,6 +37,16 @@ function loadSkillEnv(skillDir: string): Record<string, string> {
   }
 }
 
+function logTail(output: string, lines = 40): string | undefined {
+  const tail = output.trim().split("\n").slice(-lines).join("\n");
+  return tail || undefined;
+}
+
+function findMatchId(output: string): string | null {
+  const match = START_LINE.exec(output);
+  return match?.[1] ?? null;
+}
+
 export interface PlayGamearenaMatchOnceResult {
   matchId: string | null;
   exitCode: number | null;
@@ -45,23 +56,25 @@ export interface PlayGamearenaMatchOnceResult {
 
 /**
  * Run one off-chain MARKOV match for a hosted deploy (partner "play now").
- * Uses the installed skill package with MAX_MATCHES=1 overrides.
+ * Spawns the skill in the background and returns as soon as the match id
+ * appears in stdout — does not block the host event loop until the match ends.
  */
 export function playGamearenaMatchOnce(
   config: RuntimeConfig,
   deployId: string,
   displayName: string,
-): PlayGamearenaMatchOnceResult {
+  opts?: { startTimeoutMs?: number },
+): Promise<PlayGamearenaMatchOnceResult> {
   const skillDir = resolve(
     agentDir(config.agentsRoot, deployId),
     "skills/gamearena-player",
   );
   if (!existsSync(resolve(skillDir, "package.json"))) {
-    return {
+    return Promise.resolve({
       matchId: null,
       exitCode: null,
       error: "SKILL_NOT_INSTALLED",
-    };
+    });
   }
 
   const baseEnv = loadSkillEnv(skillDir);
@@ -74,38 +87,74 @@ export function playGamearenaMatchOnce(
     DEPLOY_ID: deployId,
   };
 
-  const run = spawnSync("npm", ["start"], {
-    cwd: skillDir,
-    env,
-    encoding: "utf8",
-    timeout: 180_000,
+  const startTimeoutMs = opts?.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS;
+
+  return new Promise((resolvePromise) => {
+    let output = "";
+    let settled = false;
+
+    const finish = (result: PlayGamearenaMatchOnceResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise(result);
+    };
+
+    const child = spawn("npm", ["start"], {
+      cwd: skillDir,
+      env,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    const onChunk = (chunk: Buffer | string) => {
+      output += chunk.toString();
+      const matchId = findMatchId(output);
+      if (matchId) {
+        child.unref();
+        finish({ matchId, exitCode: null, logTail: logTail(output) });
+      }
+    };
+
+    child.stdout?.on("data", onChunk);
+    child.stderr?.on("data", onChunk);
+
+    child.on("error", (err) => {
+      finish({
+        matchId: findMatchId(output),
+        exitCode: null,
+        error: err.message,
+        logTail: logTail(output),
+      });
+    });
+
+    child.on("exit", (code) => {
+      const matchId = findMatchId(output);
+      if (matchId) {
+        finish({ matchId, exitCode: code, logTail: logTail(output) });
+        return;
+      }
+      finish({
+        matchId: null,
+        exitCode: code,
+        error: code === 0 ? "MATCH_NOT_STARTED" : "PLAY_FAILED",
+        logTail: logTail(output),
+      });
+    });
+
+    const timer = setTimeout(() => {
+      const matchId = findMatchId(output);
+      child.unref();
+      if (matchId) {
+        finish({ matchId, exitCode: null, logTail: logTail(output) });
+        return;
+      }
+      finish({
+        matchId: null,
+        exitCode: null,
+        error: "MATCH_START_TIMEOUT",
+        logTail: logTail(output),
+      });
+    }, startTimeoutMs);
   });
-
-  const output = `${run.stdout ?? ""}\n${run.stderr ?? ""}`;
-  const match = START_LINE.exec(output);
-  const logTail = output.trim().split("\n").slice(-40).join("\n") || undefined;
-
-  if (run.error) {
-    return {
-      matchId: match?.[1] ?? null,
-      exitCode: run.status,
-      error: run.error.message,
-      logTail,
-    };
-  }
-
-  if (!match?.[1]) {
-    return {
-      matchId: null,
-      exitCode: run.status,
-      error: run.status === 0 ? "MATCH_NOT_STARTED" : "PLAY_FAILED",
-      logTail,
-    };
-  }
-
-  return {
-    matchId: match[1],
-    exitCode: run.status,
-    logTail,
-  };
 }

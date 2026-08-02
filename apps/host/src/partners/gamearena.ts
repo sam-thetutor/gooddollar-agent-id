@@ -24,6 +24,11 @@ import {
   readGamePassProfile,
   startDeployedAgent,
   stopDeployedAgent,
+  pauseGamearenaAgentAtDailyCap,
+  isGamearenaDailyCapReached,
+  readDailyMatchCap,
+  readGamearenaDailyCapState,
+  gamearenaSkillDir,
   type DeployAgentRecord,
 } from "@goodagent/runtime";
 import {
@@ -56,6 +61,9 @@ export interface GamearenaPartnerAgent {
   status: string;
   verified: boolean;
   readyToPlay: boolean;
+  dailyCapReached: boolean;
+  matchesToday: number | null;
+  dailyMatchCap: number | null;
   activeMatchId: string | null;
   livePhase: "starting" | "playing" | null;
   liveWatchUrl: string | null;
@@ -183,6 +191,25 @@ function toDeployAgentRecord(agent: DeployAgent): DeployAgentRecord {
   };
 }
 
+function readPartnerDailyCap(
+  agentsRoot: string,
+  deployId: string,
+): {
+  dailyCapReached: boolean;
+  matchesToday: number | null;
+  dailyMatchCap: number | null;
+} {
+  const skillDir = gamearenaSkillDir(agentsRoot, deployId);
+  if (!existsSync(resolve(skillDir, "package.json"))) {
+    return { dailyCapReached: false, matchesToday: null, dailyMatchCap: null };
+  }
+  const dailyMatchCap = readDailyMatchCap(skillDir);
+  const state = readGamearenaDailyCapState(skillDir);
+  const matchesToday = state?.matchesToday ?? null;
+  const dailyCapReached = isGamearenaDailyCapReached(agentsRoot, deployId);
+  return { dailyCapReached, matchesToday, dailyMatchCap };
+}
+
 async function buildPartnerAgentSnapshot(
   agent: DeployAgent,
   ctx: GamearenaPartnerHostContext,
@@ -211,6 +238,24 @@ async function buildPartnerAgentSnapshot(
 
   if (agent.agentAddress) {
     const logTail = readAgentLogTail(runtimeConfig.agentsRoot, agent.id, 48);
+    if (agent.status === "running") {
+      const pauseResult = await pauseGamearenaAgentAtDailyCap(
+        runtimeConfig,
+        agent.id,
+        {
+          logTail,
+          onPaused: async () => {
+            await updateDeployedAgent(agent.id, { status: "paused" });
+          },
+        },
+      );
+      if (
+        pauseResult.action === "paused" ||
+        pauseResult.action === "already_stopped"
+      ) {
+        agent = { ...agent, status: "paused" };
+      }
+    }
     const [liveMatch, storedMatchId] = await Promise.all([
       getDeployLiveMatch(agent.id),
       getActiveArenaMatchId(agent.id),
@@ -235,6 +280,8 @@ async function buildPartnerAgentSnapshot(
   const skillInstalled = Boolean(
     findGamearenaSkillInstall(agent.skills)?.status === "installed",
   );
+  const dailyCap = readPartnerDailyCap(runtimeConfig.agentsRoot, agent.id);
+  const baseReady = verified && provisioned && skillInstalled;
 
   const liveWatchUrl =
     activeMatchId && livePhase
@@ -249,7 +296,10 @@ async function buildPartnerAgentSnapshot(
     gamePassUsername,
     status: agent.status,
     verified,
-    readyToPlay: verified && provisioned && skillInstalled,
+    readyToPlay: baseReady && !dailyCap.dailyCapReached,
+    dailyCapReached: dailyCap.dailyCapReached,
+    matchesToday: dailyCap.matchesToday,
+    dailyMatchCap: dailyCap.dailyMatchCap,
     activeMatchId,
     livePhase,
     liveWatchUrl,
@@ -316,6 +366,9 @@ function partnerSettingsPayload(
   const verified = Boolean(verify?.valid && verify?.agentProven);
   const provisioned = Boolean(agent.agentAddress && agent.pm2Name);
   const skillInstalled = install?.status === "installed";
+  loadRuntimeEnv();
+  const dailyCap = readPartnerDailyCap(getRuntimeConfig().agentsRoot, agent.id);
+  const baseReady = verified && provisioned && skillInstalled;
 
   return {
     deployId: agent.id,
@@ -324,7 +377,10 @@ function partnerSettingsPayload(
     ownerWallet: agent.ownerWallet,
     status: agent.status,
     verified,
-    readyToPlay: verified && provisioned && skillInstalled,
+    readyToPlay: baseReady && !dailyCap.dailyCapReached,
+    dailyCapReached: dailyCap.dailyCapReached,
+    matchesToday: dailyCap.matchesToday,
+    dailyMatchCap: dailyCap.dailyMatchCap,
     configuration: pickGamearenaPartnerConfiguration(raw),
   };
 }
@@ -679,6 +735,17 @@ export function registerGamearenaPartnerRoutes(
       );
     }
 
+    if (snapshot.dailyCapReached) {
+      return c.json(
+        {
+          error: "DAILY_CAP_REACHED",
+          message: `Agent has played ${snapshot.matchesToday ?? "?"} of ${snapshot.dailyMatchCap ?? "?"} matches today. Try again after UTC midnight.`,
+          ...snapshot,
+        },
+        409,
+      );
+    }
+
     loadRuntimeEnv();
     const runtimeConfig = getRuntimeConfig();
 
@@ -691,7 +758,7 @@ export function registerGamearenaPartnerRoutes(
       }
     }
 
-    const playResult = playGamearenaMatchOnce(
+    const playResult = await playGamearenaMatchOnce(
       runtimeConfig,
       agent.id,
       agent.displayName,

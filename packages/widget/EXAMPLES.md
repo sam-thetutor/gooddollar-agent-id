@@ -62,6 +62,16 @@ import { GoodAgentWidget, createGameArenaWidgetConfig } from "@goodagent/widget"
 
 ```tsx
 <GoodAgentWidget mode="deploy" wallet={wallet} config={config} />
+
+// GameArena native UI — deploy + verify in widget, control via partner API
+<GoodAgentWidget
+  mode="onboard"
+  wallet={wallet}
+  config={createGameArenaWidgetConfig({ partnerId: "gamearena" })}
+  onOnboardComplete={({ deployId, agentAddress }) => {
+    console.log("Ready for partner API", deployId, agentAddress);
+  }}
+/>
 ```
 
 ## 6. Scoped theme (CSS)
