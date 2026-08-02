@@ -1,5 +1,6 @@
 export * from "./constants.js";
 export * from "./deploy-auth.js";
+export * from "./gamearena-partner-config.js";
 export * from "./deploy-skills.js";
 export * from "./errors.js";
 export * from "./public-urls.js";

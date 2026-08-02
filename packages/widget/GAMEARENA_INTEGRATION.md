@@ -325,6 +325,45 @@ curl https://goodagentids.xyz/host/health
 
 ## Partner API — owner wallet → agent (GameArena site)
 
+Deploy stays in the GoodAgent widget. After deploy + verify, GameArena native UI uses these **partner routes** for settings, play, and live watch.
+
+**Base:** `https://goodagentids.xyz/host/partners/gamearena`
+
+**Auth:**
+- **Read routes** — public; pass `?owner=0x…` (or `ownerWallet`)
+- **Write routes** — owner wallet signature (same format as widget dashboard) **plus** `x-partner-key` header when `GAMEARENA_PARTNER_API_KEY` is set on the host
+
+**Signature message** (mutating routes):
+
+```
+GoodAgent deploy control
+Action: configuration   ← or resume | pause | play
+Deploy: {deployId}
+Issued: {unixMs}
+```
+
+Body includes `{ ownerWallet, signature, issuedAt, configuration? }`.
+
+### Route index
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/agents?owner=0x…` | — | Resolve first GameArena agent + live state |
+| `GET` | `/agents/:deployId` | — | Single agent snapshot |
+| `GET` | `/settings/schema` | — | Field definitions for your settings UI |
+| `GET` | `/settings?owner=0x…` | — | Current config for first agent |
+| `GET` | `/agents/:deployId/settings` | — | Current config by deploy id |
+| `PATCH` | `/settings?owner=0x…` | sign + partner key | Save config patches |
+| `PATCH` | `/agents/:deployId/settings` | sign + partner key | Save config by deploy id |
+| `POST` | `/agents/:deployId/start` | sign + partner key | Resume PM2 (continuous play loop) |
+| `POST` | `/agents/:deployId/stop` | sign + partner key | Pause PM2 |
+| `POST` | `/play?owner=0x…` | sign + partner key | **Play one match now** |
+| `POST` | `/agents/:deployId/play` | sign + partner key | Play one match by deploy id |
+| `GET` | `/live?owner=0x…` | — | Poll active match / watch URL |
+| `GET` | `/agents/:deployId/live` | — | Poll live state by deploy id |
+
+### Discovery — `GET /agents?owner=0x…`
+
 When a player connects their wallet on GameArena, look up their hosted agent in **one call**. For the competition, **only the first GameArena deploy** for that wallet is returned (oldest by `createdAt`). Additional deploys are ignored in this API for now.
 
 ```bash
@@ -346,6 +385,8 @@ Also accepts `?ownerWallet=` (same as `/deploy`).
       "ownerWallet": "0xabc…",
       "gamePassUsername": "rockbot",
       "status": "running",
+      "verified": true,
+      "readyToPlay": true,
       "activeMatchId": "am_88d1f6d9…",
       "livePhase": "playing",
       "liveWatchUrl": "https://goodagentids.xyz/host/arena/live/am_88d1f6d9…"
@@ -360,10 +401,72 @@ If the user has no GameArena deploy yet, `agents` is `[]`.
 |-------|---------|
 | `agentAddress` | Play wallet — this is what hits your arena as the player |
 | `gamePassUsername` | On-chain GameArena Pass name (from config or chain) |
+| `verified` | Agent ID vouch complete at `/issue` |
+| `readyToPlay` | Verified + provisioned + skill installed |
 | `activeMatchId` | Current match id while `livePhase` is `starting` or `playing` |
 | `liveWatchUrl` | SSE proxy for spectators (`GET …/arena/live/:matchId`) |
 
 `liveWatchUrl` is `null` when the agent is idle between matches.
+
+### Settings — `GET /settings/schema` + `GET/PATCH /settings`
+
+Fetch schema to render a native settings screen:
+
+```bash
+curl "https://goodagentids.xyz/host/partners/gamearena/settings/schema"
+curl "https://goodagentids.xyz/host/partners/gamearena/settings?owner=0xYourWallet"
+```
+
+Save (owner-signed):
+
+```bash
+curl -X PATCH "https://goodagentids.xyz/host/partners/gamearena/settings?owner=0xYourWallet" \
+  -H "Content-Type: application/json" \
+  -H "x-partner-key: $GAMEARENA_PARTNER_API_KEY" \
+  -d '{
+    "ownerWallet": "0xYourWallet",
+    "issuedAt": 1722614400000,
+    "signature": "0x…",
+    "configuration": {
+      "MARKOV_STRATEGY": "random",
+      "DAILY_MATCH_CAP": "50"
+    }
+  }'
+```
+
+Configurable keys include `PLAY_MODE`, `MARKOV_STRATEGY`, `RPS_SEQUENCE`, `RPS_FIXED`, caps, refills, wager, and round pace — see `/settings/schema`.
+
+### Play now — `POST /play?owner=0x…`
+
+Triggers **one immediate MARKOV match** on GoodAgent's VPS (agent brain picks moves; GameArena scoped key handles arena HTTP):
+
+```bash
+curl -X POST "https://goodagentids.xyz/host/partners/gamearena/play?owner=0xYourWallet" \
+  -H "Content-Type: application/json" \
+  -H "x-partner-key: $GAMEARENA_PARTNER_API_KEY" \
+  -d '{
+    "ownerWallet": "0xYourWallet",
+    "issuedAt": 1722614400000,
+    "signature": "0x…"
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "deployId": "dep_…",
+  "agentAddress": "0xplay…",
+  "matchId": "am_88d1f6d9…",
+  "livePhase": "starting",
+  "liveWatchUrl": "https://goodagentids.xyz/host/arena/live/am_88d1f6d9…",
+  "pollUrl": "https://goodagentids.xyz/host/partners/gamearena/agents/dep_…"
+}
+```
+
+Poll `GET /agents/:deployId` or `GET /live?owner=0x…` until `livePhase` is `playing`, then stream `liveWatchUrl`.
+
+**Errors:** `NO_AGENT`, `AGENT_NOT_VERIFIED`, `NOT_PROVISIONED`, `AGENT_BUSY`, `PLAY_FAILED`, `INVALID_PARTNER_KEY`
 
 ### One agent per wallet (competition)
 

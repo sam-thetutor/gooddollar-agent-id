@@ -1,5 +1,7 @@
 export const CELO_CHAIN_ID = 42220 as const;
 
+export const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1" as const;
+
 export const GOODDOLLAR_ENVIRONMENTS = ["production", "development"] as const;
 export type GoodDollarEnv = (typeof GOODDOLLAR_ENVIRONMENTS)[number];
 

@@ -69,7 +69,6 @@ import {
   setGamePassUsername,
   syncAgentAfterPassRename,
   agentDir,
-  readGamePassProfile,
   GAMEARENA_SKILL_ID,
   collectDeploySkillStats,
   collectSkillStats,
@@ -91,6 +90,9 @@ import {
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { verifyDeployControl } from "./deploy-control-auth.js";
+import {
+  registerGamearenaPartnerRoutes,
+} from "./partners/gamearena.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rootEnv = resolve(here, "../../../.env");
@@ -102,7 +104,6 @@ const API_BASE = process.env.API_BASE ?? GOODAGENT_API_URL;
 const DEV_SKIP_PAYMENT = process.env.HOST_DEV_SKIP_PAYMENT === "1";
 const HOST_PUBLIC_BASE =
   process.env.PUBLIC_HOST_URL?.trim()?.replace(/\/$/, "") || GOODAGENT_HOST_URL;
-const OWNER_WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
 
 const app = new Hono();
 const runningPipelines = new Set<string>();
@@ -212,81 +213,6 @@ function gamearenaFirstAgentConflict(existing: {
       agentAddress: existing.agentAddress,
       status: existing.status,
     },
-  };
-}
-
-interface GamearenaPartnerAgent {
-  deployId: string;
-  displayName: string;
-  agentAddress: string | null;
-  ownerWallet: string | null;
-  gamePassUsername: string | null;
-  status: string;
-  activeMatchId: string | null;
-  livePhase: "starting" | "playing" | null;
-  liveWatchUrl: string | null;
-}
-
-async function buildGamearenaPartnerAgent(
-  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
-  rpcUrl: string,
-  agentsRoot: string,
-): Promise<GamearenaPartnerAgent> {
-  const config = parseDeployConfiguration(agent);
-  let gamePassUsername =
-    config.GAME_PASS_USERNAME?.trim() || config.PLAYER_NAME?.trim() || null;
-
-  if (!gamePassUsername && agent.agentAddress) {
-    try {
-      const profile = await readGamePassProfile(
-        agent.agentAddress as `0x${string}`,
-        rpcUrl,
-      );
-      gamePassUsername = profile.username || null;
-    } catch {
-      // On-chain username lookup is best-effort for partners.
-    }
-  }
-
-  let activeMatchId: string | null = null;
-  let livePhase: GamearenaPartnerAgent["livePhase"] = null;
-
-  if (agent.agentAddress) {
-    const logTail = readAgentLogTail(agentsRoot, agent.id, 48);
-    const [liveMatch, storedMatchId] = await Promise.all([
-      getDeployLiveMatch(agent.id),
-      getActiveArenaMatchId(agent.id),
-    ]);
-    const resolved = resolveLiveArenaFromLog(
-      logTail,
-      agent.displayName,
-      liveMatch,
-      storedMatchId,
-    );
-    activeMatchId = resolved.activeArenaMatchId;
-    if (
-      resolved.liveMatch?.phase === "starting" ||
-      resolved.liveMatch?.phase === "playing"
-    ) {
-      livePhase = resolved.liveMatch.phase;
-    }
-  }
-
-  const liveWatchUrl =
-    activeMatchId && livePhase
-      ? `${HOST_PUBLIC_BASE}/arena/live/${encodeURIComponent(activeMatchId)}`
-      : null;
-
-  return {
-    deployId: agent.id,
-    displayName: agent.displayName,
-    agentAddress: agent.agentAddress,
-    ownerWallet: agent.ownerWallet,
-    gamePassUsername,
-    status: agent.status,
-    activeMatchId,
-    livePhase,
-    liveWatchUrl,
   };
 }
 
@@ -558,6 +484,12 @@ async function fetchVerifyStatus(
   }
 }
 
+registerGamearenaPartnerRoutes(app, {
+  publicHostBase: HOST_PUBLIC_BASE,
+  apiBase: API_BASE,
+  fetchVerifyStatus,
+});
+
 const GAMEARENA_SSE_UPSTREAM =
   process.env.GAMEARENA_LIVE_SSE_URL?.trim() ||
   "https://game-backend-production-6130.up.railway.app";
@@ -676,30 +608,6 @@ app.get("/leaderboard/gamearena", async (c) => {
     console.warn("[host] gamearena leaderboard:", err);
     return c.json({ error: "LADDER_FAILED" }, 500);
   }
-});
-
-/** GameArena partner API — owner wallet → deployed play agents + live match. */
-app.get("/partners/gamearena/agents", async (c) => {
-  const ownerRaw = c.req.query("owner") ?? c.req.query("ownerWallet");
-  if (!ownerRaw?.trim()) {
-    return c.json({ error: "owner query param required" }, 400);
-  }
-  const ownerWallet = ownerRaw.trim();
-  if (!OWNER_WALLET_RE.test(ownerWallet)) {
-    return c.json({ error: "INVALID_OWNER" }, 400);
-  }
-
-  loadRuntimeEnv();
-  const config = getRuntimeConfig();
-  const first = await getFirstGamearenaDeployForOwner(ownerWallet);
-  const snapshots = first
-    ? [await buildGamearenaPartnerAgent(first, config.rpcUrl, config.agentsRoot)]
-    : [];
-
-  return c.json({
-    owner: ownerWallet.toLowerCase(),
-    agents: snapshots,
-  });
 });
 
 app.get("/deploy", async (c) => {

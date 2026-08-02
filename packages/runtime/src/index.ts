@@ -163,3 +163,8 @@ export type { BaselineRecord, BaselineSource } from "./baseline-balance.js";
 
 export { deployClaimBotSpike } from "./deploy-claim-bot.js";
 export type { DeploySpikeOptions, DeploySpikeResult } from "./deploy-claim-bot.js";
+
+export {
+  playGamearenaMatchOnce,
+} from "./gamearena-play-once.js";
+export type { PlayGamearenaMatchOnceResult } from "./gamearena-play-once.js";
