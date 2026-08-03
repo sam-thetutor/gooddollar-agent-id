@@ -22,7 +22,8 @@ import {
   messageToWire,
 } from "../constants.js";
 import { useWidget } from "../context.js";
-import { parseFvCallback, startGoodDollarFaceVerification } from "../gooddollar.js";
+import { parseFvCallback } from "../gooddollar.js";
+import { useOwnerIdentity } from "./useOwnerIdentity.js";
 
 type AgentSnapshot = readonly [Address, bigint, bigint];
 
@@ -45,13 +46,15 @@ async function withTimeout<T>(
 }
 
 export function useVouchFlow(agentAddress: string, ttlDays = 30) {
-  const { wallet, api, config, vaultAddress, rpcUrl } = useWidget();
-  const [identity, setIdentity] = useState<{
-    verified: boolean;
-    root: string | null;
-  } | null>(null);
-  const [identityLoading, setIdentityLoading] = useState(true);
-  const [identityError, setIdentityError] = useState(false);
+  const { wallet, api, vaultAddress, rpcUrl } = useWidget();
+  const {
+    identity,
+    loading: identityLoading,
+    error: identityError,
+    verifyBusy,
+    verifyError,
+    verifyFv,
+  } = useOwnerIdentity();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<string | null>(null);
@@ -109,26 +112,6 @@ export function useVouchFlow(agentAddress: string, ttlDays = 30) {
   }, [agentAddr, publicClient, vaultAddress, wallet.address]);
 
   useEffect(() => {
-    if (!wallet.address) {
-      setIdentity(null);
-      setIdentityLoading(false);
-      return;
-    }
-    setIdentityError(false);
-    setIdentityLoading(true);
-    api
-      .getWalletOverview(wallet.address)
-      .then((d) =>
-        setIdentity({
-          verified: d.verify.isWhitelisted,
-          root: d.verify.root,
-        }),
-      )
-      .catch(() => setIdentityError(true))
-      .finally(() => setIdentityLoading(false));
-  }, [wallet.address, api]);
-
-  useEffect(() => {
     void refreshChain();
   }, [refreshChain]);
 
@@ -148,10 +131,6 @@ export function useVouchFlow(agentAddress: string, ttlDays = 30) {
   const meetsMin = bondReady || (minStake > 0n && stakeAmount >= minStake);
   const approved =
     approvedLocal || (allowance >= minStake && minStake > 0n);
-
-  const verifyFv = useCallback(async () => {
-    await startGoodDollarFaceVerification(wallet, config, rpcUrl);
-  }, [wallet, config, rpcUrl]);
 
   const approve = useCallback(async () => {
     if (!wallet.address) return;
@@ -256,6 +235,8 @@ export function useVouchFlow(agentAddress: string, ttlDays = 30) {
     busy,
     error,
     issued,
+    verifyBusy,
+    verifyError,
     verifyFv,
     approve,
     stake,

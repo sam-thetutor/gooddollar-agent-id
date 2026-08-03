@@ -17,6 +17,7 @@ import {
 } from "../skill-config.js";
 import type { SkillConfiguration } from "../types.js";
 import { isDeployProvisioning } from "../lib/deploy-progress.js";
+import { useOwnerIdentity } from "./useOwnerIdentity.js";
 
 function buildInitialSkillConfigs(
   skillIds: string[],
@@ -38,6 +39,7 @@ export function useDeployFlow(opts?: {
   const { config, wallet, host } = useWidget();
   const skillId = useActiveDeploySkillId(config);
   const selectedSkillIds = useSelectedDeploySkillIds(config);
+  const ownerIdentity = useOwnerIdentity();
 
   const [deployId, setDeployId] = useState(opts?.deployId ?? "");
   const [displayName, setDisplayName] = useState(
@@ -162,6 +164,11 @@ export function useDeployFlow(opts?: {
 
   const deploy = useCallback(async () => {
     if (!wallet.address) throw new Error("Connect your wallet first");
+    if (!ownerIdentity.verified) {
+      throw new Error(
+        "GoodDollar face verification is required before deploying an agent.",
+      );
+    }
     if (
       selectedSkillIds.includes(UBI_REMINDER_SKILL_ID) &&
       !telegramBotToken.trim()
@@ -211,6 +218,7 @@ export function useDeployFlow(opts?: {
     telegramBotToken,
     opts,
     poll,
+    ownerIdentity.verified,
   ]);
 
   const startAgent = useCallback(async () => {
@@ -255,6 +263,7 @@ export function useDeployFlow(opts?: {
   }, [deployId, wallet, host, poll]);
 
   const canDeploy =
+    ownerIdentity.verified &&
     selectedSkillIds.length > 0 &&
     (!selectedSkillIds.includes(UBI_REMINDER_SKILL_ID) ||
       telegramBotToken.trim().length > 0);
@@ -281,5 +290,6 @@ export function useDeployFlow(opts?: {
     needsVouch: deployNeedsUserVouch(status),
     isLive: status?.status === "running",
     canDeploy,
+    ownerIdentity,
   };
 }

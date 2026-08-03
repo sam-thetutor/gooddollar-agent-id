@@ -503,8 +503,9 @@ export interface Pm2ProcessSnapshot {
   restarts?: number;
 }
 
-const PM2_LIST_CACHE_MS = 3_000;
+const PM2_LIST_CACHE_MS = 30_000;
 let pm2ListCache: { at: number; list: Pm2ProcessRow[] } | null = null;
+let pm2ListRefreshing = false;
 
 type Pm2ProcessRow = {
   name: string;
@@ -521,6 +522,12 @@ function readPm2ProcessList(): Pm2ProcessRow[] | null {
   if (pm2ListCache && now - pm2ListCache.at < PM2_LIST_CACHE_MS) {
     return pm2ListCache.list;
   }
+  // Stale-while-revalidate: execSync pm2 jlist can take 1–5s on a loaded VPS.
+  // Return the previous list while another request refreshes to avoid stampedes.
+  if (pm2ListRefreshing && pm2ListCache) {
+    return pm2ListCache.list;
+  }
+  pm2ListRefreshing = true;
   try {
     const raw = execSync("pm2 jlist", { encoding: "utf8" });
     const list = JSON.parse(raw) as Pm2ProcessRow[];
@@ -528,6 +535,8 @@ function readPm2ProcessList(): Pm2ProcessRow[] | null {
     return list;
   } catch {
     return pm2ListCache?.list ?? null;
+  } finally {
+    pm2ListRefreshing = false;
   }
 }
 

@@ -220,7 +220,10 @@ export async function assertOwnerVouchedForAgent(
   ownerWallet: Address,
   opts?: { deployId?: string; skillId?: string },
 ): Promise<void> {
-  const res = await fetch(`${config.apiBase}/agent/verify/${agentAddress}`);
+  const verifyBase = config.verifyApiBase.replace(/\/$/, "");
+  const res = await fetch(`${verifyBase}/agent/verify/${agentAddress}`, {
+    signal: AbortSignal.timeout(5_000),
+  });
   if (!res.ok) {
     throw new Error(
       "Agent has no Agent ID yet — vouch with your verified wallet at /issue before going live.",

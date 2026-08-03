@@ -200,11 +200,14 @@ function VouchSteps({
                 <button
                   type="button"
                   className="ga-widget-btn ga-widget-btn-compact"
-                  disabled={Boolean(v.busy)}
+                  disabled={Boolean(v.busy) || v.verifyBusy}
                   onClick={() => void v.verifyFv()}
                 >
-                  Verify
+                  {v.verifyBusy ? "…" : "Verify"}
                 </button>
+                {v.verifyError && (
+                  <p className="ga-widget-error">{v.verifyError}</p>
+                )}
               </>
             )}
             {step1Done && (

@@ -34,6 +34,8 @@ export interface RuntimeConfig {
   /** CELO sent to each new agent wallet for gas (default 0.5). */
   agentInitialCelo: string;
   apiBase: string;
+  /** Loopback verify API when host runs beside API (HOST_VERIFY_API_BASE). */
+  verifyApiBase: string;
   rpcUrl: string;
   databaseUrl: string | null;
   encryptionSecret: string | null;
@@ -80,6 +82,10 @@ export function getRuntimeConfig(): RuntimeConfig {
     agentInitialGs,
     agentInitialCelo,
     apiBase: process.env.API_BASE ?? GOODAGENT_API_URL,
+    verifyApiBase:
+      process.env.HOST_VERIFY_API_BASE?.trim()?.replace(/\/$/, "") ||
+      process.env.API_BASE ||
+      GOODAGENT_API_URL,
     rpcUrl: process.env.CELO_RPC_URL ?? "https://forno.celo.org",
     databaseUrl: process.env.DATABASE_URL ?? null,
     encryptionSecret: process.env.ENCRYPTION_SECRET ?? null,

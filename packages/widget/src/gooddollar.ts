@@ -48,6 +48,9 @@ export async function startGoodDollarFaceVerification(
 
   const walletClient = {
     account: { address: wallet.address },
+    chain: celo,
+    // IdentitySDK.init() calls getAddresses() before generateFVLink runs.
+    getAddresses: async () => [wallet.address],
     signMessage: async ({ message }: { message: string | { raw: Hex } }) => {
       const text =
         typeof message === "string"
@@ -66,11 +69,23 @@ export async function startGoodDollarFaceVerification(
     env,
   });
 
-  const link = await sdk.generateFVLink(
+  const linkResult = await sdk.generateFVLink(
     false,
     buildFvCallbackUrl(config.fvCallbackUrl),
     celo.id as SupportedChains,
   );
+  const link =
+    typeof linkResult === "string"
+      ? linkResult
+      : typeof linkResult === "object" &&
+          linkResult !== null &&
+          "link" in linkResult
+        ? String((linkResult as { link: unknown }).link ?? "")
+        : "";
+
+  if (!link) {
+    throw new Error("GoodDollar did not return a verification link.");
+  }
 
   if (typeof window !== "undefined") {
     window.location.assign(link);

@@ -103,13 +103,16 @@ loadEnv({ path: existsSync(rootEnv) ? rootEnv : undefined, override: true });
 const HOST_PORT = Number(process.env.HOST_PORT ?? 3002);
 const HOST_INTERNAL_SECRET = process.env.HOST_INTERNAL_SECRET?.trim() ?? "";
 const API_BASE = process.env.API_BASE ?? GOODAGENT_API_URL;
+/** Loopback verify API on the VPS — avoids nginx round-trip on every partner poll. */
+const VERIFY_API_BASE =
+  process.env.HOST_VERIFY_API_BASE?.trim()?.replace(/\/$/, "") || API_BASE;
 const DEV_SKIP_PAYMENT = process.env.HOST_DEV_SKIP_PAYMENT === "1";
 const HOST_PUBLIC_BASE =
   process.env.PUBLIC_HOST_URL?.trim()?.replace(/\/$/, "") || GOODAGENT_HOST_URL;
 
 const app = new Hono();
 const runningPipelines = new Set<string>();
-const VERIFY_CACHE_MS = 60_000;
+const VERIFY_CACHE_MS = 300_000;
 type VerifyStatus = {
   valid?: boolean;
   agentProven?: boolean;
@@ -507,7 +510,7 @@ async function fetchVerifyStatus(
     return cached.data;
   }
   try {
-    const res = await fetch(`${API_BASE}/agent/verify/${agentAddress}`, {
+    const res = await fetch(`${VERIFY_API_BASE}/agent/verify/${agentAddress}`, {
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) return null;

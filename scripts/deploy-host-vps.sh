@@ -101,6 +101,7 @@ fi
 
 append_or_replace AGENTS_ROOT "$AGENTS_ROOT" "$REMOTE_ENV"
 append_or_replace API_BASE "https://goodagentids.xyz/api" "$REMOTE_ENV"
+append_or_replace HOST_VERIFY_API_BASE "http://127.0.0.1:3009" "$REMOTE_ENV"
 append_or_replace HOST_PORT "3010" "$REMOTE_ENV"
 append_or_replace HOST_DEV_SKIP_PAYMENT "1" "$REMOTE_ENV"
 append_or_replace AGENT_INITIAL_GS "200" "$REMOTE_ENV"

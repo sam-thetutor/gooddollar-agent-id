@@ -214,6 +214,7 @@ async function buildPartnerAgentSnapshot(
   agent: DeployAgent,
   ctx: GamearenaPartnerHostContext,
   verify: { valid?: boolean; agentProven?: boolean } | null,
+  opts?: { skipDailyCapPause?: boolean },
 ): Promise<GamearenaPartnerAgent> {
   loadRuntimeEnv();
   const runtimeConfig = getRuntimeConfig();
@@ -221,45 +222,52 @@ async function buildPartnerAgentSnapshot(
   let gamePassUsername =
     config.GAME_PASS_USERNAME?.trim() || config.PLAYER_NAME?.trim() || null;
 
-  if (!gamePassUsername && agent.agentAddress) {
-    try {
-      const profile = await readGamePassProfile(
-        agent.agentAddress as `0x${string}`,
-        runtimeConfig.rpcUrl,
-      );
-      gamePassUsername = profile.username || null;
-    } catch {
-      /* best-effort */
-    }
+  const logTail = agent.agentAddress
+    ? readAgentLogTail(runtimeConfig.agentsRoot, agent.id, 48)
+    : null;
+
+  const usernamePromise =
+    !gamePassUsername && agent.agentAddress
+      ? readGamePassProfile(
+          agent.agentAddress as `0x${string}`,
+          runtimeConfig.rpcUrl,
+        )
+          .then((profile) => profile.username || null)
+          .catch(() => null)
+      : Promise.resolve<string | null>(null);
+
+  const pausePromise =
+    !opts?.skipDailyCapPause && agent.status === "running"
+      ? pauseGamearenaAgentAtDailyCap(runtimeConfig, agent.id, {
+          logTail,
+          onPaused: async () => {
+            await updateDeployedAgent(agent.id, { status: "paused" });
+          },
+        })
+      : Promise.resolve<
+          Awaited<ReturnType<typeof pauseGamearenaAgentAtDailyCap>>
+        >({ action: "not_capped" as const });
+
+  const [resolvedUsername, pauseResult, liveMatch, storedMatchId] =
+    await Promise.all([
+      usernamePromise,
+      pausePromise,
+      getDeployLiveMatch(agent.id),
+      getActiveArenaMatchId(agent.id),
+    ]);
+
+  if (resolvedUsername) gamePassUsername = resolvedUsername;
+  if (
+    pauseResult.action === "paused" ||
+    pauseResult.action === "already_stopped"
+  ) {
+    agent = { ...agent, status: "paused" };
   }
 
   let activeMatchId: string | null = null;
   let livePhase: GamearenaPartnerAgent["livePhase"] = null;
 
   if (agent.agentAddress) {
-    const logTail = readAgentLogTail(runtimeConfig.agentsRoot, agent.id, 48);
-    if (agent.status === "running") {
-      const pauseResult = await pauseGamearenaAgentAtDailyCap(
-        runtimeConfig,
-        agent.id,
-        {
-          logTail,
-          onPaused: async () => {
-            await updateDeployedAgent(agent.id, { status: "paused" });
-          },
-        },
-      );
-      if (
-        pauseResult.action === "paused" ||
-        pauseResult.action === "already_stopped"
-      ) {
-        agent = { ...agent, status: "paused" };
-      }
-    }
-    const [liveMatch, storedMatchId] = await Promise.all([
-      getDeployLiveMatch(agent.id),
-      getActiveArenaMatchId(agent.id),
-    ]);
     const resolved = resolveLiveArenaFromLog(
       logTail,
       agent.displayName,
@@ -303,6 +311,24 @@ async function buildPartnerAgentSnapshot(
     activeMatchId,
     livePhase,
     liveWatchUrl,
+  };
+}
+
+function mergePartnerVerify(
+  snapshot: GamearenaPartnerAgent,
+  verify: { valid?: boolean; agentProven?: boolean } | null,
+  agent: DeployAgent,
+): GamearenaPartnerAgent {
+  const verified = Boolean(verify?.valid && verify?.agentProven);
+  const provisioned = Boolean(agent.agentAddress && agent.pm2Name);
+  const skillInstalled = Boolean(
+    findGamearenaSkillInstall(agent.skills)?.status === "installed",
+  );
+  const baseReady = verified && provisioned && skillInstalled;
+  return {
+    ...snapshot,
+    verified,
+    readyToPlay: baseReady && !snapshot.dailyCapReached,
   };
 }
 
@@ -439,6 +465,8 @@ export function registerGamearenaPartnerRoutes(
     return c.json(gamearenaPartnerSettingsSchema());
   });
 
+const partnerReadOpts = { skipDailyCapPause: true } as const;
+
   app.get("/partners/gamearena/agents", async (c) => {
     const ownerWallet = parseOwnerWallet(
       c.req.query("owner") ?? c.req.query("ownerWallet"),
@@ -453,11 +481,16 @@ export function registerGamearenaPartnerRoutes(
       return c.json({ owner: ownerWallet, agents: [] });
     }
 
-    const verify = first.agentAddress
-      ? await ctx.fetchVerifyStatus(first.agentAddress)
-      : null;
-    const snapshot = await buildPartnerAgentSnapshot(first, ctx, verify);
-    return c.json({ owner: ownerWallet, agents: [snapshot] });
+    const [verify, snapshot] = await Promise.all([
+      first.agentAddress
+        ? ctx.fetchVerifyStatus(first.agentAddress)
+        : Promise.resolve(null),
+      buildPartnerAgentSnapshot(first, ctx, null, partnerReadOpts),
+    ]);
+    return c.json({
+      owner: ownerWallet,
+      agents: [mergePartnerVerify(snapshot, verify, first)],
+    });
   });
 
   app.get("/partners/gamearena/agents/:deployId", async (c) => {
@@ -465,11 +498,13 @@ export function registerGamearenaPartnerRoutes(
     const agent = await resolvePartnerAgentByDeployId(deployId);
     if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
 
-    const verify = agent.agentAddress
-      ? await ctx.fetchVerifyStatus(agent.agentAddress)
-      : null;
-    const snapshot = await buildPartnerAgentSnapshot(agent, ctx, verify);
-    return c.json(snapshot);
+    const [verify, snapshot] = await Promise.all([
+      agent.agentAddress
+        ? ctx.fetchVerifyStatus(agent.agentAddress)
+        : Promise.resolve(null),
+      buildPartnerAgentSnapshot(agent, ctx, null, partnerReadOpts),
+    ]);
+    return c.json(mergePartnerVerify(snapshot, verify, agent));
   });
 
   app.get("/partners/gamearena/settings", async (c) => {
@@ -720,10 +755,13 @@ export function registerGamearenaPartnerRoutes(
       );
     }
 
-    const verify = agent.agentAddress
-      ? await ctx.fetchVerifyStatus(agent.agentAddress)
-      : null;
-    const snapshot = await buildPartnerAgentSnapshot(agent, ctx, verify);
+    const [verify, snapshotBase] = await Promise.all([
+      agent.agentAddress
+        ? ctx.fetchVerifyStatus(agent.agentAddress)
+        : Promise.resolve(null),
+      buildPartnerAgentSnapshot(agent, ctx, null, partnerReadOpts),
+    ]);
+    const snapshot = mergePartnerVerify(snapshotBase, verify, agent);
     if (snapshot.livePhase === "starting" || snapshot.livePhase === "playing") {
       return c.json(
         {
@@ -844,10 +882,12 @@ export function registerGamearenaPartnerRoutes(
       return c.json({ error: "NO_AGENT", owner: ownerWallet }, 404);
     }
 
-    const verify = agent.agentAddress
-      ? await ctx.fetchVerifyStatus(agent.agentAddress)
-      : null;
-    const snapshot = await buildPartnerAgentSnapshot(agent, ctx, verify);
+    const snapshot = await buildPartnerAgentSnapshot(
+      agent,
+      ctx,
+      null,
+      partnerReadOpts,
+    );
     return c.json({
       owner: ownerWallet,
       deployId: snapshot.deployId,
@@ -861,10 +901,12 @@ export function registerGamearenaPartnerRoutes(
     const agent = await resolvePartnerAgentByDeployId(c.req.param("deployId"));
     if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
 
-    const verify = agent.agentAddress
-      ? await ctx.fetchVerifyStatus(agent.agentAddress)
-      : null;
-    const snapshot = await buildPartnerAgentSnapshot(agent, ctx, verify);
+    const snapshot = await buildPartnerAgentSnapshot(
+      agent,
+      ctx,
+      null,
+      partnerReadOpts,
+    );
     return c.json({
       deployId: snapshot.deployId,
       activeMatchId: snapshot.activeMatchId,

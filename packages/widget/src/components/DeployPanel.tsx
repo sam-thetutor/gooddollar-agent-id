@@ -88,6 +88,56 @@ export function DeployPanel({
 
       {!flow.deployId && (
         <>
+          {flow.ownerIdentity.loading && (
+            <p className="ga-widget-muted">Checking GoodDollar verification…</p>
+          )}
+
+          {flow.ownerIdentity.error && (
+            <div className="ga-widget-stack">
+              <p className="ga-widget-error">
+                Could not check your GoodDollar status. Try again.
+              </p>
+              <button
+                type="button"
+                className="ga-widget-btn"
+                onClick={() => void flow.ownerIdentity.refresh()}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!flow.ownerIdentity.loading &&
+            !flow.ownerIdentity.error &&
+            !flow.ownerIdentity.verified && (
+              <div className="ga-widget-stack ga-widget-deploy-gate">
+                <p className="ga-widget-warn">
+                  GoodDollar face verification is required before you deploy.
+                </p>
+                <p className="ga-widget-muted">
+                  Verify your wallet first. Without it, your agent cannot be
+                  vouched or go live.
+                </p>
+                <button
+                  type="button"
+                  className="ga-widget-btn ga-widget-btn-primary"
+                  disabled={flow.busy || flow.ownerIdentity.verifyBusy}
+                  onClick={() => void flow.ownerIdentity.verifyFv()}
+                >
+                  {flow.ownerIdentity.verifyBusy
+                    ? "Opening GoodDollar…"
+                    : "Verify with GoodDollar"}
+                </button>
+                {flow.ownerIdentity.verifyError && (
+                  <p className="ga-widget-error">
+                    {flow.ownerIdentity.verifyError}
+                  </p>
+                )}
+              </div>
+            )}
+
+          {flow.ownerIdentity.verified && (
+            <>
           {marketplace && registryLoading && (
             <p className="ga-widget-muted">Loading skills…</p>
           )}
@@ -164,6 +214,8 @@ export function DeployPanel({
           >
             {flow.busy ? "Deploying…" : "Deploy agent"}
           </button>
+            </>
+          )}
         </>
       )}
 

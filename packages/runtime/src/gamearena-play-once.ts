@@ -83,6 +83,8 @@ export function playGamearenaMatchOnce(
     ...baseEnv,
     MAX_MATCHES: "1",
     MATCH_INTERVAL_SECONDS: "1",
+    /** Partner "play now" — skip PM2 stagger jitter (can be 0–120s per deploy id). */
+    STARTUP_JITTER_SECONDS: "0",
     AGENT_DISPLAY_NAME: displayName,
     DEPLOY_ID: deployId,
   };
