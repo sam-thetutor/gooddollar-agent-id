@@ -170,6 +170,22 @@ export {
 export type { PlayGamearenaMatchOnceResult } from "./gamearena-play-once.js";
 
 export {
+  gamearenaAgentApiStart,
+  gamearenaAgentApiThrow,
+  isGamearenaAgentApiConfigured,
+} from "./gamearena-agent-api.js";
+export type {
+  GamearenaStartMatchResult,
+  GamearenaThrowMoveResult,
+} from "./gamearena-agent-api.js";
+
+export {
+  gamearenaPlayFast,
+  spawnThrowWorkerDetached,
+} from "./gamearena-play-fast.js";
+export type { GamearenaPlayFastResult } from "./gamearena-play-fast.js";
+
+export {
   GAMEARENA_DAILY_CAP_EXIT_CODE,
   detectDailyCapFromLog,
   gamearenaSkillDir,

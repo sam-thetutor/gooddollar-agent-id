@@ -20,6 +20,8 @@ import {
   getRuntimeConfig,
   loadRuntimeEnv,
   playGamearenaMatchOnce,
+  gamearenaPlayFast,
+  isGamearenaAgentApiConfigured,
   pm2ProcessName,
   readGamePassProfile,
   startDeployedAgent,
@@ -792,33 +794,50 @@ const partnerReadOpts = { skipDailyCapPause: true } as const;
         stopDeployedAgent(agent.id);
         await updateDeployedAgent(agent.id, { status: "paused" });
       } catch (err) {
-        console.warn(`[host] partner play: stop pm2 before one-shot for ${agent.id}:`, err);
+        console.warn(`[host] partner play: stop pm2 before play for ${agent.id}:`, err);
       }
     }
 
-    const playResult = await playGamearenaMatchOnce(
-      runtimeConfig,
-      agent.id,
-      agent.displayName,
-    );
+    let matchId: string | null = null;
+    let playError: string | undefined;
+    let playLogTail: string | undefined;
 
-    if (!playResult.matchId) {
+    if (isGamearenaAgentApiConfigured() && agent.agentAddress) {
+      const fast = await gamearenaPlayFast(
+        runtimeConfig,
+        agent.id,
+        agent.agentAddress,
+      );
+      matchId = fast.matchId;
+      playError = fast.error;
+    } else {
+      const playResult = await playGamearenaMatchOnce(
+        runtimeConfig,
+        agent.id,
+        agent.displayName,
+      );
+      matchId = playResult.matchId;
+      playError = playResult.error;
+      playLogTail = playResult.logTail;
+    }
+
+    if (!matchId) {
       return c.json(
         {
-          error: playResult.error ?? "PLAY_FAILED",
+          error: playError ?? "PLAY_FAILED",
           deployId: agent.id,
           agentAddress: agent.agentAddress,
-          logTail: playResult.logTail,
+          logTail: playLogTail,
         },
         502,
       );
     }
 
-    const liveWatchUrl = `${ctx.publicHostBase}/arena/live/${encodeURIComponent(playResult.matchId)}`;
+    const liveWatchUrl = `${ctx.publicHostBase}/arena/live/${encodeURIComponent(matchId)}`;
     return c.json({
       deployId: agent.id,
       agentAddress: agent.agentAddress,
-      matchId: playResult.matchId,
+      matchId,
       livePhase: "starting" as const,
       liveWatchUrl,
       pollUrl: livePollUrl(ctx, agent.id),
