@@ -27,8 +27,8 @@ http://localhost:3002/partners/gamearena
 | `GET` | `/agents/:deployId/settings` | — | Current config for one deploy |
 | `PATCH` | `/settings?owner=0x…` | Sign + partner key* | Update agent settings |
 | `PATCH` | `/agents/:deployId/settings` | Sign + partner key* | Update settings by deploy id |
-| `POST` | `/agents/:deployId/start` | Sign + partner key* | Resume PM2 (continuous play loop) |
-| `POST` | `/agents/:deployId/stop` | Sign + partner key* | Pause PM2 |
+| `POST` | `/agents/:deployId/start` | Sign + partner key* | **Ready check** — stops autopilot PM2; does not start a match |
+| `POST` | `/agents/:deployId/stop` | Sign + partner key* | Pause PM2 and clear live match state |
 | `POST` | `/play?owner=0x…` | Sign + partner key* | **Play one MARKOV match now** |
 | `POST` | `/agents/:deployId/play` | Sign + partner key* | Play one match by deploy id |
 | `GET` | `/live?owner=0x…` | — | Poll active match + watch URL |
@@ -347,7 +347,9 @@ Same as `PATCH /settings?owner=` but keyed by deploy id. Same auth and body.
 
 ### `POST /agents/:deployId/start`
 
-Resume the agent’s PM2 process (continuous play loop on interval). Use when you want the agent to keep playing autonomously.
+**Ready check** for the partner flow. Stops any autopilot PM2 match loop and confirms the agent is provisioned and verified. **Does not start a match** — use [`POST /play`](#post-playowner0x) for “Send agent in”.
+
+Optional: call after deploy/verify to confirm `readyToPlay: true`. Not required before `/play`.
 
 **Example**
 
@@ -367,8 +369,12 @@ curl -X POST "https://goodagentids.xyz/host/partners/gamearena/agents/cmrxqb1eq�
 ```json
 {
   "deployId": "cmrxqb1eq…",
-  "status": "running",
-  "pm2Name": "ga-cmrxqb1eq033ekqnqxrc20qhr"
+  "status": "ready",
+  "readyToPlay": true,
+  "pm2Name": "ga-cmrxqb1eq033ekqnqxrc20qhr",
+  "verified": true,
+  "dailyCapReached": false,
+  "livePhase": null
 }
 ```
 
@@ -379,7 +385,7 @@ curl -X POST "https://goodagentids.xyz/host/partners/gamearena/agents/cmrxqb1eq�
 | `403` | `AGENT_NOT_VERIFIED` | Not vouched at `/issue` |
 | `409` | `NOT_PROVISIONED` | Agent never fully provisioned |
 | `409` | `GAMEARENA_FIRST_AGENT_ONLY` | Not first deploy |
-| `500` | `PM2_START_FAILED` | PM2 could not start |
+| `500` | `START_FAILED` | Could not reset agent to ready state |
 
 ---
 
@@ -454,7 +460,7 @@ curl -X POST "https://goodagentids.xyz/host/partners/gamearena/play?owner=0xa479
 | `403` | `AGENT_NOT_VERIFIED` | Not vouched |
 | `409` | `NOT_PROVISIONED` | Not provisioned |
 | `409` | `SKILL_NOT_INSTALLED` | GameArena skill missing |
-| `409` | `AGENT_BUSY` | Already in a match |
+| `409` | `AGENT_BUSY` | Fast-path match already in progress (poll until `livePhase` is null) |
 | `409` | `GAMEARENA_FIRST_AGENT_ONLY` | Not first deploy |
 | `502` | `PLAY_FAILED`, `MATCH_NOT_STARTED` | Arena/skill error (see `logTail` in body) |
 

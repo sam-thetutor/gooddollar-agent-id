@@ -403,7 +403,7 @@ Body includes `{ ownerWallet, signature, issuedAt, configuration? }`.
 | `GET` | `/agents/:deployId/settings` | — | Current config by deploy id |
 | `PATCH` | `/settings?owner=0x…` | sign + partner key | Save config patches |
 | `PATCH` | `/agents/:deployId/settings` | sign + partner key | Save config by deploy id |
-| `POST` | `/agents/:deployId/start` | sign + partner key | Resume PM2 (continuous play loop) |
+| `POST` | `/agents/:deployId/start` | sign + partner key | Ready check — stops autopilot PM2; does not start a match |
 | `POST` | `/agents/:deployId/stop` | sign + partner key | Pause PM2 |
 | `POST` | `/play?owner=0x…` | sign + partner key | **Play one match now** |
 | `POST` | `/agents/:deployId/play` | sign + partner key | Play one match by deploy id |

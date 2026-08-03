@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gamearenaAgentApiThrow } from "./gamearena-agent-api.js";
+import { postDeployActivity } from "./gamearena-host-activity.js";
 
 const MOVE_NAMES = ["rock", "paper", "scissors"] as const;
 
@@ -100,34 +101,67 @@ export async function runGamearenaThrowWorker(
 
   console.log(`[throws] match ${matchId} · strategy ${env.MARKOV_STRATEGY ?? "random"}`);
 
-  while (true) {
-    const move = strategy.nextMove(lastAiMove);
-    const round = await gamearenaAgentApiThrow(matchId, move);
+  try {
+    while (true) {
+      const move = strategy.nextMove(lastAiMove);
+      const round = await gamearenaAgentApiThrow(matchId, move);
 
-    if (round.error) {
-      console.error(`[throws] match ${matchId} error: ${round.error}`);
-      break;
-    }
+      if (round.error) {
+        console.error(`[throws] match ${matchId} error: ${round.error}`);
+        break;
+      }
 
-    if (typeof round.aiMove === "number") {
-      lastAiMove = round.aiMove;
-    }
+      if (typeof round.aiMove === "number") {
+        lastAiMove = round.aiMove;
+      }
 
-    const label = MOVE_NAMES[move] ?? String(move);
-    console.log(
-      `[throws] match ${matchId} r${round.round}: ${label} vs ${round.aiMove} → ${round.result}`,
-    );
-
-    if (round.final) {
+      const label = MOVE_NAMES[move] ?? String(move);
       console.log(
-        `[throws] match ${matchId} done · ${round.final.outcome} in ${round.final.totalRounds} rounds`,
+        `[throws] match ${matchId} r${round.round}: ${label} vs ${round.aiMove} → ${round.result}`,
       );
-      break;
-    }
 
-    if (roundPaceMs > 0) {
-      await sleep(roundPaceMs);
+      if (round.final) {
+        console.log(
+          `[throws] match ${matchId} done · ${round.final.outcome} in ${round.final.totalRounds} rounds`,
+        );
+        await postDeployActivity(skillDir, {
+          type: "live_match",
+          matchId,
+          phase: "ended",
+          updatedAt: new Date().toISOString(),
+          round: round.round,
+          playerMove: round.playerMove,
+          aiMove: round.aiMove,
+          playerMoveLabel: label,
+          roundResult: round.result,
+          final: round.final,
+        });
+        break;
+      }
+
+      await postDeployActivity(skillDir, {
+        type: "live_match",
+        matchId,
+        phase: "playing",
+        updatedAt: new Date().toISOString(),
+        round: round.round,
+        playerMove: round.playerMove,
+        aiMove: round.aiMove,
+        playerMoveLabel: label,
+        roundResult: round.result,
+      });
+
+      if (roundPaceMs > 0) {
+        await sleep(roundPaceMs);
+      }
     }
+  } finally {
+    await postDeployActivity(skillDir, {
+      type: "arena_match",
+      matchId,
+      action: "end",
+    });
+    await postDeployActivity(skillDir, { type: "live_clear" });
   }
 }
 

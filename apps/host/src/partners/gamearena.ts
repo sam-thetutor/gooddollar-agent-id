@@ -5,6 +5,8 @@ import {
   getFirstGamearenaDeployForOwner,
   getDeployLiveMatch,
   getActiveArenaMatchId,
+  setActiveArenaMatchId,
+  setDeployLiveMatch,
   parseDeployConfiguration,
   patchSkillInstallConfiguration,
   primarySkillInstall,
@@ -16,15 +18,14 @@ import { inferLiveMatchFromLogTail } from "@goodagent/live-arena";
 import {
   agentDir,
   applyDeployConfiguration,
-  assertOwnerVouchedForAgent,
   getRuntimeConfig,
   loadRuntimeEnv,
   playGamearenaMatchOnce,
   gamearenaPlayFast,
   isGamearenaAgentApiConfigured,
   pm2ProcessName,
+  pm2ProcessSnapshot,
   readGamePassProfile,
-  startDeployedAgent,
   stopDeployedAgent,
   pauseGamearenaAgentAtDailyCap,
   isGamearenaDailyCapReached,
@@ -51,7 +52,12 @@ export interface GamearenaPartnerHostContext {
   apiBase: string;
   fetchVerifyStatus: (
     agentAddress: string,
-  ) => Promise<{ valid?: boolean; agentProven?: boolean } | null>;
+  ) => Promise<{
+    valid?: boolean;
+    agentProven?: boolean;
+    operator?: string;
+    reason?: string;
+  } | null>;
 }
 
 export interface GamearenaPartnerAgent {
@@ -76,10 +82,12 @@ function resolveLiveArenaFromLog(
   displayName: string,
   liveMatch: Awaited<ReturnType<typeof getDeployLiveMatch>>,
   activeArenaMatchId: string | null,
+  pm2Online: boolean,
 ): { liveMatch: Awaited<ReturnType<typeof getDeployLiveMatch>>; activeArenaMatchId: string | null } {
-  const inferred = logTail?.trim()
-    ? inferLiveMatchFromLogTail(logTail, displayName)
-    : null;
+  const inferred =
+    pm2Online && logTail?.trim()
+      ? inferLiveMatchFromLogTail(logTail, displayName)
+      : null;
 
   if (inferred?.phase === "starting" || inferred?.phase === "playing") {
     const hostActive =
@@ -90,11 +98,47 @@ function resolveLiveArenaFromLog(
     };
   }
 
-  if (liveMatch?.phase === "starting" || liveMatch?.phase === "playing") {
+  if (
+    liveMatch?.phase === "starting" ||
+    liveMatch?.phase === "playing"
+  ) {
     return { liveMatch, activeArenaMatchId };
   }
 
   return { liveMatch: null, activeArenaMatchId: null };
+}
+
+async function clearPartnerPlayLiveState(deployId: string): Promise<void> {
+  await setActiveArenaMatchId(deployId, null);
+  await setDeployLiveMatch(deployId, null);
+}
+
+/** True when a partner fast-path throw worker match is still in flight (DB-tracked). */
+async function isPartnerFastPathBusy(deployId: string): Promise<boolean> {
+  const [liveMatch, activeId] = await Promise.all([
+    getDeployLiveMatch(deployId),
+    getActiveArenaMatchId(deployId),
+  ]);
+  if (!activeId) return false;
+  return (
+    liveMatch?.matchId === activeId &&
+    (liveMatch.phase === "starting" || liveMatch.phase === "playing")
+  );
+}
+
+async function stopPartnerAutopilot(agent: DeployAgent): Promise<void> {
+  if (agent.status === "running") {
+    const snap = pm2ProcessSnapshot(pm2ProcessName(agent.id));
+    if (snap?.online) {
+      try {
+        stopDeployedAgent(agent.id);
+      } catch (err) {
+        console.warn(`[host] partner stop autopilot pm2 for ${agent.id}:`, err);
+      }
+    }
+    await updateDeployedAgent(agent.id, { status: "paused" });
+  }
+  await clearPartnerPlayLiveState(agent.id);
 }
 
 function readAgentLogTail(
@@ -266,6 +310,10 @@ async function buildPartnerAgentSnapshot(
     agent = { ...agent, status: "paused" };
   }
 
+  const pm2Online = Boolean(
+    agent.pm2Name && pm2ProcessSnapshot(pm2ProcessName(agent.id))?.online,
+  );
+
   let activeMatchId: string | null = null;
   let livePhase: GamearenaPartnerAgent["livePhase"] = null;
 
@@ -275,6 +323,7 @@ async function buildPartnerAgentSnapshot(
       agent.displayName,
       liveMatch,
       storedMatchId,
+      pm2Online,
     );
     activeMatchId = resolved.activeArenaMatchId;
     if (
@@ -413,7 +462,10 @@ function partnerSettingsPayload(
   };
 }
 
-async function ensureAgentPlayReady(agent: DeployAgent) {
+async function ensureAgentPlayReady(
+  agent: DeployAgent,
+  ctx: GamearenaPartnerHostContext,
+) {
   if (!agent.agentAddress || !agent.pm2Name) {
     return {
       error: "NOT_PROVISIONED" as const,
@@ -426,20 +478,27 @@ async function ensureAgentPlayReady(agent: DeployAgent) {
     return { error: "OWNER_NOT_SET" as const, status: 400 as const };
   }
 
-  loadRuntimeEnv();
-  const runtimeConfig = getRuntimeConfig();
-  try {
-    await assertOwnerVouchedForAgent(
-      runtimeConfig,
-      agent.agentAddress as `0x${string}`,
-      agent.ownerWallet as `0x${string}`,
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+  const verify = await ctx.fetchVerifyStatus(agent.agentAddress);
+  if (!verify?.valid || !verify?.agentProven) {
+    const message =
+      verify?.reason === "not_found"
+        ? "Vouch for this agent at /issue using your GoodDollar-verified wallet."
+        : `Agent ID is not valid (${verify?.reason ?? "unknown"}). Complete /issue with your wallet.`;
     return {
       error: "AGENT_NOT_VERIFIED" as const,
       status: 403 as const,
       message,
+    };
+  }
+
+  if (
+    verify.operator?.toLowerCase() !== agent.ownerWallet.toLowerCase()
+  ) {
+    return {
+      error: "AGENT_NOT_VERIFIED" as const,
+      status: 403 as const,
+      message:
+        "The Agent ID must be issued from your owner wallet — reconnect with the same wallet you used to deploy and vouch at /issue.",
     };
   }
 
@@ -685,7 +744,7 @@ const partnerReadOpts = { skipDailyCapPause: true } as const;
       return c.json({ error: "NOT_PROVISIONED" }, 409);
     }
 
-    const readyErr = await ensureAgentPlayReady(agent);
+    const readyErr = await ensureAgentPlayReady(agent, ctx);
     if (readyErr) {
       return c.json(
         { error: readyErr.error, message: readyErr.message },
@@ -694,22 +753,34 @@ const partnerReadOpts = { skipDailyCapPause: true } as const;
     }
 
     loadRuntimeEnv();
-    const runtimeConfig = getRuntimeConfig();
     try {
-      startDeployedAgent(runtimeConfig, deployId);
-      const updated = await updateDeployedAgent(deployId, {
-        status: "running",
-        lastError: null,
-        deployedAt: agent.deployedAt ?? new Date(),
-      });
+      await stopPartnerAutopilot(agent);
+
+      const [verify, snapshotBase] = await Promise.all([
+        agent.agentAddress
+          ? ctx.fetchVerifyStatus(agent.agentAddress)
+          : Promise.resolve(null),
+        buildPartnerAgentSnapshot(
+          { ...agent, status: "paused" },
+          ctx,
+          null,
+          partnerReadOpts,
+        ),
+      ]);
+      const merged = mergePartnerVerify(snapshotBase, verify, agent);
+
       return c.json({
         deployId,
-        status: updated.status,
+        status: "ready" as const,
+        readyToPlay: merged.readyToPlay,
         pm2Name: pm2ProcessName(deployId),
+        verified: merged.verified,
+        dailyCapReached: merged.dailyCapReached,
+        livePhase: merged.livePhase,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return c.json({ error: "PM2_START_FAILED", message }, 500);
+      return c.json({ error: "START_FAILED", message }, 500);
     }
   });
 
@@ -736,6 +807,7 @@ const partnerReadOpts = { skipDailyCapPause: true } as const;
       }
     }
 
+    await clearPartnerPlayLiveState(deployId);
     const updated = await updateDeployedAgent(deployId, { status: "paused" });
     return c.json({ deployId, status: updated.status });
   });
@@ -749,7 +821,7 @@ const partnerReadOpts = { skipDailyCapPause: true } as const;
       );
     }
 
-    const readyErr = await ensureAgentPlayReady(agent);
+    const readyErr = await ensureAgentPlayReady(agent, ctx);
     if (readyErr) {
       return c.json(
         { error: readyErr.error, message: readyErr.message },
@@ -757,25 +829,18 @@ const partnerReadOpts = { skipDailyCapPause: true } as const;
       );
     }
 
-    const [verify, snapshotBase] = await Promise.all([
-      agent.agentAddress
-        ? ctx.fetchVerifyStatus(agent.agentAddress)
-        : Promise.resolve(null),
-      buildPartnerAgentSnapshot(agent, ctx, null, partnerReadOpts),
-    ]);
-    const snapshot = mergePartnerVerify(snapshotBase, verify, agent);
-    if (snapshot.livePhase === "starting" || snapshot.livePhase === "playing") {
-      return c.json(
-        {
-          error: "AGENT_BUSY",
-          message: "Agent is already in a match.",
-          ...snapshot,
-        },
-        409,
-      );
-    }
+    loadRuntimeEnv();
+    const runtimeConfig = getRuntimeConfig();
 
-    if (snapshot.dailyCapReached) {
+    const dailyCap = readPartnerDailyCap(runtimeConfig.agentsRoot, agent.id);
+    if (dailyCap.dailyCapReached) {
+      const [verify, snapshotBase] = await Promise.all([
+        agent.agentAddress
+          ? ctx.fetchVerifyStatus(agent.agentAddress)
+          : Promise.resolve(null),
+        buildPartnerAgentSnapshot(agent, ctx, null, partnerReadOpts),
+      ]);
+      const snapshot = mergePartnerVerify(snapshotBase, verify, agent);
       return c.json(
         {
           error: "DAILY_CAP_REACHED",
@@ -786,17 +851,25 @@ const partnerReadOpts = { skipDailyCapPause: true } as const;
       );
     }
 
-    loadRuntimeEnv();
-    const runtimeConfig = getRuntimeConfig();
-
-    if (agent.pm2Name && agent.status === "running") {
-      try {
-        stopDeployedAgent(agent.id);
-        await updateDeployedAgent(agent.id, { status: "paused" });
-      } catch (err) {
-        console.warn(`[host] partner play: stop pm2 before play for ${agent.id}:`, err);
-      }
+    if (await isPartnerFastPathBusy(agent.id)) {
+      const [verify, snapshotBase] = await Promise.all([
+        agent.agentAddress
+          ? ctx.fetchVerifyStatus(agent.agentAddress)
+          : Promise.resolve(null),
+        buildPartnerAgentSnapshot(agent, ctx, null, partnerReadOpts),
+      ]);
+      const snapshot = mergePartnerVerify(snapshotBase, verify, agent);
+      return c.json(
+        {
+          error: "AGENT_BUSY",
+          message: "Agent is already in a match.",
+          ...snapshot,
+        },
+        409,
+      );
     }
+
+    await stopPartnerAutopilot(agent);
 
     let matchId: string | null = null;
     let playError: string | undefined;
@@ -832,6 +905,16 @@ const partnerReadOpts = { skipDailyCapPause: true } as const;
         502,
       );
     }
+
+    const now = new Date().toISOString();
+    await Promise.all([
+      setActiveArenaMatchId(agent.id, matchId),
+      setDeployLiveMatch(agent.id, {
+        matchId,
+        phase: "starting",
+        updatedAt: now,
+      }),
+    ]);
 
     const liveWatchUrl = `${ctx.publicHostBase}/arena/live/${encodeURIComponent(matchId)}`;
     return c.json({

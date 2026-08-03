@@ -116,6 +116,7 @@ const VERIFY_CACHE_MS = 300_000;
 type VerifyStatus = {
   valid?: boolean;
   agentProven?: boolean;
+  operator?: string;
   reason?: string;
 };
 
