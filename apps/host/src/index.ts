@@ -95,6 +95,9 @@ import { verifyDeployControl } from "./deploy-control-auth.js";
 import {
   registerGamearenaPartnerRoutes,
 } from "./partners/gamearena.js";
+import {
+  registerActionOrderPartnerRoutes,
+} from "./partners/actionorder.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rootEnv = resolve(here, "../../../.env");
@@ -526,6 +529,11 @@ async function fetchVerifyStatus(
 registerGamearenaPartnerRoutes(app, {
   publicHostBase: HOST_PUBLIC_BASE,
   apiBase: API_BASE,
+  fetchVerifyStatus,
+});
+
+registerActionOrderPartnerRoutes(app, {
+  publicHostBase: HOST_PUBLIC_BASE,
   fetchVerifyStatus,
 });
 

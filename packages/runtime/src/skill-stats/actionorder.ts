@@ -90,10 +90,11 @@ export const actionOrderSkillStatsAdapter: SkillStatsAdapter = {
     const losses = merged.filter((m) => m.result === "lost").length;
     const unresolved = merged.filter((m) => m.result === "unresolved").length;
     const day = new Date().toISOString().slice(0, 10);
+    const dbToday = merged.filter((m) => m.at.startsWith(day)).length;
     const matchesToday =
       fileState?.day === day
-        ? (fileState.matchesToday ?? merged.filter((m) => m.at.startsWith(day)).length)
-        : merged.filter((m) => m.at.startsWith(day)).length;
+        ? Math.max(fileState.matchesToday ?? 0, dbToday)
+        : dbToday;
 
     return {
       skillId: ctx.skillId,

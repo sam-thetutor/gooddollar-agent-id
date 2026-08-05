@@ -195,6 +195,7 @@ export async function maxWalletDerivationIndex(): Promise<number> {
 }
 
 export const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1";
+export const ACTIONORDER_SKILL_ID = "gaming/card-fighter/actionorder_vshouse";
 
 /** Deploy statuses that no longer block a new GameArena entry. */
 const GAMEARENA_NON_BLOCKING_STATUSES: DeployStatus[] = ["failed", "stopped"];
@@ -247,6 +248,44 @@ export function getFirstGamearenaDeployForOwner(
       skills: {
         some: {
           skillId: GAMEARENA_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+    include: { skills: true },
+  });
+}
+
+/** Action Order skill deploys for one owner wallet (partner lookup). */
+export function listActionOrderDeploysForOwner(
+  ownerWallet: string,
+): Promise<(DeployedAgent & { skills: SkillInstall[] })[]> {
+  return prisma.deployedAgent.findMany({
+    where: {
+      ownerWallet: ownerWallet.toLowerCase(),
+      skills: {
+        some: {
+          skillId: ACTIONORDER_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    include: { skills: true },
+  });
+}
+
+/** First Action Order deploy for an owner (oldest by createdAt). */
+export function getFirstActionOrderDeployForOwner(
+  ownerWallet: string,
+): Promise<(DeployedAgent & { skills: SkillInstall[] }) | null> {
+  return prisma.deployedAgent.findFirst({
+    where: {
+      ownerWallet: ownerWallet.toLowerCase(),
+      skills: {
+        some: {
+          skillId: ACTIONORDER_SKILL_ID,
           status: { not: "disabled" },
         },
       },

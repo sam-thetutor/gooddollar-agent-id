@@ -170,6 +170,12 @@ export {
 export type { PlayGamearenaMatchOnceResult } from "./gamearena-play-once.js";
 
 export {
+  playActionOrderMatchOnce,
+  actionorderSkillDir,
+} from "./actionorder-play-once.js";
+export type { PlayActionOrderMatchOnceResult } from "./actionorder-play-once.js";
+
+export {
   gamearenaAgentApiStart,
   gamearenaAgentApiThrow,
   isGamearenaAgentApiConfigured,

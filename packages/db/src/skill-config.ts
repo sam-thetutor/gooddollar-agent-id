@@ -40,6 +40,20 @@ export function findGamearenaSkillInstall(
   return skills.find((s) => s.skillId.includes("gamearena"));
 }
 
+export function findActionOrderSkillInstall(
+  skills: SkillInstall[],
+): SkillInstall | undefined {
+  return skills.find((s) => s.skillId.includes("actionorder"));
+}
+
+export function findEnabledActionOrderSkillInstall(
+  skills: SkillInstall[],
+): SkillInstall | undefined {
+  return skills.find(
+    (s) => s.skillId.includes("actionorder") && s.status !== "disabled",
+  );
+}
+
 /** GameArena skill that is not disabled in manifest/DB. */
 export function findEnabledGamearenaSkillInstall(
   skills: SkillInstall[],
