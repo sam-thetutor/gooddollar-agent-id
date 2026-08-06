@@ -63,9 +63,11 @@ export {
   buildActionorderEnv,
   buildUbiReminderEnv,
   buildBalaioEnv,
+  buildPlaychessifyEnv,
   resolveGamearenaAgentApiEnv,
   UBI_REMINDER_SKILL_ID,
   BALAIO_WORKER_SKILL_ID,
+  PLAYCHESSIFY_SKILL_ID,
   writeSkillEnv,
 } from "./skill-env.js";
 export type { SkillConfiguration } from "./skill-env.js";
@@ -174,6 +176,13 @@ export {
   actionorderSkillDir,
 } from "./actionorder-play-once.js";
 export type { PlayActionOrderMatchOnceResult } from "./actionorder-play-once.js";
+
+export {
+  isActionOrderSkillSecure,
+  upgradeActionOrderSkillInstall,
+  patchAllActionOrderSecureSkills,
+} from "./actionorder-skill-upgrade.js";
+export type { PatchActionOrderSecureSkillsResult } from "./actionorder-skill-upgrade.js";
 
 export {
   gamearenaAgentApiStart,

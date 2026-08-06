@@ -108,6 +108,8 @@ append_or_replace AGENT_INITIAL_GS "200" "$REMOTE_ENV"
 append_or_replace AGENT_INITIAL_CELO "0.5" "$REMOTE_ENV"
 append_or_replace RUNTIME_V1 "1" "$REMOTE_ENV"
 append_or_replace ACTIONORDER_URL "https://www.actionorder.xyz" "$REMOTE_ENV"
+# Optional — set in local .env to sync partner + agent keys to VPS
+# ACTIONORDER_PARTNER_API_KEY / ACTIONORDER_AGENT_API_KEY copied below if present
 # Postgres runs on the same VPS — localhost avoids flaky public-IP connections
 if grep -q '@80.241.209.225:5432' "$REMOTE_ENV" 2>/dev/null; then
   sed -i 's|@80.241.209.225:5432|@127.0.0.1:6543|g' "$REMOTE_ENV"
@@ -140,6 +142,8 @@ ENCRYPTION_SECRET
 HOST_INTERNAL_SECRET
 AGENT_INITIAL_GS
 AGENT_INITIAL_CELO
+ACTIONORDER_PARTNER_API_KEY
+ACTIONORDER_AGENT_API_KEY
 KEYS
 
 echo "==> install, db push, build on VPS"

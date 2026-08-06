@@ -295,6 +295,126 @@ export function getFirstActionOrderDeployForOwner(
   });
 }
 
+export interface ActionOrderAgentRegistryEntry {
+  agentAddress: string;
+  deployId: string;
+  displayName: string;
+  ownerWallet: string | null;
+  status: string;
+  verified: boolean;
+  deployedAt: Date | null;
+}
+
+const actionOrderProvisionedWhere = {
+  agentAddress: { not: null },
+  skills: {
+    some: {
+      skillId: ACTIONORDER_SKILL_ID,
+      status: { not: "disabled" },
+    },
+  },
+} as const;
+
+/** All provisioned Action Order play wallets (partner agent leaderboard registry). */
+export async function listActionOrderAgentRegistry(opts: {
+  page: number;
+  pageSize: number;
+  verifiedOnly?: boolean;
+}): Promise<{ rows: ActionOrderAgentRegistryEntry[]; total: number }> {
+  const deploys = await prisma.deployedAgent.findMany({
+    where: actionOrderProvisionedWhere,
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      displayName: true,
+      agentAddress: true,
+      ownerWallet: true,
+      status: true,
+      deployedAt: true,
+    },
+  });
+
+  const addresses = deploys
+    .map((d) => d.agentAddress)
+    .filter((a): a is string => a != null);
+  const credentials =
+    addresses.length > 0
+      ? await prisma.agentCredential.findMany({
+          where: { agent: { in: addresses } },
+          select: { agent: true, revokedAt: true },
+        })
+      : [];
+  const verifiedSet = new Set(
+    credentials
+      .filter((c) => c.revokedAt === null)
+      .map((c) => c.agent.toLowerCase()),
+  );
+
+  let rows = deploys
+    .filter((d): d is typeof d & { agentAddress: string } => d.agentAddress != null)
+    .map((d) => ({
+      agentAddress: d.agentAddress,
+      deployId: d.id,
+      displayName: d.displayName,
+      ownerWallet: d.ownerWallet,
+      status: d.status,
+      verified: verifiedSet.has(d.agentAddress.toLowerCase()),
+      deployedAt: d.deployedAt,
+    }));
+
+  if (opts.verifiedOnly) {
+    rows = rows.filter((r) => r.verified);
+  }
+
+  const total = rows.length;
+  const start = (opts.page - 1) * opts.pageSize;
+  const paged = rows.slice(start, start + opts.pageSize);
+
+  return { rows: paged, total };
+}
+
+/** Lookup one play wallet for Action Order partner integrations. */
+export async function lookupActionOrderAgentRegistry(
+  agentAddress: string,
+): Promise<ActionOrderAgentRegistryEntry | null> {
+  const normalized = agentAddress.toLowerCase();
+  const deploy = await prisma.deployedAgent.findFirst({
+    where: {
+      agentAddress: { equals: normalized, mode: "insensitive" },
+      skills: {
+        some: {
+          skillId: ACTIONORDER_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
+    },
+    select: {
+      id: true,
+      displayName: true,
+      agentAddress: true,
+      ownerWallet: true,
+      status: true,
+      deployedAt: true,
+    },
+  });
+  if (!deploy?.agentAddress) return null;
+
+  const credential = await prisma.agentCredential.findUnique({
+    where: { agent: deploy.agentAddress },
+    select: { revokedAt: true },
+  });
+
+  return {
+    agentAddress: deploy.agentAddress,
+    deployId: deploy.id,
+    displayName: deploy.displayName,
+    ownerWallet: deploy.ownerWallet,
+    status: deploy.status,
+    verified: Boolean(credential && credential.revokedAt === null),
+    deployedAt: deploy.deployedAt,
+  };
+}
+
 /** Blocks a second GameArena deploy for the same owner wallet (competition rule). */
 export function findBlockingGamearenaDeployForOwner(
   ownerWallet: string,

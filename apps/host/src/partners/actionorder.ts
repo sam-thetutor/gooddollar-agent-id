@@ -4,6 +4,8 @@ import {
   appendDeployLogLine,
   getDeployedAgent,
   listActionOrderDeploysForOwner,
+  listActionOrderAgentRegistry,
+  lookupActionOrderAgentRegistry,
   getDeployLiveMatch,
   getActiveArenaMatchId,
   setActiveArenaMatchId,
@@ -17,13 +19,15 @@ import {
 import {
   actionorderSkillDir,
   getRuntimeConfig,
+  isActionOrderSkillSecure,
   loadRuntimeEnv,
   playActionOrderMatchOnce,
   pm2ProcessName,
   pm2ProcessSnapshot,
   stopDeployedAgent,
+  upgradeActionOrderSkillInstall,
 } from "@goodagent/runtime";
-import { isActionOrderMatchId } from "@goodagent/shared";
+import { ACTIONORDER_DEFAULT_URL, isActionOrderMatchId } from "@goodagent/shared";
 import type { Context, Hono } from "hono";
 import { verifyDeployControl } from "../deploy-control-auth.js";
 
@@ -447,6 +451,12 @@ async function handleRecordMatch(agent: DeployAgent, c: Context) {
   return c.json({ ok: true, deployId: agent.id, matchId: body.matchId });
 }
 
+function parseAgentAddress(raw: string | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed || !OWNER_WALLET_RE.test(trimmed)) return null;
+  return trimmed.toLowerCase();
+}
+
 export function registerActionOrderPartnerRoutes(
   app: Hono,
   ctx: ActionOrderPartnerHostContext,
@@ -536,9 +546,15 @@ export function registerActionOrderPartnerRoutes(
 
     await stopPartnerAutopilot(agent);
 
+    const skillDir = actionorderSkillDir(runtimeConfig.agentsRoot, agent.id);
+    if (!isActionOrderSkillSecure(skillDir)) {
+      await upgradeActionOrderSkillInstall(runtimeConfig, agent.id);
+    }
+
     const actionOrderUrl =
       configuration.ACTIONORDER_URL?.trim() ||
-      process.env.ACTIONORDER_URL?.trim();
+      process.env.ACTIONORDER_URL?.trim() ||
+      ACTIONORDER_DEFAULT_URL;
 
     const playResult = await playActionOrderMatchOnce(
       runtimeConfig,
@@ -696,5 +712,65 @@ export function registerActionOrderPartnerRoutes(
     if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
 
     return handleRecordMatch(agent, c);
+  });
+
+  /** Public agent registry for Action Order human vs agent leaderboard split. */
+  app.get("/partners/action-order/agent-addresses", async (c) => {
+    const keyErr = requirePartnerKey(c);
+    if (keyErr) return c.json({ error: keyErr.error }, keyErr.status);
+
+    const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);
+    const pageSize = Math.min(
+      500,
+      Math.max(1, Number(c.req.query("pageSize") ?? 100) || 100),
+    );
+    const verifiedOnly = c.req.query("verified") === "1";
+
+    const { rows, total } = await listActionOrderAgentRegistry({
+      page,
+      pageSize,
+      verifiedOnly,
+    });
+
+    return c.json({
+      page,
+      pageSize,
+      total,
+      agents: rows.map((row) => ({
+        agentAddress: row.agentAddress,
+        deployId: row.deployId,
+        displayName: row.displayName,
+        ownerWallet: row.ownerWallet,
+        status: row.status,
+        verified: row.verified,
+        deployedAt: row.deployedAt?.toISOString() ?? null,
+      })),
+    });
+  });
+
+  app.get("/partners/action-order/is-agent", async (c) => {
+    const keyErr = requirePartnerKey(c);
+    if (keyErr) return c.json({ error: keyErr.error }, keyErr.status);
+
+    const address = parseAgentAddress(c.req.query("address"));
+    if (!address) {
+      return c.json({ error: "address query param required (0x…)" }, 400);
+    }
+
+    const entry = await lookupActionOrderAgentRegistry(address);
+    if (!entry) {
+      return c.json({ isAgent: false, agentAddress: address });
+    }
+
+    return c.json({
+      isAgent: true,
+      agentAddress: entry.agentAddress,
+      deployId: entry.deployId,
+      displayName: entry.displayName,
+      ownerWallet: entry.ownerWallet,
+      status: entry.status,
+      verified: entry.verified,
+      deployedAt: entry.deployedAt?.toISOString() ?? null,
+    });
   });
 }

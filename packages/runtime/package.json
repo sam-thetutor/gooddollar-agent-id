@@ -18,7 +18,8 @@
     "deploy:spike": "tsx scripts/deploy-spike.mts",
     "deploy:balaio-local": "tsx scripts/deploy-balaio-local.mts",
     "deploy:gamearena-cli": "tsx scripts/deploy-gamearena-cli.mts",
-    "test:partner-gamearena": "tsx scripts/test-partner-gamearena-api.mts"
+    "test:partner-gamearena": "tsx scripts/test-partner-gamearena-api.mts",
+    "test:partner-actionorder": "tsx scripts/test-partner-actionorder-api.mts"
   },
   "dependencies": {
     "@goodagent/agent-id": "workspace:*",

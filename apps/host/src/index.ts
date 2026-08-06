@@ -74,6 +74,7 @@ import {
   collectSkillStats,
   pauseGamearenaAgentAtDailyCap,
   patchAllGamearenaDailyCapGuards,
+  patchAllActionOrderSecureSkills,
   type SkillStatsSummary,
   type PipelineStatus,
   type DeployAgentRecord,
@@ -1533,7 +1534,7 @@ async function applyDeploySkillConfiguration(
 ) {
   loadRuntimeEnv();
   const runtimeConfig = getRuntimeConfig();
-  const { merged, skillId, restarted } = applyDeployConfiguration(
+  const { merged, skillId, restarted } = await applyDeployConfiguration(
     runtimeConfig,
     deployAgentRecord(agent, agent.displayName),
     sanitized,
@@ -1900,7 +1901,7 @@ app.post("/deploy/:id/display-name", async (c) => {
       await updateDeployedAgent(id, { displayName });
       const refreshed = (await getDeployedAgent(id)) ?? agent;
       try {
-        const sync = syncAgentAfterPassRename(
+        const sync = await syncAgentAfterPassRename(
           runtimeConfig,
           deployAgentRecord(refreshed, displayName),
           gamePassUsername,
@@ -1953,6 +1954,17 @@ try {
       `[host] GameArena daily-cap guards: patched=${patch.patched} stoppedAtCap=${patch.stoppedAtCap}`,
     );
   }
+  void patchAllActionOrderSecureSkills(config)
+    .then((ao) => {
+      if (ao.upgraded > 0 || ao.alreadySecure > 0) {
+        console.log(
+          `[host] Action Order secure skills: upgraded=${ao.upgraded} alreadySecure=${ao.alreadySecure}`,
+        );
+      }
+    })
+    .catch((err) => {
+      console.warn("[host] Action Order skill upgrade failed:", err);
+    });
 } catch (err) {
   console.warn("[host] GameArena daily-cap guard patch failed:", err);
 }
