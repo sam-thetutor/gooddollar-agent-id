@@ -323,9 +323,9 @@ export function Home() {
           <div className="lp-stats lp-glass lp-reveal">
             <div className="lp-stat">
               <span className="lp-stat-value">
-                <CountUp value={displayStatCount(stats?.active ?? 0)} />
+                <CountUp value={displayStatCount(stats?.totalAgents ?? 0)} />
               </span>
-              <span className="lp-stat-label">active agents</span>
+              <span className="lp-stat-label">agents created</span>
             </div>
             <div className="lp-stat-sep" />
             <div className="lp-stat">
@@ -346,9 +346,11 @@ export function Home() {
             <div className="lp-stat-sep" />
             <div className="lp-stat">
               <span className="lp-stat-value">
-                <CountUp value={displayStatCount(stats?.attested ?? 0)} />
+                <CountUp
+                  value={displayStatCount(stats?.verified ?? stats?.active ?? 0)}
+                />
               </span>
-              <span className="lp-stat-label">keys attested</span>
+              <span className="lp-stat-label">verified</span>
             </div>
           </div>
 

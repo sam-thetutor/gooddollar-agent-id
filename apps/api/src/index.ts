@@ -27,6 +27,8 @@ import {
   listAgentCredentialsByHumanRoot,
   listAgentCredentialsByOperator,
   listAgentCredentialsPaged,
+  listExploreRegistryPaged,
+  getExploreRegistryStats,
   listRecentAuditEvents,
   writeAudit,
 } from "@goodagent/db";
@@ -661,7 +663,10 @@ app.get("/explore/stats", async (c) => {
   if (statsCache && Date.now() - statsCache.at < STATS_CACHE_TTL_MS) {
     return c.json(statsCache.body as Record<string, unknown>);
   }
-  const stats = await getAgentCredentialStats();
+  const [stats, registryStats] = await Promise.all([
+    getAgentCredentialStats(),
+    getExploreRegistryStats(),
+  ]);
   // Live reads over the active set (bounded: the per-human cap keeps it small).
   const { rows } = await listAgentCredentialsPaged({ page: 1, pageSize: 1000 });
   const activeAgents = rows.filter((r) => !r.revokedAt).map((r) => r.agent);
@@ -679,6 +684,8 @@ app.get("/explore/stats", async (c) => {
   const attested = activeAgents.filter((a) => provenMap[a.toLowerCase()]).length;
   const body = {
     ...stats,
+    ...registryStats,
+    verified: stats.active,
     attested: Math.max(stats.attested, attested),
     totalStaked,
     totalStakedFormatted: (BigInt(totalStaked) / 10n ** 18n).toString(),
@@ -700,10 +707,13 @@ app.get("/explore/agents", async (c) => {
     Math.max(1, Number(c.req.query("pageSize") ?? 20) || 20),
   );
 
-  const { rows, total } = await listAgentCredentialsPaged({ query, page, pageSize });
+  const { rows, total } = await listExploreRegistryPaged({ query, page, pageSize });
   const pageAgents = rows.map((r) => r.agent);
+  const verifiedAgents = rows
+    .filter((r) => r.credential && !r.credential.revokedAt)
+    .map((r) => r.agent);
   const [{ stakes }, provenMap, revokedOnChain] = await Promise.all([
-    getAgentStakes(pageAgents).catch(() => ({
+    getAgentStakes(verifiedAgents).catch(() => ({
       stakes: {} as Record<string, string>,
       totalStaked: "0",
     })),
@@ -719,16 +729,26 @@ app.get("/explore/agents", async (c) => {
     page,
     pageSize,
     total,
-    agents: rows.map((r) => ({
-      agent: r.agent,
-      operator: r.operator,
-      revoked:
-        Boolean(r.revokedAt) || Boolean(revokedOnChain[r.agent.toLowerCase()]),
-      agentProven: r.agentProven || Boolean(provenMap[r.agent.toLowerCase()]),
-      createdAt: r.createdAt,
-      expiresAt: r.expiresAt,
-      stake: stakes[r.agent.toLowerCase()] ?? null,
-    })),
+    agents: rows.map((r) => {
+      const credential = r.credential;
+      const revoked =
+        Boolean(credential?.revokedAt) ||
+        Boolean(revokedOnChain[r.agent.toLowerCase()]);
+      const verified = Boolean(credential && !credential.revokedAt);
+      return {
+        agent: r.agent,
+        operator: credential?.operator ?? r.operator,
+        revoked,
+        verified,
+        deployStatus: r.deployStatus,
+        agentProven:
+          Boolean(credential?.agentProven) ||
+          Boolean(provenMap[r.agent.toLowerCase()]),
+        createdAt: r.createdAt,
+        expiresAt: credential?.expiresAt ?? null,
+        stake: verified ? (stakes[r.agent.toLowerCase()] ?? null) : null,
+      };
+    }),
   });
 });
 

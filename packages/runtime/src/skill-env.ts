@@ -91,6 +91,42 @@ export function resolveGamearenaAgentApiEnv(): Record<string, string> {
   };
 }
 
+export function buildPlaychessifyEnv(
+  agentPrivateKey: `0x${string}` | null,
+  rpcUrl: string,
+  config: SkillConfiguration,
+  agentAddress: Address,
+  displayName: string,
+): Record<string, string> {
+  if (!agentPrivateKey) {
+    throw new Error("playchessify-player requires agent private key");
+  }
+  return {
+    PRIVATE_KEY: agentPrivateKey,
+    PLAYER_ADDRESS: agentAddress,
+    PLAYER_NAME: config.PLAYER_NAME ?? displayName,
+    CELO_RPC_URL: config.CELO_RPC_URL ?? rpcUrl,
+    PLAYCHESSIFY_URL: config.PLAYCHESSIFY_URL ?? "https://celo.playchessify.xyz",
+    CHESS_TOKEN:
+      config.CHESS_TOKEN ?? "0x3f7efdfc8a76f76f22512fcd2bddc5fca36e55a3",
+    CHESS_GAME:
+      config.CHESS_GAME ?? "0xb37877a9ebd6c3169b2eaaa3e16852839785ae85",
+    STRATEGY_PRESET: config.STRATEGY_PRESET ?? "balanced",
+    PLAY_MODE: config.PLAY_MODE ?? "bot",
+    MAX_WAGER: config.MAX_WAGER ?? "100",
+    HOST_WAGER: config.HOST_WAGER ?? config.MAX_WAGER ?? "100",
+    JOIN_GAME_ID: config.JOIN_GAME_ID ?? "",
+    JOIN_WAIT_MS: config.JOIN_WAIT_MS ?? "540000",
+    TARGET_BOT_MIN_ELO: config.TARGET_BOT_MIN_ELO ?? "600",
+    TARGET_BOT_MAX_ELO: config.TARGET_BOT_MAX_ELO ?? "1200",
+    MAX_MATCHES: config.MAX_MATCHES ?? "3",
+    DAILY_MATCH_CAP: config.DAILY_MATCH_CAP ?? "20",
+    MATCH_INTERVAL_SECONDS: config.MATCH_INTERVAL_SECONDS ?? "60",
+    MOVE_POLL_MS: config.MOVE_POLL_MS ?? "1500",
+    THINK_DELAY_MS: config.THINK_DELAY_MS ?? "2500",
+  };
+}
+
 export function buildActionorderEnv(
   agentAddress: Address,
   displayName: string,
@@ -112,6 +148,7 @@ export function buildActionorderEnv(
 
 export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
 export const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
+export const PLAYCHESSIFY_SKILL_ID = "gaming/wagering/playchessify_1v1";
 
 const BALAIO_SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhemF3dGFqYnB6aHBsdnR1amVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NjI0MjYsImV4cCI6MjA4MTAzODQyNn0.m1lboja6h24zePQexzWSY9MeC4WyLGa_kQvKbJxPmVg";
@@ -245,6 +282,14 @@ export function buildSkillEnv(
       opts.config,
       opts.agentAddress,
       opts.apiBase ?? GOODAGENT_API_URL,
+    );
+  } else if (skillId === PLAYCHESSIFY_SKILL_ID) {
+    env = buildPlaychessifyEnv(
+      opts.agentPrivateKey,
+      opts.rpcUrl,
+      opts.config,
+      opts.agentAddress,
+      opts.displayName,
     );
   } else {
     throw new Error(`Unsupported skill_id for env: ${skillId}`);

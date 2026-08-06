@@ -2,7 +2,7 @@ import type { Address } from "viem";
 import { buildHostReportEnv } from "./skill-env.js";
 import { deriveAgentPrivateKey } from "./wallet.js";
 import type { RuntimeConfig } from "./config.js";
-import { BALAIO_WORKER_SKILL_ID } from "./skill-env.js";
+import { BALAIO_WORKER_SKILL_ID, PLAYCHESSIFY_SKILL_ID } from "./skill-env.js";
 import { GAMEARENA_SKILL_ID } from "./gamearena-pass.js";
 
 export interface AgentPm2SkillRow {
@@ -13,6 +13,7 @@ export interface AgentPm2SkillRow {
 function skillNeedsPrivateKey(skillId: string): boolean {
   if (skillId === BALAIO_WORKER_SKILL_ID) return true;
   if (skillId === GAMEARENA_SKILL_ID) return true;
+  if (skillId === PLAYCHESSIFY_SKILL_ID) return true;
   if (skillId.includes("actionorder")) return true;
   return false;
 }

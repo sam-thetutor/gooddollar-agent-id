@@ -233,17 +233,12 @@ export function createHostClient(hostBaseUrl: string) {
       configuration: Record<string, string>,
       skillId?: string,
     ) {
-      const path = skillId
-        ? `/deploy/${deployId}/skills/${encodeURIComponent(skillId)}/configuration`
-        : `/deploy/${deployId}/configuration`;
       return hostFetch<{ agent: DeployAgent; restarted?: boolean; skillId?: string }>(
         base,
-        path,
+        `/deploy/${deployId}/configuration`,
         {
           method: "POST",
-          body: JSON.stringify(
-            skillId ? { ...auth, configuration } : { ...auth, configuration, skillId },
-          ),
+          body: JSON.stringify({ ...auth, configuration, skillId }),
         },
       );
     },

@@ -3,6 +3,7 @@ import {
   ACTIONORDER_SKILL_ID,
   BALAIO_WORKER_SKILL_ID,
   GAMEARENA_SKILL_ID,
+  PLAYCHESSIFY_SKILL_ID,
   UBI_REMINDER_SKILL_ID,
 } from "../skill-config.js";
 
@@ -16,6 +17,15 @@ const ACTIONORDER_STRATEGIES = [
   { id: "anti_strike", label: "Anti-strike" },
   { id: "rush", label: "Rush" },
   { id: "balanced", label: "Balanced" },
+] as const;
+
+const PLAYCHESSIFY_PRESETS = [
+  { id: "beginner", label: "Beginner" },
+  { id: "balanced", label: "Balanced" },
+  { id: "aggressive", label: "Aggressive" },
+  { id: "positional", label: "Positional" },
+  { id: "tactical", label: "Tactical" },
+  { id: "endgame_grind", label: "Endgame grind" },
 ] as const;
 
 export function SkillConfigFields({
@@ -151,6 +161,108 @@ export function SkillConfigFields({
             type="number"
             min={1}
             value={config.MAX_MATCHES ?? "5"}
+            onChange={(e) => onChange("MAX_MATCHES", e.target.value)}
+          />
+        </label>
+      </>
+    );
+  }
+
+  if (skillId === PLAYCHESSIFY_SKILL_ID) {
+    return (
+      <>
+        <label className="ga-widget-field">
+          <span>Play mode</span>
+          <select
+            className="ga-widget-input"
+            value={config.PLAY_MODE ?? "bot"}
+            onChange={(e) => onChange("PLAY_MODE", e.target.value)}
+          >
+            <option value="bot">Join bot lobbies</option>
+            <option value="host">Host a room</option>
+            <option value="join">Join open lobby</option>
+          </select>
+        </label>
+        <label className="ga-widget-field">
+          <span>Strategy preset</span>
+          <select
+            className="ga-widget-input"
+            value={config.STRATEGY_PRESET ?? "balanced"}
+            onChange={(e) => onChange("STRATEGY_PRESET", e.target.value)}
+          >
+            {PLAYCHESSIFY_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="ga-widget-field">
+          <span>Max wager (CHESS)</span>
+          <input
+            className="ga-widget-input"
+            type="number"
+            min={1}
+            value={config.MAX_WAGER ?? "100"}
+            onChange={(e) => onChange("MAX_WAGER", e.target.value)}
+          />
+        </label>
+        {(config.PLAY_MODE ?? "bot") === "host" && (
+          <label className="ga-widget-field">
+            <span>Host wager (CHESS)</span>
+            <input
+              className="ga-widget-input"
+              type="number"
+              min={1}
+              value={config.HOST_WAGER ?? config.MAX_WAGER ?? "100"}
+              onChange={(e) => onChange("HOST_WAGER", e.target.value)}
+            />
+          </label>
+        )}
+        {(config.PLAY_MODE ?? "bot") === "join" && (
+          <label className="ga-widget-field">
+            <span>Join game ID (optional)</span>
+            <input
+              className="ga-widget-input"
+              type="number"
+              min={1}
+              placeholder="From hosting agent logs"
+              value={config.JOIN_GAME_ID ?? ""}
+              onChange={(e) => onChange("JOIN_GAME_ID", e.target.value)}
+            />
+          </label>
+        )}
+        {(config.PLAY_MODE ?? "bot") === "bot" && (
+          <>
+            <label className="ga-widget-field">
+              <span>Bot Elo min</span>
+              <input
+                className="ga-widget-input"
+                type="number"
+                min={600}
+                value={config.TARGET_BOT_MIN_ELO ?? "600"}
+                onChange={(e) => onChange("TARGET_BOT_MIN_ELO", e.target.value)}
+              />
+            </label>
+            <label className="ga-widget-field">
+              <span>Bot Elo max</span>
+              <input
+                className="ga-widget-input"
+                type="number"
+                min={600}
+                value={config.TARGET_BOT_MAX_ELO ?? "1200"}
+                onChange={(e) => onChange("TARGET_BOT_MAX_ELO", e.target.value)}
+              />
+            </label>
+          </>
+        )}
+        <label className="ga-widget-field">
+          <span>Max matches / run</span>
+          <input
+            className="ga-widget-input"
+            type="number"
+            min={1}
+            value={config.MAX_MATCHES ?? "3"}
             onChange={(e) => onChange("MAX_MATCHES", e.target.value)}
           />
         </label>

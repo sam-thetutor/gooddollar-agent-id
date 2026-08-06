@@ -160,7 +160,8 @@ function skillNeedsAgentPrivateKey(skillId: string, spendsTokens: boolean): bool
   return (
     spendsTokens ||
     skillId === GAMEARENA_SKILL_ID ||
-    skillId === BALAIO_WORKER_SKILL_ID
+    skillId === BALAIO_WORKER_SKILL_ID ||
+    skillId === "gaming/wagering/playchessify_1v1"
   );
 }
 
