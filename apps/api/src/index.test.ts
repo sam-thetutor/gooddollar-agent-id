@@ -49,6 +49,18 @@ const state = vi.hoisted(() => ({
   vaults: new Map<string, { operator: string | null; stake: bigint; unstakeUnlockAt: string | null }>(),
   /** lowercase agent -> stored credential row. */
   db: new Map<string, DbRecord>(),
+  /** lowercase agent -> provisioned deploy row. */
+  deployed: new Map<
+    string,
+    {
+      agentAddress: string;
+      ownerWallet: string | null;
+      operatorWallet: string | null;
+      status: string;
+      deployedAt: Date | null;
+      createdAt: Date;
+    }
+  >(),
   /** Append-only audit events, newest last. */
   audit: [] as { eventType: string; metadata: unknown; createdAt: Date }[],
   reset() {
@@ -58,6 +70,7 @@ const state = vi.hoisted(() => ({
     this.revokedOnChain.clear();
     this.vaults.clear();
     this.db.clear();
+    this.deployed.clear();
     this.audit = [];
   },
 }));
@@ -153,6 +166,48 @@ vi.mock("@goodagent/agent-id", async (importOriginal) => {
 
 vi.mock("@goodagent/db", () => {
   const MAX_AGENTS_PER_HUMAN = 10;
+
+  function buildExploreRows() {
+    const byAgent = new Map<
+      string,
+      {
+        agent: string;
+        operator: string;
+        createdAt: Date;
+        deployStatus: string | null;
+        credential: DbRecord | null;
+      }
+    >();
+    for (const deploy of state.deployed.values()) {
+      byAgent.set(deploy.agentAddress.toLowerCase(), {
+        agent: deploy.agentAddress,
+        operator: deploy.ownerWallet ?? deploy.operatorWallet ?? "",
+        createdAt: deploy.deployedAt ?? deploy.createdAt,
+        deployStatus: deploy.status,
+        credential: null,
+      });
+    }
+    for (const credential of state.db.values()) {
+      const key = credential.agent.toLowerCase();
+      const existing = byAgent.get(key);
+      if (existing) {
+        existing.credential = credential;
+        if (credential.operator) existing.operator = credential.operator;
+      } else {
+        byAgent.set(key, {
+          agent: credential.agent,
+          operator: credential.operator,
+          createdAt: credential.createdAt,
+          deployStatus: null,
+          credential,
+        });
+      }
+    }
+    return [...byAgent.values()].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
+  }
+
   return {
     MAX_AGENTS_PER_HUMAN,
     writeAudit: async (eventType: string, metadata?: unknown) => {
@@ -248,6 +303,27 @@ vi.mock("@goodagent/db", () => {
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       const start = (opts.page - 1) * opts.pageSize;
       return { rows: all.slice(start, start + opts.pageSize), total: all.length };
+    },
+    getExploreRegistryStats: async () => {
+      const rows = buildExploreRows();
+      return { totalAgents: rows.length, provisioned: state.deployed.size };
+    },
+    listExploreRegistryPaged: async (opts: {
+      query?: string;
+      page: number;
+      pageSize: number;
+    }) => {
+      const q = opts.query?.toLowerCase();
+      let rows = buildExploreRows();
+      if (q) {
+        rows = rows.filter(
+          (row) =>
+            row.agent.toLowerCase().includes(q) ||
+            row.operator.toLowerCase().includes(q),
+        );
+      }
+      const start = (opts.page - 1) * opts.pageSize;
+      return { rows: rows.slice(start, start + opts.pageSize), total: rows.length };
     },
   };
 });
@@ -679,7 +755,9 @@ describe("GET /explore", () => {
     expect(res.status).toBe(200);
     const body = await json(res);
     expect(body.total).toBe(2);
+    expect(body.totalAgents).toBe(2);
     expect(body.active).toBe(2);
+    expect(body.verified).toBe(2);
     expect(body.attested).toBe(2);
     expect(body.humans).toBe(1);
     expect(BigInt(body.totalStaked)).toBe(2n * MIN_STAKE);
@@ -693,6 +771,7 @@ describe("GET /explore", () => {
     expect(body.total).toBe(2);
     expect(body.agents).toHaveLength(2);
     expect(body.agents[0].stake).toBe(MIN_STAKE.toString());
+    expect(body.agents[0].verified).toBe(true);
     expect(body.agents[0].agentProven).toBe(true);
 
     const filtered = await app.request(

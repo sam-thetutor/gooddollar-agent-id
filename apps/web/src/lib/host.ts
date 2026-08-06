@@ -375,19 +375,14 @@ export function updateDeployConfiguration(
   auth: DeployControlAuth,
   skillId?: string,
 ) {
-  const path = skillId
-    ? `/deploy/${deployId}/skills/${encodeURIComponent(skillId)}/configuration`
-    : `/deploy/${deployId}/configuration`;
   return hostFetch<{
     agent: DeployAgent;
     restarted: boolean;
     skillId?: string;
     skills?: DeploySkillStatus[];
-  }>(path, {
+  }>(`/deploy/${deployId}/configuration`, {
     method: "POST",
-    body: JSON.stringify(
-      skillId ? { configuration, ...auth } : { configuration, skillId, ...auth },
-    ),
+    body: JSON.stringify({ configuration, skillId, ...auth }),
   });
 }
 

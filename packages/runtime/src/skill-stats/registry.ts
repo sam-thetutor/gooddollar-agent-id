@@ -7,12 +7,14 @@ import { actionOrderSkillStatsAdapter } from "./actionorder.js";
 import { balaioSkillStatsAdapter } from "./balaio.js";
 import { gamearenaSkillStatsAdapter } from "./gamearena.js";
 import { genericSkillStatsAdapter } from "./generic.js";
+import { playchessifySkillStatsAdapter } from "./playchessify.js";
 import { ubiSkillStatsAdapter } from "./ubi.js";
 import type { SkillStatsAdapter } from "./types.js";
 
 const BY_KEY: Record<RegistryStatsAdapterKey, SkillStatsAdapter> = {
   gamearena: gamearenaSkillStatsAdapter,
   actionorder: actionOrderSkillStatsAdapter,
+  playchessify: playchessifySkillStatsAdapter,
   balaio: balaioSkillStatsAdapter,
   ubi: ubiSkillStatsAdapter,
   generic: genericSkillStatsAdapter,
@@ -21,6 +23,7 @@ const BY_KEY: Record<RegistryStatsAdapterKey, SkillStatsAdapter> = {
 const ADAPTERS: SkillStatsAdapter[] = [
   gamearenaSkillStatsAdapter,
   actionOrderSkillStatsAdapter,
+  playchessifySkillStatsAdapter,
   balaioSkillStatsAdapter,
   ubiSkillStatsAdapter,
   genericSkillStatsAdapter,

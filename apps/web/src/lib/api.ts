@@ -171,9 +171,12 @@ export async function listAgents(operator: string): Promise<AgentListResult> {
 export interface ExploreStats {
   total: number;
   active: number;
+  verified: number;
   revoked: number;
   attested: number;
   humans: number;
+  totalAgents: number;
+  provisioned: number;
   totalStaked: string;
   totalStakedFormatted: string;
 }
@@ -188,10 +191,12 @@ export interface ExploreAgent {
   agent: string;
   operator: string;
   revoked: boolean;
+  verified: boolean;
+  deployStatus: string | null;
   agentProven: boolean;
   createdAt: string;
-  expiresAt: string;
-  /** Live G$ bond in base units, or null if unreadable. */
+  expiresAt: string | null;
+  /** Live G$ bond in base units, or null if unreadable / not verified. */
   stake: string | null;
 }
 

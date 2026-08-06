@@ -3,6 +3,8 @@ import type { SkillConfiguration } from "./types.js";
 export const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1" as const;
 export const ACTIONORDER_SKILL_ID =
   "gaming/card-fighter/actionorder_vshouse" as const;
+export const PLAYCHESSIFY_SKILL_ID =
+  "gaming/wagering/playchessify_1v1" as const;
 export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder" as const;
 export const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker" as const;
 
@@ -36,6 +38,20 @@ export function defaultConfigForSkill(skillId: string): SkillConfiguration {
       MAX_MATCHES: "5",
       DAILY_MATCH_CAP: "50",
       MATCH_INTERVAL_SECONDS: "10",
+    };
+  }
+  if (skillId === PLAYCHESSIFY_SKILL_ID) {
+    return {
+      PLAY_MODE: "bot",
+      STRATEGY_PRESET: "balanced",
+      MAX_WAGER: "100",
+      HOST_WAGER: "100",
+      JOIN_GAME_ID: "",
+      TARGET_BOT_MIN_ELO: "600",
+      TARGET_BOT_MAX_ELO: "1200",
+      MAX_MATCHES: "3",
+      DAILY_MATCH_CAP: "20",
+      MATCH_INTERVAL_SECONDS: "60",
     };
   }
   if (skillId === UBI_REMINDER_SKILL_ID) {
@@ -73,6 +89,7 @@ export function deployTemplateForSkill(skillId: string): DeployTemplate {
 export function defaultDisplayNameForSkill(skillId: string): string {
   if (skillId === GAMEARENA_SKILL_ID) return "My GameArena Agent";
   if (skillId === ACTIONORDER_SKILL_ID) return "My ACTION-ORDER Agent";
+  if (skillId === PLAYCHESSIFY_SKILL_ID) return "My PlayChessify Agent";
   if (skillId === UBI_REMINDER_SKILL_ID) return "My UBI Reminder Agent";
   if (skillId === BALAIO_WORKER_SKILL_ID) return "My Balaio Worker";
   const slug = skillId.split("/").pop() ?? "agent";
@@ -92,6 +109,9 @@ export function deployHintForSkill(skillId: string): string {
   }
   if (skillId === GAMEARENA_SKILL_ID) {
     return "Your wallet owns the agent. GoodAgent runs gameplay on a dedicated server wallet — no key export needed.";
+  }
+  if (skillId === PLAYCHESSIFY_SKILL_ID) {
+    return "Your agent plays on Celo with CHESS wagers (free faucet) and CELO gas — not GoodDollar.";
   }
   return "Your wallet owns the agent. GoodAgent provisions and runs the skill on a dedicated server wallet.";
 }

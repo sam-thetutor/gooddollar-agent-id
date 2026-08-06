@@ -25,6 +25,24 @@ export function formatG(stake: string | null): string {
   return `${(BigInt(stake) / 10n ** 18n).toString()} G$`;
 }
 
+function agentStatusLabel(a: {
+  revoked: boolean;
+  verified: boolean;
+}): string {
+  if (a.revoked) return "revoked";
+  if (a.verified) return "verified";
+  return "awaiting vouch";
+}
+
+function agentStatusClass(a: {
+  revoked: boolean;
+  verified: boolean;
+}): string {
+  if (a.revoked) return "pill-bad";
+  if (a.verified) return "pill-ok";
+  return "pill-warn";
+}
+
 function timeAgo(iso: string): string {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return "just now";
@@ -80,15 +98,17 @@ export function Explore() {
         <header className="hero compact">
           <h1>Registry explorer</h1>
           <p className="lede">
-            Every AI agent a verified GoodDollar human has vouched for on Celo.
+            Every AI agent created on GoodAgent — verified or awaiting vouch.
           </p>
         </header>
 
         {stats && (
           <section className="stat-grid">
             <div className="stat">
-              <span className="stat-value">{displayStatCount(stats.active)}</span>
-              <span className="stat-label">active agents</span>
+              <span className="stat-value">
+                {displayStatCount(stats.totalAgents)}
+              </span>
+              <span className="stat-label">agents created</span>
             </div>
             <div className="stat">
               <span className="stat-value">
@@ -97,12 +117,10 @@ export function Explore() {
               <span className="stat-label">G$ bonded</span>
             </div>
             <div className="stat">
-              <span className="stat-value">{displayStatCount(stats.attested)}</span>
-              <span className="stat-label">keys attested</span>
-            </div>
-            <div className="stat">
-              <span className="stat-value">{stats.revoked}</span>
-              <span className="stat-label">revoked</span>
+              <span className="stat-value">
+                {displayStatCount(stats.verified ?? stats.active)}
+              </span>
+              <span className="stat-label">verified</span>
             </div>
           </section>
         )}
@@ -168,17 +186,23 @@ export function Explore() {
                         </td>
                         <td>
                           <span
-                            className={`pill ${a.revoked ? "pill-bad" : "pill-ok"}`}
+                            className={`pill ${agentStatusClass(a)}`}
                           >
-                            {a.revoked ? "revoked" : "active"}
+                            {agentStatusLabel(a)}
                           </span>
                         </td>
                         <td className="mono">{formatG(a.stake)}</td>
                         <td>
                           <span
-                            className={`pill ${a.agentProven ? "pill-ok" : "pill-warn"}`}
+                            className={`pill ${
+                              a.verified && a.agentProven ? "pill-ok" : "pill-warn"
+                            }`}
                           >
-                            {a.agentProven ? "attested" : "unproven"}
+                            {!a.verified
+                              ? "—"
+                              : a.agentProven
+                                ? "attested"
+                                : "unproven"}
                           </span>
                         </td>
                         <td className="mono muted" title={a.operator}>

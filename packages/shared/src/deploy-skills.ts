@@ -4,6 +4,7 @@ export const MAX_DEPLOY_SKILLS = 3;
 export type DashboardPanelKind =
   | "gamearena"
   | "actionorder"
+  | "playchessify"
   | "balaio"
   | "ubi"
   | "generic";
@@ -34,6 +35,10 @@ export function isActionOrderSkillId(skillId: string): boolean {
   return skillId.includes("actionorder");
 }
 
+export function isPlaychessifySkillId(skillId: string): boolean {
+  return skillId.includes("playchessify");
+}
+
 /** GameArena challenge-ai match ids from the arena backend. */
 export function isGamearenaMatchId(matchId: string): boolean {
   return matchId.startsWith("am_");
@@ -44,10 +49,18 @@ export function isActionOrderMatchId(matchId: string): boolean {
   return /^AO-/i.test(matchId);
 }
 
+/** PlayChessify on-chain game ids written by the skill runtime. */
+export function isPlaychessifyMatchId(matchId: string): boolean {
+  return /^PC-/i.test(matchId);
+}
+
 /** Keep skill stats/history scoped to the skill that produced the match. */
 export function matchBelongsToSkill(skillId: string, matchId: string): boolean {
   if (isActionOrderSkillId(skillId)) return isActionOrderMatchId(matchId);
-  if (isGamearenaSkillId(skillId)) return !isActionOrderMatchId(matchId);
+  if (isPlaychessifySkillId(skillId)) return isPlaychessifyMatchId(matchId);
+  if (isGamearenaSkillId(skillId)) {
+    return !isActionOrderMatchId(matchId) && !isPlaychessifyMatchId(matchId);
+  }
   return true;
 }
 
@@ -62,6 +75,7 @@ export function skillShortLabel(skillId: string): string {
 export function dashboardPanelForSkillId(skillId: string): DashboardPanelKind {
   if (isGamearenaSkillId(skillId)) return "gamearena";
   if (isActionOrderSkillId(skillId)) return "actionorder";
+  if (isPlaychessifySkillId(skillId)) return "playchessify";
   if (isBalaioSkillId(skillId)) return "balaio";
   if (isUbiSkillId(skillId)) return "ubi";
   return "generic";
@@ -160,6 +174,7 @@ export function deployKindLabel(agent: {
   const ids = agent.skills?.map((s) => s.skillId) ?? [];
   if (ids.some((id) => isGamearenaSkillId(id))) return "GameArena";
   if (ids.some((id) => isActionOrderSkillId(id))) return "ActionOrder";
+  if (ids.some((id) => isPlaychessifySkillId(id))) return "PlayChessify";
   if (ids.some((id) => isBalaioSkillId(id))) return "Balaio";
   if (ids.some((id) => isUbiSkillId(id))) return "UBI Reminder";
   if (ids.length > 1) return "Multi-skill";
