@@ -12,6 +12,8 @@ import {
   deployHintForSkill,
   deployTemplateForSkill,
   GAMEARENA_SKILL_ID,
+  PROOF_OF_ALPHA_DEFAULT_URL,
+  PROOF_OF_ALPHA_HUNT_SKILL_ID,
   skillShortLabel,
 } from "./skill-config.js";
 import type {
@@ -128,6 +130,40 @@ export function createGameArenaWidgetConfig(
       MAX_MATCHES: "10",
       MATCH_INTERVAL_SECONDS: "300",
       GAME_TYPE: "0",
+      ...opts.skillConfiguration,
+    },
+  });
+}
+
+/**
+ * Preset for Proof of Alpha daily hunt agents — deploy, verify, auto-submit to Alpha Hunt.
+ */
+export function createProofOfAlphaWidgetConfig(
+  opts: {
+    partnerId: string;
+    skillLabel?: string;
+    defaultDisplayName?: string;
+    fvCallbackUrl?: string;
+    hideSkillConfig?: boolean;
+    deployHint?: string;
+    skillConfiguration?: SkillConfiguration;
+  },
+): GoodAgentWidgetConfig {
+  return resolveWidgetConfig({
+    skillId: PROOF_OF_ALPHA_HUNT_SKILL_ID,
+    partnerId: opts.partnerId,
+    skillLabel: opts.skillLabel ?? "Alpha Hunt",
+    defaultDisplayName: opts.defaultDisplayName ?? "My Alpha Hunt Agent",
+    hideSkillConfig: opts.hideSkillConfig ?? true,
+    deployHint:
+      opts.deployHint ??
+      "Deploy an autonomous agent that hunts daily whale txs and submits to Alpha Hunt. Your wallet owns it — GoodAgent runs the bot.",
+    fvCallbackUrl: opts.fvCallbackUrl,
+    skillConfiguration: {
+      POA_API_URL: PROOF_OF_ALPHA_DEFAULT_URL,
+      ETHERSCAN_TX_LIMIT: "40",
+      FORENSIC_PREVIEW_COUNT: "3",
+      DRY_RUN: "0",
       ...opts.skillConfiguration,
     },
   });

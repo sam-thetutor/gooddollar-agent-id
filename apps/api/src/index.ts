@@ -49,6 +49,7 @@ import {
 import { getAddress, isAddressEqual } from "viem";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { createSkillsRoutes, skillsWellKnownPayload } from "./routes/skills.js";
 
 const app = new Hono();
 
@@ -78,18 +79,40 @@ app.onError((err, c) => {
 // at scale.
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 120;
+const SKILLS_RATE_MAX = 60;
 const rateHits = new Map<string, { count: number; reset: number }>();
+const skillsRateHits = new Map<string, { count: number; reset: number }>();
 
-app.use("*", async (c, next) => {
-  // Only trust proxy-set values. x-real-ip is set by our nginx from the socket
-  // address; the RIGHTMOST x-forwarded-for entry is the one nginx appended.
-  // The leftmost entries are client-controlled and trivially spoofable, which
-  // would let one caller rotate fake IPs to bypass the limiter entirely.
+function clientIp(c: { req: { header: (name: string) => string | undefined } }): string {
   const xff = c.req.header("x-forwarded-for");
-  const ip =
+  return (
     c.req.header("x-real-ip") ||
     (xff ? xff.split(",").at(-1)?.trim() : undefined) ||
-    "unknown";
+    "unknown"
+  );
+}
+
+function applyRateLimit(
+  map: Map<string, { count: number; reset: number }>,
+  ip: string,
+  max: number,
+): boolean {
+  const now = Date.now();
+  const rec = map.get(ip);
+  if (!rec || now > rec.reset) {
+    map.set(ip, { count: 1, reset: now + RATE_WINDOW_MS });
+    return true;
+  }
+  rec.count += 1;
+  if (rec.count > max) return false;
+  if (map.size > 10_000) {
+    for (const [k, v] of map) if (now > v.reset) map.delete(k);
+  }
+  return true;
+}
+
+app.use("*", async (c, next) => {
+  const ip = clientIp(c);
   const now = Date.now();
   const rec = rateHits.get(ip);
   if (!rec || now > rec.reset) {
@@ -100,12 +123,25 @@ app.use("*", async (c, next) => {
       return c.json({ error: "RATE_LIMITED" }, 429);
     }
   }
-  // Opportunistic cleanup so the map can't grow unbounded.
   if (rateHits.size > 10_000) {
     for (const [k, v] of rateHits) if (now > v.reset) rateHits.delete(k);
   }
   await next();
 });
+
+app.use("/v1/skills/*", async (c, next) => {
+  const ip = clientIp(c);
+  if (!applyRateLimit(skillsRateHits, ip, SKILLS_RATE_MAX)) {
+    return c.json({ error: "RATE_LIMITED", scope: "skills" }, 429);
+  }
+  await next();
+});
+
+app.route("/v1/skills", createSkillsRoutes());
+
+app.get("/.well-known/goodagent-skills.json", (c) =>
+  c.json(skillsWellKnownPayload()),
+);
 
 // Short-lived cache for the default (no ?minStake) verify verdict, keyed by
 // lowercased agent address. Verification is live, but a 15s TTL is well within
@@ -163,6 +199,11 @@ app.get("/", (c) =>
       "GET /explore/agents?query=&page=&pageSize=",
       "GET /explore/agent/:address",
       "GET /explore/activity",
+      "GET /v1/skills",
+      "GET /v1/skills/registry",
+      "GET /v1/skills/:skillId",
+      "GET /v1/skills/:skillId/skill.md",
+      "GET /.well-known/goodagent-skills.json",
     ],
   }),
 );

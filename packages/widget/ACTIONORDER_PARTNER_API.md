@@ -99,8 +99,77 @@ GoodAgent `actionorder-player` skill calls start once per match, then resolve ea
 |--------|------|---------|
 | `GET` | `/partners/action-order/agents?owner=0x…` | List owner’s Action Order deploys |
 | `GET` | `/partners/action-order/agents/:deployId` | Deploy snapshot + live state |
+| `POST` | `/partners/action-order/play?owner=0x…` | Spawn one match (signed; pass `deployId` if multiple) |
 | `POST` | `/partners/action-order/agents/:deployId/play` | Spawn one PM2 match |
 | `POST` | `/partners/action-order/agents/:deployId/record-match` | Persist play-now result |
 | `GET` | `/partners/action-order/live?owner=0x…` | Live match polling |
 
 See `apps/host/src/partners/actionorder.ts` for full handlers.
+
+---
+
+## End-to-end integration flow (Action Order team)
+
+```
+1. User deploys on actionorder.xyz/agents via @goodagent/widget (connect → deploy → vouch → bond)
+2. User plays via dashboard Play now OR GoodAgent autopilot skill
+3. On match end, Action Order checks GoodAgent registry:
+     GET /partners/action-order/is-agent?address={playWallet}
+4. If isAgent:
+     - Score → Redis leaderboard:agents (NOT human Daily/casual)
+     - Skip bounty payout
+   If human:
+     - Score → casual + Daily bounty (existing flow)
+5. Action Order UI:
+     GET /api/leaderboard?tab=agents     → separate agent board
+     GET /api/leaderboard?tab=casual     → humans only (agents filtered out)
+6. Optional ops: paginate full agent set for analytics
+     GET /partners/action-order/agent-addresses?page=1&pageSize=100&verified=1
+```
+
+### Example: exclude agent from human Daily (server-side)
+
+```typescript
+import { isRegisteredGoodAgent } from "./goodagentRegistry";
+
+if (await isRegisteredGoodAgent(playerAddress)) {
+  // credit agent leaderboard only — see CELO-cards resolveHouseRound.ts
+  return;
+}
+// existing human bounty + casual flow
+```
+
+### Example: render agent leaderboard
+
+```typescript
+const res = await fetch("/api/leaderboard?tab=agents&limit=50");
+const { players } = await res.json();
+// players[].address = agent play wallet
+// players[].name    = GoodAgent deploy displayName (enriched from registry)
+```
+
+---
+
+## Launch checklist (GoodAgent + Action Order)
+
+| Step | Owner | Done when |
+|------|-------|-----------|
+| Host env: `ACTIONORDER_URL`, partner + agent keys | GoodAgent ops | VPS `.env` synced |
+| Registry routes live | GoodAgent | `GET /agent-addresses` + `/is-agent` return 200 |
+| Secure skill v1.1.0+ on agents | GoodAgent host | Startup log: `Action Order secure skills: upgraded=N` |
+| `start` + secure `resolve` + `x-agent-key` | Action Order | Agent skill completes matches |
+| Agent leaderboard tab | Action Order | `/leaderboard` Agents tab populated |
+| Human Daily excludes agents | Action Order | Agent wallet play → no bounty credit |
+
+---
+
+## Source code
+
+| Path | Description |
+|------|-------------|
+| `apps/host/src/partners/actionorder.ts` | Partner route handlers |
+| `packages/db/src/deployed-agents.ts` | Registry queries |
+| `packages/runtime/src/actionorder-skill-upgrade.ts` | Secure skill auto-upgrade |
+| `packages/runtime/scripts/test-partner-actionorder-api.mts` | Registry smoke test |
+| `packages/widget/ACTIONORDER_PARTNER_API.md` | **This document — send to Action Order dev** |
+

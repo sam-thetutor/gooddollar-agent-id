@@ -1,3 +1,4 @@
+export * from "./proof-of-alpha.js";
 export * from "./actionorder.js";
 export * from "./constants.js";
 export * from "./deploy-auth.js";

@@ -56,6 +56,8 @@ export {
 export {
   GAMEARENA_SKILL_ID,
   ACTIONORDER_SKILL_ID,
+  PROOF_OF_ALPHA_HUNT_SKILL_ID,
+  PROOF_OF_ALPHA_DEFAULT_URL,
   UBI_REMINDER_SKILL_ID,
   BALAIO_WORKER_SKILL_ID,
   DEFAULT_GAMEARENA_CONFIG,
@@ -77,6 +79,7 @@ export type { RegistrySkillEntry, SkillRegistry } from "./skill-registry.js";
 export {
   createGoodAgentWidgetConfig,
   createGameArenaWidgetConfig,
+  createProofOfAlphaWidgetConfig,
   createMarketplaceWidgetConfig,
   resolveWidgetConfig,
   DEFAULT_WIDGET_API,

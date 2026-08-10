@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./external-skills": {
+      "types": "./dist/external-skills.d.ts",
+      "default": "./dist/external-skills.js"
     }
   },
   "scripts": {
@@ -19,7 +23,9 @@
     "deploy:balaio-local": "tsx scripts/deploy-balaio-local.mts",
     "deploy:gamearena-cli": "tsx scripts/deploy-gamearena-cli.mts",
     "test:partner-gamearena": "tsx scripts/test-partner-gamearena-api.mts",
-    "test:partner-actionorder": "tsx scripts/test-partner-actionorder-api.mts"
+    "test:partner-actionorder": "tsx scripts/test-partner-actionorder-api.mts",
+    "test:proof-of-alpha-hunt": "tsx scripts/test-proof-of-alpha-hunt.mts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@goodagent/agent-id": "workspace:*",
@@ -33,6 +39,7 @@
   "devDependencies": {
     "@types/node": "^22.15.32",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.9"
   }
 }

@@ -154,6 +154,10 @@ export function deploySkillsLabel(agent: {
   return agent.skills.map((s) => skillShortLabel(s.skillId)).join(" + ");
 }
 
+export function isProofOfAlphaSkillId(skillId: string): boolean {
+  return skillId.includes("proof_of_alpha");
+}
+
 export function deployKindLabel(agent: {
   skills?: Array<{ skillId: string }>;
 }): string {
@@ -161,6 +165,7 @@ export function deployKindLabel(agent: {
   if (ids.some((id) => isGamearenaSkillId(id))) return "GameArena";
   if (ids.some((id) => isActionOrderSkillId(id))) return "ActionOrder";
   if (ids.some((id) => isBalaioSkillId(id))) return "Balaio";
+  if (ids.some((id) => isProofOfAlphaSkillId(id))) return "Proof of Alpha";
   if (ids.some((id) => isUbiSkillId(id))) return "UBI Reminder";
   if (ids.length > 1) return "Multi-skill";
   return "Agent";

@@ -2,6 +2,10 @@ import { chmodSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Address } from "viem";
 import { ACTIONORDER_DEFAULT_URL, GOODAGENT_API_URL } from "@goodagent/shared";
+import {
+  PROOF_OF_ALPHA_DEFAULT_URL,
+  PROOF_OF_ALPHA_HUNT_SKILL_ID,
+} from "@goodagent/shared";
 import { resolveGamearenaProxy } from "./gamearena-proxy.js";
 
 export type SkillConfiguration = Record<string, string>;
@@ -151,6 +155,27 @@ export function buildActionorderEnv(
   return env;
 }
 
+export function buildProofOfAlphaHuntEnv(
+  agentAddress: Address,
+  displayName: string,
+  config: SkillConfiguration,
+): Record<string, string> {
+  return {
+    PLAYER_ADDRESS: agentAddress,
+    PLAYER_NAME: config.PLAYER_NAME ?? displayName,
+    POA_API_URL: config.POA_API_URL ?? PROOF_OF_ALPHA_DEFAULT_URL,
+    ETHERSCAN_API_KEY:
+      config.ETHERSCAN_API_KEY?.trim() ||
+      process.env.ETHERSCAN_API_KEY?.trim() ||
+      "",
+    ETHERSCAN_TX_LIMIT: config.ETHERSCAN_TX_LIMIT ?? "40",
+    FORENSIC_PREVIEW_COUNT: config.FORENSIC_PREVIEW_COUNT ?? "3",
+    DRY_RUN: config.DRY_RUN ?? "0",
+  };
+}
+
+export { PROOF_OF_ALPHA_HUNT_SKILL_ID };
+
 export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
 export const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
 export const PLAYCHESSIFY_SKILL_ID = "gaming/wagering/playchessify_1v1";
@@ -295,6 +320,12 @@ export function buildSkillEnv(
       opts.config,
       opts.agentAddress,
       opts.displayName,
+    );
+  } else if (skillId === PROOF_OF_ALPHA_HUNT_SKILL_ID) {
+    env = buildProofOfAlphaHuntEnv(
+      opts.agentAddress,
+      opts.displayName,
+      opts.config,
     );
   } else {
     throw new Error(`Unsupported skill_id for env: ${skillId}`);

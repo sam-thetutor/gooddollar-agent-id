@@ -194,12 +194,13 @@ export function useVouchFlow(agentAddress: string, ttlDays = 30) {
         humanRoot: getAddress(identity.root),
         ttlDays,
       });
+      const wireMessage = messageToWire(message);
       const signature = await withTimeout(
         wallet.signTypedData({
           domain: agentIdDomain,
           types: agentIdTypes,
           primaryType: "AgentID",
-          message: message as unknown as Record<string, unknown>,
+          message: wireMessage,
         }),
         120_000,
         "Signing timed out — check MetaMask for a pending request, or reconnect your wallet and try again.",

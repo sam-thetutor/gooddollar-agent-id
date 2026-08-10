@@ -3,6 +3,10 @@ import type { SkillConfiguration } from "./types.js";
 export const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1" as const;
 export const ACTIONORDER_SKILL_ID =
   "gaming/card-fighter/actionorder_vshouse" as const;
+export const PROOF_OF_ALPHA_HUNT_SKILL_ID =
+  "gaming/intelligence/proof_of_alpha_hunt" as const;
+export const PROOF_OF_ALPHA_DEFAULT_URL =
+  "https://proof-of-alpha-eosin.vercel.app";
 export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder" as const;
 export const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker" as const;
 
@@ -61,6 +65,14 @@ export function defaultConfigForSkill(skillId: string): SkillConfiguration {
       CREATE_ONCE: "1",
     };
   }
+  if (skillId === PROOF_OF_ALPHA_HUNT_SKILL_ID) {
+    return {
+      POA_API_URL: PROOF_OF_ALPHA_DEFAULT_URL,
+      ETHERSCAN_TX_LIMIT: "40",
+      FORENSIC_PREVIEW_COUNT: "3",
+      DRY_RUN: "0",
+    };
+  }
   return {};
 }
 
@@ -73,6 +85,7 @@ export function deployTemplateForSkill(skillId: string): DeployTemplate {
 export function defaultDisplayNameForSkill(skillId: string): string {
   if (skillId === GAMEARENA_SKILL_ID) return "My GameArena Agent";
   if (skillId === ACTIONORDER_SKILL_ID) return "My ACTION-ORDER Agent";
+  if (skillId === PROOF_OF_ALPHA_HUNT_SKILL_ID) return "My Alpha Hunt Agent";
   if (skillId === UBI_REMINDER_SKILL_ID) return "My UBI Reminder Agent";
   if (skillId === BALAIO_WORKER_SKILL_ID) return "My Balaio Worker";
   const slug = skillId.split("/").pop() ?? "agent";
@@ -92,6 +105,9 @@ export function deployHintForSkill(skillId: string): string {
   }
   if (skillId === GAMEARENA_SKILL_ID) {
     return "Your wallet owns the agent. GoodAgent runs gameplay on a dedicated server wallet — no key export needed.";
+  }
+  if (skillId === PROOF_OF_ALPHA_HUNT_SKILL_ID) {
+    return "Your wallet owns the agent. GoodAgent runs the daily Alpha Hunt skill — discovers txs, submits to the arena, and shows up on the leaderboard.";
   }
   return "Your wallet owns the agent. GoodAgent provisions and runs the skill on a dedicated server wallet.";
 }
