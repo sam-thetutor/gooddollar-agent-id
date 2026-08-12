@@ -1123,81 +1123,174 @@ a:hover {
 }
 
 .skill-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: linear-gradient(
       180deg,
       rgba(255, 255, 255, 0.03),
-      rgba(255, 255, 255, 0)
+      rgba(255, 255, 255, 0) 40%
     ),
     var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 1.6rem 1.6rem 1.4rem;
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  padding: 1.4rem 1.4rem 1.25rem;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.skill-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--r-lg);
+  right: var(--r-lg);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(230, 178, 60, 0.3),
+    transparent
+  );
+  pointer-events: none;
 }
 
 .skill-card:hover {
   border-color: rgba(230, 178, 60, 0.35);
   transform: translateY(-2px);
+  box-shadow: 0 18px 36px -24px rgba(0, 0, 0, 0.8);
 }
 
 .skill-card-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.skill-avatar {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 13px;
+  border: 1px solid rgba(230, 178, 60, 0.3);
+  background: linear-gradient(
+    160deg,
+    rgba(230, 178, 60, 0.18),
+    rgba(230, 178, 60, 0.05)
+  );
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.skill-card-title {
+  min-width: 0;
 }
 
 .skill-card-head h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.02rem;
   letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-id {
-  margin: 0.3rem 0 0;
+  margin: 0.2rem 0 0;
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   color: var(--muted-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-game {
-  flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   color: var(--accent);
   background: var(--accent-dim);
   border: 1px solid rgba(230, 178, 60, 0.25);
   border-radius: 999px;
-  padding: 0.3rem 0.75rem;
+  padding: 0.22rem 0.65rem;
   text-decoration: none;
   white-space: nowrap;
 }
 
 .skill-game:hover {
   background: rgba(230, 178, 60, 0.2);
+  text-decoration: none;
 }
 
 .skill-desc {
-  margin: 1rem 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0.9rem 0 0;
   color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.65;
+  font-size: 0.88rem;
+  line-height: 1.6;
 }
 
 .skill-perms {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-top: 1.1rem;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+}
+
+.skill-selfhost {
+  margin-top: 1rem;
+}
+
+.skill-selfhost summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--muted-2);
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.skill-selfhost summary::-webkit-details-marker {
+  display: none;
+}
+
+.skill-selfhost summary::before {
+  content: "▸";
+  font-size: 0.65rem;
+  transition: transform 0.15s ease;
+}
+
+.skill-selfhost[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.skill-selfhost summary:hover {
+  color: var(--text);
 }
 
 .skill-install {
-  margin-top: 1.3rem;
+  margin-top: 0.6rem;
   background: rgba(7, 10, 14, 0.85);
   border: 1px solid var(--border-2);
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   overflow: hidden;
 }
 
@@ -1243,26 +1336,14 @@ a:hover {
 
 .skill-card-foot {
   display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
+  align-items: center;
+  gap: 0.5rem;
   margin-top: auto;
-  padding-top: 1.1rem;
-  font-size: 0.8rem;
+  padding-top: 1.15rem;
 }
 
-.skill-card-foot a {
-  font-family: var(--font-mono);
-  color: var(--accent);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.skill-card-foot a:hover {
-  text-decoration: underline;
-}
-
-.skill-foot-note {
-  color: var(--muted-2);
+.skill-card-foot .btn {
+  flex: 1 1 0;
 }
 
 @media (max-width: 640px) {
@@ -2501,11 +2582,6 @@ a:hover {
 
   .deploy-list-meta {
     grid-template-columns: 1fr;
-  }
-
-  .skill-card-head {
-    flex-direction: column;
-    align-items: flex-start;
   }
 
   .agent-card-actions {
