@@ -985,6 +985,28 @@ export function DeployDashboard() {
                       {formatUptime(status.pm2?.uptimeMs)}
                     </span>
                   </div>
+                  {status.brain?.enabled ? (
+                    <div className="deploy-overview-pulse-item">
+                      <span className="deploy-overview-pulse-label">Chat</span>
+                      <span
+                        className={`deploy-overview-pulse-value deploy-overview-pulse-${status.brain.pm2?.online ? "live" : "stopped"}`}
+                      >
+                        {status.brain.pm2?.online ? "Online" : "Offline"}
+                        {status.brain.botUsername ? (
+                          <>
+                            {" · "}
+                            <a
+                              href={`https://t.me/${status.brain.botUsername}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              @{status.brain.botUsername}
+                            </a>
+                          </>
+                        ) : null}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
 
                 {installedSkills.length > 0 ? (

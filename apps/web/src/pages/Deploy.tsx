@@ -304,6 +304,77 @@ function UbiReminderFields({
   );
 }
 
+function BrainChatFields({
+  enabled,
+  onEnabledChange,
+  botToken,
+  onTokenChange,
+  disabled,
+}: {
+  enabled: boolean;
+  onEnabledChange: (value: boolean) => void;
+  botToken: string;
+  onTokenChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="deploy-config-grid">
+      <label
+        className={`brain-toggle deploy-config-full${enabled ? " is-on" : ""}`}
+      >
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onEnabledChange(e.target.checked)}
+          disabled={disabled}
+        />
+        <span className="brain-toggle-track" aria-hidden="true">
+          <span className="brain-toggle-knob" />
+        </span>
+        <span className="brain-toggle-text">
+          <strong>Enable AI chat (Telegram)</strong>
+          <small>
+            Your agent answers people on Telegram with live stats and
+            GoodDollar help.
+          </small>
+        </span>
+      </label>
+      {enabled ? (
+        <>
+          <label className="field deploy-config-full">
+            <span>Chat bot token</span>
+            <input
+              type="password"
+              value={botToken}
+              onChange={(e) => onTokenChange(e.target.value)}
+              placeholder="123456789:AA…  (from @BotFather)"
+              autoComplete="off"
+              disabled={disabled}
+            />
+          </label>
+          <p className="muted hint deploy-config-full">
+            Gives your agent a chat persona: it answers questions on Telegram,
+            reports its own live stats, verifies addresses, and checks
+            GoodDollar claim eligibility. Powered by decentralized AntSeed
+            inference paid in G$. Create a separate bot with{" "}
+            <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">
+              @BotFather
+            </a>{" "}
+            and paste its token — it is encrypted at rest. Chat is read-only:
+            the bot never holds funds or places bets.
+          </p>
+        </>
+      ) : (
+        <p className="muted hint deploy-config-full">
+          Optional: let people talk to your agent on Telegram. It answers with
+          live stats and GoodDollar help, powered by AntSeed inference paid in
+          G$.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function deployFundingShort(
   skillId: string,
   balaioSkill: boolean,
@@ -660,6 +731,8 @@ export function Deploy() {
     [DEFAULT_DEPLOY_SKILL_ID]: defaultConfigForSkill(DEFAULT_DEPLOY_SKILL_ID),
   }));
   const [botToken, setBotToken] = useState("");
+  const [brainEnabled, setBrainEnabled] = useState(false);
+  const [brainBotToken, setBrainBotToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [startBusy, setStartBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -714,6 +787,8 @@ export function Deploy() {
         skillConfigs?: Record<string, SkillConfiguration>;
         config?: SkillConfiguration;
         botToken?: string;
+        brainEnabled?: boolean;
+        brainBotToken?: string;
         wizardStep?: WizardStep;
       };
       if (draft.name) setName(draft.name);
@@ -731,6 +806,8 @@ export function Deploy() {
         });
       }
       if (draft.botToken) setBotToken(draft.botToken);
+      if (draft.brainEnabled) setBrainEnabled(true);
+      if (draft.brainBotToken) setBrainBotToken(draft.brainBotToken);
       if (draft.wizardStep) setWizardStep(draft.wizardStep);
     } catch {
       localStorage.removeItem(DEPLOY_DRAFT_KEY);
@@ -748,6 +825,8 @@ export function Deploy() {
           activeSkillId,
           skillConfigs,
           botToken,
+          brainEnabled,
+          brainBotToken,
           wizardStep,
         }),
       );
@@ -758,7 +837,7 @@ export function Deploy() {
       window.clearTimeout(saveTimer);
       window.clearTimeout(hideTimer);
     };
-  }, [name, selectedSkillIds, activeSkillId, skillConfigs, botToken, wizardStep, deployId]);
+  }, [name, selectedSkillIds, activeSkillId, skillConfigs, botToken, brainEnabled, brainBotToken, wizardStep, deployId]);
 
   useEffect(() => {
     const job = searchParams.get("job");
@@ -843,6 +922,10 @@ export function Deploy() {
         telegramBotToken: selectedSkillIds.includes(UBI_REMINDER_SKILL_ID)
           ? botToken.trim()
           : undefined,
+        brain:
+          brainEnabled && brainBotToken.trim()
+            ? { enabled: true, botToken: brainBotToken.trim() }
+            : undefined,
         template: selectedSkillIds.includes(UBI_REMINDER_SKILL_ID)
           ? "social"
           : selectedSkillIds.includes(BALAIO_WORKER_SKILL_ID)
@@ -888,8 +971,19 @@ export function Deploy() {
           ...row,
           label: `${label} · ${row.label}`,
         }));
-      }),
-    [selectedSkillIds, skillConfigs, botToken, deployableSkills],
+      }).concat(
+        brainEnabled
+          ? [
+              {
+                label: "AI chat",
+                value: brainBotToken.trim()
+                  ? `Enabled — ${brainBotToken.slice(0, 8)}… (token set)`
+                  : "Enabled — token missing",
+              },
+            ]
+          : [],
+      ),
+    [selectedSkillIds, skillConfigs, botToken, brainEnabled, brainBotToken, deployableSkills],
   );
 
   const step1Valid =
@@ -902,7 +996,8 @@ export function Deploy() {
   const step2Valid =
     step1Valid &&
     (!selectedSkillIds.includes(UBI_REMINDER_SKILL_ID) ||
-      botToken.trim().length > 0);
+      botToken.trim().length > 0) &&
+    (!brainEnabled || brainBotToken.trim().length > 0);
 
   const nameError =
     nameTouched && name.trim().length === 0
@@ -1104,6 +1199,13 @@ export function Deploy() {
                               dashboard after deploy.
                             </p>
                           )}
+                        <BrainChatFields
+                          enabled={brainEnabled}
+                          onEnabledChange={setBrainEnabled}
+                          botToken={brainBotToken}
+                          onTokenChange={setBrainBotToken}
+                          disabled={formLocked}
+                        />
                       </div>
                       <OnboardActions
                         showBack

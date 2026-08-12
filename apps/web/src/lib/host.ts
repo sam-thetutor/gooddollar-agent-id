@@ -104,6 +104,17 @@ export interface DeployStatusResponse {
     uptimeMs?: number;
     restarts?: number;
   } | null;
+  brain?: {
+    enabled: boolean;
+    model: string | null;
+    botUsername: string | null;
+    pm2: {
+      name: string;
+      status: string;
+      online: boolean;
+      uptimeMs?: number;
+    } | null;
+  } | null;
   verify: {
     found?: boolean;
     valid?: boolean;
@@ -263,6 +274,11 @@ export function createDeploy(input: {
   skillConfigurations?: Record<string, SkillConfiguration>;
   configuration?: SkillConfiguration;
   telegramBotToken?: string;
+  brain?: {
+    enabled: boolean;
+    botToken: string;
+    model?: string;
+  };
   template?: string;
   skipPayment?: boolean;
 }) {
@@ -276,6 +292,7 @@ export function createDeploy(input: {
       skillConfigurations: input.skillConfigurations,
       configuration: input.configuration,
       telegramBotToken: input.telegramBotToken,
+      brain: input.brain,
       template: input.template ?? "gaming",
       skipPayment: input.skipPayment ?? true,
     }),
