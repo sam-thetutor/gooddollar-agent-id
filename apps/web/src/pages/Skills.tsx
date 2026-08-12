@@ -66,14 +66,6 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function skillMonogram(name: string): string {
-  const words = name.split(/[-_\s]+/).filter(Boolean);
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
-  }
-  return name.slice(0, 2).toUpperCase();
-}
-
 function SkillCard({ skill }: { skill: SkillEntry }) {
   const cmd = installCommand(skill);
   const pill = skillSpendPill(skill);
@@ -81,9 +73,6 @@ function SkillCard({ skill }: { skill: SkillEntry }) {
   return (
     <article className="skill-card">
       <header className="skill-card-head">
-        <span className="skill-avatar" aria-hidden="true">
-          {skillMonogram(skill.name)}
-        </span>
         <div className="skill-card-title">
           <h2>{skill.name}</h2>
           <p className="skill-id">{skill.skill_id}</p>
