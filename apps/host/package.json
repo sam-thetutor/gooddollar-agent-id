@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@goodagent/agent-brain": "workspace:*",
     "@goodagent/db": "workspace:*",
     "@goodagent/live-arena": "workspace:*",
     "@goodagent/runtime": "workspace:*",

@@ -6,7 +6,8 @@ export type DeployControlAction =
   | "display-name"
   | "run-pipeline"
   | "confirm-vouch"
-  | "play";
+  | "play"
+  | "credits-record";
 
 export interface DeployControlAuth {
   ownerWallet: string;

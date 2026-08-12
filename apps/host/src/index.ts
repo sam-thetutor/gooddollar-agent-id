@@ -80,6 +80,7 @@ import {
   type DeployAgentRecord,
 } from "@goodagent/runtime";
 import { inferLiveMatchFromLogTail } from "@goodagent/live-arena";
+import { createGdAntseedCreditsClient } from "@goodagent/agent-brain";
 import {
   isSkillDeployable,
   assertDeploySkillCount,
@@ -1941,6 +1942,82 @@ app.post("/deploy/:id/display-name", async (c) => {
 
   const updated = await updateDeployedAgent(id, { displayName });
   return c.json({ agent: publicAgent(updated) });
+});
+
+// ---------------------------------------------------------------------------
+// G$ compute credits — GoodDollar AntSeed Worker proxy (Phase 0 of the brain
+// architecture, see packages/agent-runtime/REAL_AGENT_ARCHITECTURE.md).
+// Operators deposit G$ on Celo; the Worker issues compute credits keyed by
+// the deploy's buyer address (the agent wallet until per-deploy buyers ship).
+// ---------------------------------------------------------------------------
+
+const GD_ANTSEED_WORKER_URL =
+  process.env.GD_ANTSEED_WORKER_URL?.trim()?.replace(/\/$/, "") || "";
+const creditsClient = GD_ANTSEED_WORKER_URL
+  ? createGdAntseedCreditsClient({ workerUrl: GD_ANTSEED_WORKER_URL })
+  : null;
+
+const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
+
+app.get("/deploy/:id/credits", async (c) => {
+  if (!creditsClient) {
+    return c.json({ error: "WORKER_NOT_CONFIGURED" }, 503);
+  }
+  const agent = await getDeployedAgent(c.req.param("id"));
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+  if (!agent.agentAddress) return c.json({ error: "NOT_PROVISIONED" }, 409);
+
+  try {
+    const profile = await creditsClient.getProfile(agent.agentAddress);
+    return c.json({ buyer: agent.agentAddress, profile });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "WORKER_ERROR", message }, 502);
+  }
+});
+
+app.post("/deploy/:id/credits/record", async (c) => {
+  if (!creditsClient) {
+    return c.json({ error: "WORKER_NOT_CONFIGURED" }, 503);
+  }
+  const id = c.req.param("id");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const body = (await c.req
+    .json<{ txHash?: string } & Record<string, unknown>>()
+    .catch(() => ({}))) as { txHash?: string } & Record<string, unknown>;
+  const authErr = await verifyDeployControl("credits-record", id, agent.ownerWallet, body);
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  const txHash = body.txHash?.trim();
+  if (!txHash || !TX_HASH_RE.test(txHash)) {
+    return c.json({ error: "txHash must be a 0x-prefixed 32-byte hash" }, 400);
+  }
+
+  try {
+    const result = await creditsClient.recordCeloEvent(txHash);
+    return c.json({ ok: true, result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "WORKER_ERROR", message }, 502);
+  }
+});
+
+app.get("/deploy/:id/credits/outstanding", async (c) => {
+  if (!creditsClient) {
+    return c.json({ error: "WORKER_NOT_CONFIGURED" }, 503);
+  }
+  const agent = await getDeployedAgent(c.req.param("id"));
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  try {
+    const outstanding = await creditsClient.getOutstanding();
+    return c.json({ buyer: agent.agentAddress, outstanding });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "WORKER_ERROR", message }, 502);
+  }
 });
 
 console.log(`[host] listening on :${HOST_PORT}`);
