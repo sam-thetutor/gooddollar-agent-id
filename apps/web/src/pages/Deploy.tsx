@@ -326,7 +326,7 @@ function deployFundingShort(
 function deployReviewRows(
   skillId: string,
   config: SkillConfiguration,
-  botToken: string,
+  botToken?: string,
 ): { label: string; value: string }[] {
   if (skillId === GAMEARENA_SKILL_ID) {
     const playMode = parsePlayMode(config);
@@ -426,7 +426,7 @@ function deployReviewRows(
     return [
       {
         label: "Telegram bot",
-        value: botToken.trim()
+        value: botToken?.trim()
           ? `${botToken.slice(0, 8)}… (token set)`
           : "Not set",
       },

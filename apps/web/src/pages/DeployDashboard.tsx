@@ -935,7 +935,7 @@ export function DeployDashboard() {
                         ) : null}
                       </p>
                     </div>
-                    {canControl && health !== "live" ? (
+                    {canControl ? (
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
