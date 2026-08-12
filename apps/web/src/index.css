@@ -6,7 +6,7 @@
 
 :root {
   color-scheme: dark;
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: Outfit, Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   line-height: 1.6;
 
   --bg: #0a0d12;
@@ -24,13 +24,13 @@
   --danger: #e06a6a;
   --warning: #e0895a;
 
-  --font-display: "Space Grotesk", Inter, system-ui, sans-serif;
+  --font-display: "Sora", "Space Grotesk", Outfit, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --r-sm: 10px;
-  --r: 16px;
-  --r-lg: 24px;
-  --maxw: 1060px;
+  --r: 18px;
+  --r-lg: 26px;
+  --maxw: 1100px;
   --shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.7);
   --page-gutter: clamp(1rem, 3.5vw, 1.25rem);
 
@@ -51,17 +51,36 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* One quiet green glow at the very top — atmosphere, not decoration. */
+/* Layered amber atmosphere: top glow + side ember + faint blueprint grid. */
 body::before {
   content: "";
   position: fixed;
-  inset: -40% -20% auto;
-  height: 70vh;
-  background: radial-gradient(
-    55% 60% at 50% 0%,
-    rgba(230, 178, 60, 0.07),
-    transparent 70%
-  );
+  inset: 0;
+  background:
+    radial-gradient(
+      55% 60% at 50% -5%,
+      rgba(230, 178, 60, 0.1),
+      transparent 65%
+    ),
+    radial-gradient(
+      40% 45% at 92% 82%,
+      rgba(230, 178, 60, 0.045),
+      transparent 70%
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(75% 60% at 50% 0%, #000 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(75% 60% at 50% 0%, #000 0%, transparent 100%);
   pointer-events: none;
   z-index: 0;
 }
@@ -86,8 +105,8 @@ h2,
 h3,
 h4 {
   font-family: var(--font-display);
-  letter-spacing: -0.015em;
-  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-weight: 700;
 }
 
 code,
@@ -1257,16 +1276,34 @@ a:hover {
 /* ------------------------------------------------------------------ */
 
 .card {
+  position: relative;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.025),
-    rgba(255, 255, 255, 0)
+    rgba(255, 255, 255, 0.035),
+    rgba(255, 255, 255, 0) 42%
   ),
   var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r);
   padding: 1.5rem 1.6rem;
   margin-bottom: 1.1rem;
+}
+
+/* Hairline amber sheen along the top edge of every card. */
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--r);
+  right: var(--r);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(230, 178, 60, 0.35),
+    transparent
+  );
+  pointer-events: none;
 }
 
 .card h2 {
@@ -2648,6 +2685,7 @@ a:hover {
 
 /* Deploy page — premium onboarding wizard */
 .deploy-page {
+  max-width: 960px;
   padding-bottom: 4rem;
 }
 
@@ -2781,11 +2819,33 @@ a:hover {
 }
 
 .onboard-card {
-  background: var(--surface);
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.03),
+    rgba(255, 255, 255, 0) 38%
+  ),
+  var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r);
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow);
-  padding: clamp(1.25rem, 3vw, 2rem);
+  padding: clamp(1.4rem, 3vw, 2.2rem);
+}
+
+.onboard-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--r-lg);
+  right: var(--r-lg);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(230, 178, 60, 0.4),
+    transparent
+  );
+  pointer-events: none;
 }
 
 .onboard-card--flat {
@@ -2909,34 +2969,166 @@ a:hover {
   cursor: not-allowed;
 }
 
+/* AI chat switch row */
+.brain-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.brain-toggle:hover {
+  border-color: var(--border-2);
+}
+
+.brain-toggle.is-on {
+  border-color: rgba(230, 178, 60, 0.45);
+  background: var(--accent-dim);
+}
+
+.brain-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.brain-toggle-track {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  width: 2.35rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: rgba(255, 255, 255, 0.06);
+  position: relative;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.brain-toggle-knob {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  background: var(--muted);
+  transform: translateY(-50%);
+  transition:
+    left 0.18s ease,
+    background 0.18s ease;
+}
+
+.brain-toggle.is-on .brain-toggle-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.brain-toggle.is-on .brain-toggle-knob {
+  left: calc(100% - 0.95rem - 3px);
+  background: var(--accent-ink);
+}
+
+.brain-toggle-text strong {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.brain-toggle-text small {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .onboard-skill-grid {
   display: grid;
-  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.6rem;
 }
 
 .onboard-skill-option {
+  position: relative;
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.85rem 1rem;
+  padding: 0.8rem 2.2rem 0.8rem 0.95rem;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.02);
   cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    transform 0.12s ease,
+    box-shadow 0.15s ease;
+}
+
+.onboard-skill-option:hover {
+  border-color: var(--border-2);
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
 }
 
 .onboard-skill-option.is-selected {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: var(--accent-dim);
+  box-shadow: 0 0 0 1px rgba(230, 178, 60, 0.25) inset;
 }
 
+/* Native checkbox drives state; the card itself is the control. */
 .onboard-skill-option input {
-  margin-top: 0.2rem;
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Selection badge in the top-right corner. */
+.onboard-skill-option::after {
+  content: "";
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--border-2);
+  background: transparent;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.onboard-skill-option.is-selected::after {
+  border-color: var(--accent);
+  background: var(--accent)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='none' stroke='%232b1f05' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M1.8 5.2 4 7.4 8.2 2.8'/%3E%3C/svg%3E")
+    center / 10px no-repeat;
+}
+
+.onboard-skill-option:has(input:disabled:not(:checked)) {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .onboard-skill-option strong {
   display: block;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.2rem;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .deploy-settings-tabs {
@@ -2948,9 +3140,13 @@ a:hover {
 }
 
 .onboard-skill-option small {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   color: var(--muted);
-  line-height: 1.35;
+  font-size: 0.76rem;
+  line-height: 1.4;
 }
 
 .onboard-actions {
@@ -4003,7 +4199,7 @@ a:hover {
 
 .deploy-overview-pulse {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(8.25rem, 1fr));
   gap: 0.65rem;
 }
 
