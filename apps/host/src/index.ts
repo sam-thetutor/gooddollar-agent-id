@@ -6,8 +6,10 @@ import { serve } from "@hono/node-server";
 import {
   confirmDeployPayment,
   createDeployedAgent,
+  decryptBrainBotToken,
   decryptTelegramBotToken,
   getDeployedAgent,
+  parseDeployBrainConfig,
   listActiveSubscribers,
   listChatSubscriptions,
   listDeployedAgentsByOwner,
@@ -53,6 +55,7 @@ import {
   getDeployStats,
   getRuntimeConfig,
   loadRuntimeEnv,
+  brainPm2Name,
   pm2ProcessSnapshot,
   runDeployPipeline,
   startDeployedAgent,
@@ -312,7 +315,23 @@ async function scheduleDeployPipeline(
       agent,
       config.encryptionSecret,
     );
-    await runDeployPipeline(
+
+    // Optional LLM brain — configured at deploy creation, token encrypted at rest.
+    const brainConfig = parseDeployBrainConfig(agent);
+    const brainBotToken = brainConfig
+      ? await decryptBrainBotToken(agent, config.encryptionSecret)
+      : null;
+    const brain =
+      brainConfig && brainBotToken
+        ? {
+            model: brainConfig.model,
+            personaPreset: brainConfig.personaPreset,
+            tools: brainConfig.tools,
+            botToken: brainBotToken,
+          }
+        : null;
+
+    const result = await runDeployPipeline(
       config,
       {
         deployId: id,
@@ -326,6 +345,7 @@ async function scheduleDeployPipeline(
           installId: install.id,
         })),
         telegramBotToken,
+        brain,
         skipIdentity: opts.skipIdentity,
         dryRun: opts.dryRun,
         minDerivationIndex,
@@ -354,6 +374,15 @@ async function scheduleDeployPipeline(
         },
       },
     );
+
+    if (brainConfig && result.brainBotUsername) {
+      await updateDeployedAgent(id, {
+        brainConfig: JSON.stringify({
+          ...brainConfig,
+          botUsername: result.brainBotUsername,
+        }),
+      }).catch(() => undefined);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[host] pipeline failed for ${id}:`, err);
@@ -367,11 +396,28 @@ async function scheduleDeployPipeline(
 }
 
 
-function publicAgent<T extends { telegramBotTokenEnc?: string | null }>(
-  agent: T,
-): Omit<T, "telegramBotTokenEnc"> {
-  const { telegramBotTokenEnc: _, ...rest } = agent;
+function publicAgent<
+  T extends {
+    telegramBotTokenEnc?: string | null;
+    brainBotTokenEnc?: string | null;
+  },
+>(agent: T): Omit<T, "telegramBotTokenEnc" | "brainBotTokenEnc"> {
+  const { telegramBotTokenEnc: _t, brainBotTokenEnc: _b, ...rest } = agent;
   return rest;
+}
+
+/** Brain chat status for dashboards: config + live PM2 state of ga-brain-<id>. */
+function buildBrainStatusPayload(
+  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
+) {
+  const config = parseDeployBrainConfig(agent);
+  if (!config) return null;
+  return {
+    enabled: true,
+    model: config.model ?? null,
+    botUsername: config.botUsername ?? null,
+    pm2: pm2ProcessSnapshot(brainPm2Name(agent.id)),
+  };
 }
 
 function primarySkillId(
@@ -678,6 +724,13 @@ app.post("/deploy", async (c) => {
     skillConfigurations?: Record<string, Record<string, string>>;
     configuration?: Record<string, string>;
     telegramBotToken?: string;
+    brain?: {
+      enabled?: boolean;
+      botToken?: string;
+      model?: string;
+      personaPreset?: string;
+      tools?: string[];
+    };
     skipPayment?: boolean;
   }>();
 
@@ -690,8 +743,17 @@ app.post("/deploy", async (c) => {
   const configuration = { ...(body.configuration ?? {}) };
   delete configuration.TELEGRAM_BOT_TOKEN;
 
+  const brainEnabled = Boolean(body.brain?.enabled);
+  const brainBotToken = body.brain?.botToken?.trim() || null;
+  if (brainEnabled && !brainBotToken) {
+    return c.json(
+      { error: "brain.botToken is required when brain chat is enabled" },
+      400,
+    );
+  }
+
   let encryptionSecret: string | null = null;
-  if (telegramBotToken) {
+  if (telegramBotToken || brainBotToken) {
     loadRuntimeEnv();
     encryptionSecret = process.env.ENCRYPTION_SECRET?.trim() || null;
     if (!encryptionSecret) {
@@ -747,6 +809,15 @@ app.post("/deploy", async (c) => {
     configuration: Object.keys(configuration).length ? configuration : null,
     skillConfigurations: body.skillConfigurations ?? null,
     telegramBotToken,
+    brain: brainEnabled
+      ? {
+          enabled: true,
+          model: body.brain?.model?.trim() || undefined,
+          personaPreset: body.brain?.personaPreset?.trim() || undefined,
+          tools: body.brain?.tools?.length ? body.brain.tools : undefined,
+          botToken: brainBotToken,
+        }
+      : null,
     encryptionSecret,
   });
 
@@ -863,6 +934,7 @@ app.get("/deploy/:id/status", async (c) => {
       deployedAt: agent.deployedAt,
       pipelineRunning: runningPipelines.has(agent.id),
       pm2,
+      brain: buildBrainStatusPayload(agent),
       verify,
       stats: logTail ? { logTail } : null,
       liveMatch: resolved.liveMatch,
@@ -1066,6 +1138,7 @@ app.get("/deploy/:id/status", async (c) => {
     deployedAt: agent.deployedAt,
     pipelineRunning: runningPipelines.has(agent.id),
     pm2,
+    brain: buildBrainStatusPayload(agent),
     verify,
     stats,
     liveMatch: resolved.liveMatch,

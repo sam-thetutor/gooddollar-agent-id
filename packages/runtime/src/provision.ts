@@ -10,6 +10,15 @@ import {
 } from "./gamearena-daily-cap.js";
 import { agentDir } from "./wallet.js";
 
+export interface BrainEcosystemApp {
+  pm2Name: string;
+  cwd: string;
+  cliPath: string;
+  manifestPath: string;
+  env: Record<string, string>;
+  logDir: string;
+}
+
 export interface SkillProvisionInput {
   deployId: string;
   skillDir: string;
@@ -22,6 +31,8 @@ export interface SkillProvisionInput {
     manifestPath: string;
     runtimeCli: string;
   };
+  /** Optional LLM brain companion process (ga-brain-<id>). */
+  brain?: BrainEcosystemApp;
 }
 
 export function isRuntimeV1Enabled(): boolean {
@@ -79,6 +90,8 @@ export function writeEcosystemConfig(
       ? writeGamearenaPm2StartGuard(input.skillDir)
       : null;
 
+  const brainApp = input.brain ? buildBrainApp(input.brain) : "";
+
   const ecosystem = useRuntimeV1
     ? buildRuntimeV1Ecosystem({
         pm2Name,
@@ -86,6 +99,7 @@ export function writeEcosystemConfig(
         manifestPath: input.runtimeV1?.manifestPath ?? resolve(dir, "manifest.json"),
         runtimeCli: input.runtimeV1?.runtimeCli ?? resolveAgentRuntimeCli(),
         pm2Env,
+        brainApp,
       })
     : buildLegacySkillEcosystem({
         pm2Name,
@@ -96,12 +110,29 @@ export function writeEcosystemConfig(
         stopExitCodes: gamearenaGuard
           ? [GAMEARENA_DAILY_CAP_EXIT_CODE]
           : undefined,
+        brainApp,
       });
 
   const ecoPath = resolve(dir, "ecosystem.config.cjs");
   writeFileSync(ecoPath, ecosystem, "utf8");
   console.log(`[provision] wrote ${ecoPath}${useRuntimeV1 ? " (runtime v1)" : ""}`);
   return ecoPath;
+}
+
+/** Second PM2 app running @goodagent/agent-brain against brain-manifest.json. */
+function buildBrainApp(brain: BrainEcosystemApp): string {
+  return `, {
+    name: ${JSON.stringify(brain.pm2Name)},
+    cwd: ${JSON.stringify(brain.cwd)},
+    script: "node",
+    args: ${JSON.stringify([brain.cliPath, "--manifest", brain.manifestPath])},
+    env: ${JSON.stringify(brain.env, null, 2)},
+    autorestart: true,
+    max_restarts: 10,
+    min_uptime: "10s",
+    error_file: ${JSON.stringify(resolve(brain.logDir, "brain-err.log"))},
+    out_file: ${JSON.stringify(resolve(brain.logDir, "brain-out.log"))},
+  }`;
 }
 
 function buildLegacySkillEcosystem(opts: {
@@ -111,6 +142,7 @@ function buildLegacySkillEcosystem(opts: {
   logDir: string;
   startScript?: string;
   stopExitCodes?: number[];
+  brainApp?: string;
 }): string {
   const script = opts.startScript
     ? JSON.stringify(opts.startScript)
@@ -136,7 +168,7 @@ function buildLegacySkillEcosystem(opts: {
     min_uptime: "10s",${stopExitCodes}
     error_file: ${JSON.stringify(resolve(opts.logDir, "err.log"))},
     out_file: ${JSON.stringify(resolve(opts.logDir, "out.log"))},
-  }],
+  }${opts.brainApp ?? ""}],
 };
 `;
 }
@@ -147,6 +179,7 @@ function buildRuntimeV1Ecosystem(opts: {
   manifestPath: string;
   runtimeCli: string;
   pm2Env: Record<string, string>;
+  brainApp?: string;
 }): string {
   return `module.exports = {
   apps: [{
@@ -160,7 +193,7 @@ function buildRuntimeV1Ecosystem(opts: {
     min_uptime: "10s",
     error_file: ${JSON.stringify(resolve(opts.agentDir, "logs/err.log"))},
     out_file: ${JSON.stringify(resolve(opts.agentDir, "logs/out.log"))},
-  }],
+  }${opts.brainApp ?? ""}],
 };
 `;
 }

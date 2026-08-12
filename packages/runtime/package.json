@@ -28,6 +28,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@goodagent/agent-brain": "workspace:*",
     "@goodagent/agent-id": "workspace:*",
     "@goodagent/agent-runtime": "workspace:*",
     "@goodagent/db": "workspace:*",

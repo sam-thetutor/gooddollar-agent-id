@@ -19,6 +19,22 @@ export interface DeploySkillInput {
   configuration?: Record<string, string>;
 }
 
+/**
+ * Persisted brain settings for a deploy (JSON in `brainConfig`).
+ * The bot token is stored separately, encrypted (`brainBotTokenEnc`).
+ */
+export interface DeployBrainConfig {
+  enabled: boolean;
+  /** Inference model, e.g. "deepseek-v4-flash" or "<peerId>@<model>". */
+  model?: string;
+  /** Persona preset name; defaults to the deploy template. */
+  personaPreset?: string;
+  /** Brain tool names; defaults applied by the pipeline. */
+  tools?: string[];
+  /** Telegram bot username, filled in after the pipeline validates the token. */
+  botUsername?: string;
+}
+
 export interface CreateDeployedAgentInput {
   displayName: string;
   template?: string;
@@ -29,6 +45,7 @@ export interface CreateDeployedAgentInput {
   /** Per-skill config keyed by skillId (preferred) */
   skillConfigurations?: Record<string, Record<string, string>> | null;
   telegramBotToken?: string | null;
+  brain?: (Omit<DeployBrainConfig, "botUsername"> & { botToken?: string | null }) | null;
   encryptionSecret?: string | null;
 }
 
@@ -63,6 +80,17 @@ export async function createDeployedAgent(
     );
   }
 
+  let brainConfig: string | null = null;
+  let brainBotTokenEnc: string | null = null;
+  if (input.brain?.enabled) {
+    const { botToken, ...rest } = input.brain;
+    brainConfig = JSON.stringify(rest);
+    if (botToken && input.encryptionSecret) {
+      const { encryptSecret } = await import("./crypto.js");
+      brainBotTokenEnc = encryptSecret(botToken, input.encryptionSecret);
+    }
+  }
+
   const configuration =
     input.configuration && Object.keys(input.configuration).length
       ? JSON.stringify(input.configuration)
@@ -78,6 +106,8 @@ export async function createDeployedAgent(
       status: "pending_payment",
       configuration,
       telegramBotTokenEnc,
+      brainConfig,
+      brainBotTokenEnc,
       skills: {
         create: skills.map((s, index) => {
           const perSkill =
@@ -134,6 +164,8 @@ export function updateDeployedAgent(
     deployPaymentTx: string;
     configuration: string;
     telegramBotTokenEnc: string;
+    brainConfig: string | null;
+    brainBotTokenEnc: string | null;
     displayName: string;
   }>,
 ): Promise<DeployedAgent> {
@@ -185,6 +217,27 @@ export async function decryptTelegramBotToken(
   if (!agent.telegramBotTokenEnc || !encryptionSecret) return null;
   const { decryptSecret } = await import("./crypto.js");
   return decryptSecret(agent.telegramBotTokenEnc, encryptionSecret);
+}
+
+export function parseDeployBrainConfig(
+  agent: Pick<DeployedAgent, "brainConfig">,
+): DeployBrainConfig | null {
+  if (!agent.brainConfig) return null;
+  try {
+    const parsed = JSON.parse(agent.brainConfig) as DeployBrainConfig;
+    return parsed && typeof parsed === "object" && parsed.enabled ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function decryptBrainBotToken(
+  agent: Pick<DeployedAgent, "brainBotTokenEnc">,
+  encryptionSecret: string | null,
+): Promise<string | null> {
+  if (!agent.brainBotTokenEnc || !encryptionSecret) return null;
+  const { decryptSecret } = await import("./crypto.js");
+  return decryptSecret(agent.brainBotTokenEnc, encryptionSecret);
 }
 
 export async function maxWalletDerivationIndex(): Promise<number> {

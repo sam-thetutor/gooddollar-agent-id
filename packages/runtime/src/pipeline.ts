@@ -44,6 +44,12 @@ import {
   readAgentMeta,
 } from "./wallet.js";
 import { ensureLegacySkillPlugin } from "./legacy-plugin.js";
+import {
+  brainPm2Name,
+  provisionBrain,
+  validateTelegramBotToken,
+  type BrainDeploySettings,
+} from "./brain-provision.js";
 import type { SkillInstall } from "@goodagent/db";
 
 export type PipelineStatus =
@@ -97,6 +103,8 @@ export interface RunPipelineInput {
   /** Multi-skill install list (preferred) */
   skills?: PipelineSkillInput[];
   telegramBotToken?: string | null;
+  /** Optional LLM brain companion (persona + Telegram chat). */
+  brain?: BrainDeploySettings | null;
   skipIdentity?: boolean;
   dryRun?: boolean;
   resume?: {
@@ -118,6 +126,8 @@ export interface RunPipelineResult {
   verifyUrl?: string;
   identityIssued: boolean;
   gamePassUsername?: string | null;
+  /** Telegram bot username of the brain, when a brain was provisioned. */
+  brainBotUsername?: string | null;
 }
 
 function skillFolderFromRegistryPath(registryPath: string): string {
@@ -386,11 +396,33 @@ export async function runDeployPipeline(
         )
       : buildLegacySkillPm2Env(deployId, primaryEnv);
 
+    // Optional LLM brain companion (chat persona over Telegram).
+    let brainApp: ReturnType<typeof provisionBrain> | undefined;
+    let brainBotUsername: string | null = null;
+    if (input.brain?.botToken) {
+      brainBotUsername = await validateTelegramBotToken(input.brain.botToken);
+      brainApp = provisionBrain({
+        deployId,
+        displayName,
+        template,
+        agentAddress,
+        agentsRoot: config.agentsRoot,
+        apiBase: config.apiBase,
+        hostUrl: hostReportEnv.GOODAGENT_HOST_URL ?? "http://127.0.0.1:3010",
+        skills: pipelineSkills.map((s) => ({
+          skillId: s.skillId,
+          configuration: skillConfigs[s.skillId],
+        })),
+        settings: input.brain,
+      });
+    }
+
     const ecosystemPath = writeEcosystemConfig(config, {
       deployId,
       skillDir: primarySkillDir,
       env: pm2Env,
       runtimeV1,
+      brain: brainApp,
     });
 
     const verifyUrl = `${config.apiBase}/agent/verify/${agentAddress}`;
@@ -406,6 +438,7 @@ export async function runDeployPipeline(
         skillDirs,
         verifyUrl,
         identityIssued: false,
+        brainBotUsername,
       };
     }
 
@@ -427,6 +460,7 @@ export async function runDeployPipeline(
       verifyUrl,
       identityIssued: false,
       gamePassUsername,
+      brainBotUsername,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -443,6 +477,13 @@ export function stopDeployedAgent(deployId: string): void {
     pm2Stop(pm2ProcessName(deployId));
   } catch {
     // Process may already be stopped or never started.
+  }
+  if (pm2ProcessSnapshot(brainPm2Name(deployId))) {
+    try {
+      pm2Stop(brainPm2Name(deployId));
+    } catch {
+      // Brain may already be stopped.
+    }
   }
 }
 
@@ -461,20 +502,27 @@ export function startDeployedAgent(
     throw new Error("pm2 not found in PATH");
   }
 
-  const snap = pm2ProcessSnapshot(name);
-  if (snap) {
+  const startOrRestart = (procName: string, snap: Pm2ProcessSnapshot): void => {
     if (snap.online) {
-      pm2Restart(name);
-      return "restarted";
+      pm2Restart(procName);
+      return;
     }
-    execSync(`pm2 start ${JSON.stringify(name)}`, {
+    execSync(`pm2 start ${JSON.stringify(procName)}`, {
       stdio: "inherit",
       encoding: "utf8",
     });
-    return "started";
+  };
+
+  const snap = pm2ProcessSnapshot(name);
+  if (snap) {
+    startOrRestart(name, snap);
+    const brainSnap = pm2ProcessSnapshot(brainPm2Name(deployId));
+    if (brainSnap) startOrRestart(brainPm2Name(deployId), brainSnap);
+    return snap.online ? "restarted" : "started";
   }
 
   if (existsSync(ecoPath)) {
+    // Ecosystem may include the brain companion app — starts both.
     pm2Start(ecoPath);
     return "started";
   }

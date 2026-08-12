@@ -344,6 +344,9 @@ importers:
 
   packages/runtime:
     dependencies:
+      '@goodagent/agent-brain':
+        specifier: workspace:*
+        version: link:../agent-brain
       '@goodagent/agent-id':
         specifier: workspace:*
         version: link:../agent-id

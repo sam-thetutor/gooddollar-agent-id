@@ -35,6 +35,20 @@ export {
 } from "./provision.js";
 export type { SkillProvisionInput } from "./provision.js";
 
+export {
+  brainPm2Name,
+  buildBrainPersona,
+  provisionBrain,
+  resolveAgentBrainCli,
+  validateTelegramBotToken,
+  DEFAULT_BRAIN_TOOLS,
+} from "./brain-provision.js";
+export type {
+  BrainDeploySettings,
+  BrainProvisionInput,
+  BrainProvisionResult,
+} from "./brain-provision.js";
+
 export { writeAgentManifestFile } from "./agent-manifest.js";
 export { ensureLegacySkillPlugin, skillHasNativePlugin } from "./legacy-plugin.js";
 
