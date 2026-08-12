@@ -12,7 +12,6 @@
  *   - AgentAuth-based authenticated verify
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { dedupeAuditEventsByAgent } from "../../../packages/db/src/audit.js";
 import { getAddress, type Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -685,7 +684,10 @@ describe("POST /agent/revoke", () => {
 // ---------------------------------------------------------------------------
 
 describe("dedupeAuditEventsByAgent", () => {
-  it("keeps only the newest event per agent", () => {
+  it("keeps only the newest event per agent", async () => {
+    // @goodagent/db is mocked above — pull the real implementation.
+    const { dedupeAuditEventsByAgent } =
+      await vi.importActual<typeof import("@goodagent/db")>("@goodagent/db");
     const agent = "0xabc";
     const events = dedupeAuditEventsByAgent(
       [
