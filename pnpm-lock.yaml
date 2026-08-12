@@ -67,6 +67,9 @@ importers:
 
   apps/host:
     dependencies:
+      '@goodagent/agent-brain':
+        specifier: workspace:*
+        version: link:../../packages/agent-brain
       '@goodagent/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -104,6 +107,9 @@ importers:
 
   apps/telegram-bot:
     dependencies:
+      '@goodagent/agent-brain':
+        specifier: workspace:*
+        version: link:../../packages/agent-brain
       '@goodagent/chain':
         specifier: workspace:*
         version: link:../../packages/chain
@@ -193,6 +199,28 @@ importers:
       viem:
         specifier: ^2.31.3
         version: 2.53.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+
+  packages/agent-brain:
+    dependencies:
+      '@goodagent/chain':
+        specifier: workspace:*
+        version: link:../chain
+      '@goodagent/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^3.25.67
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.32
+        version: 22.20.0
+      tsx:
+        specifier: ^4.20.3
+        version: 4.22.4
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
 
   packages/agent-id:
     dependencies:

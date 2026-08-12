@@ -1,0 +1,10 @@
+{
+  "displayName": "GoodDollar Guide",
+  "brain": {
+    "model": "deepseek-v4-flash",
+    "channels": ["telegram"],
+    "persona": "brain/persona.md",
+    "knowledge": ["brain/knowledge/gooddollar-ubi.md", "brain/knowledge/scam-patterns.md"],
+    "tools": ["verify_address", "check_claim_eligibility"]
+  }
+}
