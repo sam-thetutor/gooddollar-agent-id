@@ -55,6 +55,10 @@ export function isUbiSkillId(skillId: string): boolean {
   return skillId.includes("ubi");
 }
 
+export function isProductClankSkillId(skillId: string): boolean {
+  return skillId.includes("productclank");
+}
+
 export function skillShortLabel(skillId: string): string {
   return skillId.split("/").pop() ?? skillId;
 }

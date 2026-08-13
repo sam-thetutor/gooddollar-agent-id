@@ -383,6 +383,8 @@ export function DeployDashboard() {
     dashboardTab !== "overview" &&
     dashboardPanelForSkillId(dashboardTab) === "actionorder";
 
+  const isProductClankTab = dashboardTab === PRODUCTCLANK_SKILL_ID;
+
   const displaySkillId = useMemo(() => {
     if (!status) return null;
     const gamearena = configurableSkillsFromStatus(status).find((s) =>
@@ -632,7 +634,13 @@ export function DeployDashboard() {
   const showGenericPanel =
     dashboardTab !== "overview" &&
     !showGamearenaPanel &&
-    !showActionOrderPanel;
+    !showActionOrderPanel &&
+    !isProductClankTab;
+
+  const pcMeta = (activeSkillStats?.meta ?? {}) as Record<
+    string,
+    string | number | boolean | null
+  >;
 
   const runtimeLogTail = status?.stats?.logTail ?? null;
   const crashHint = useMemo(() => {
@@ -1218,7 +1226,7 @@ export function DeployDashboard() {
               </p>
             )}
 
-            {!isMultiSkillOverview ? (
+            {!isMultiSkillOverview && !isProductClankTab ? (
             <section className="deploy-console-hero" aria-label="Performance summary">
               <div className="deploy-hero-primary">
                 <span className="deploy-hero-label">Balance</span>
@@ -1379,6 +1387,88 @@ export function DeployDashboard() {
                   />
                 ) : null}
 
+                {isProductClankTab ? (
+                  <section className="deploy-console-section">
+                    <div className="deploy-section-head">
+                      <h2>Amplify earnings</h2>
+                      {canControl ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => beginEditConfig(dashboardTab)}
+                        >
+                          Edit settings
+                        </button>
+                      ) : null}
+                    </div>
+                    <dl className="deploy-aside-dl deploy-amplify-stats">
+                      <div>
+                        <dt>Points</dt>
+                        <dd className="tabular">{pcMeta.points ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Credits</dt>
+                        <dd className="tabular">{pcMeta.credits ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Submitted today</dt>
+                        <dd className="tabular">
+                          {pcMeta.submittedToday ?? 0}/{pcMeta.dailyCap ?? "10"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Total submitted</dt>
+                        <dd className="tabular">{pcMeta.submittedTotal ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Drafts awaiting approval</dt>
+                        <dd className="tabular">{pcMeta.pendingDrafts ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Strikes</dt>
+                        <dd className="tabular">{pcMeta.strikes ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>$PRO claimable</dt>
+                        <dd className="tabular">{pcMeta.proClaimable ?? 0}</dd>
+                      </div>
+                    </dl>
+                    {activeSkillStats?.summary ? (
+                      <p className="muted" style={{ fontSize: "0.875rem" }}>
+                        {activeSkillStats.summary}
+                      </p>
+                    ) : null}
+                    <p className="muted hint">
+                      Drafts are AI-reviewed, then sent to you on Telegram. Post
+                      approved replies from{" "}
+                      {pcMeta.xHandle ? (
+                        <a
+                          href={`https://x.com/${pcMeta.xHandle}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          @{pcMeta.xHandle}
+                        </a>
+                      ) : (
+                        "the agent's X account"
+                      )}{" "}
+                      and send the tweet URL back to the bot — the agent submits
+                      it and earns.
+                    </p>
+                    {activeSkillStats?.logTail ? (
+                      <details
+                        className="deploy-console-details"
+                        style={{ marginTop: "1rem" }}
+                      >
+                        <summary>Recent logs</summary>
+                        <pre className="deploy-console-log">
+                          {activeSkillStats.logTail}
+                        </pre>
+                      </details>
+                    ) : null}
+                  </section>
+                ) : null}
+
                 {gamearenaSkill && showGamearenaPanel ? (
                 <section className="deploy-console-section">
                   <div className="deploy-section-head">
@@ -1512,7 +1602,7 @@ export function DeployDashboard() {
               </div>
 
               <aside className="deploy-console-aside">
-                {offchainPlay && (
+                {offchainPlay && !isProductClankTab && (
                   <section
                     className={`deploy-console-aside-block deploy-ladder-panel${
                       ladderLoading && ladder ? " deploy-ladder-panel--refreshing" : ""
@@ -1625,6 +1715,55 @@ export function DeployDashboard() {
                   </dl>
                 </section>
 
+                {isProductClankTab ? (
+                  <section className="deploy-console-aside-block">
+                    <h3>Amplify settings</h3>
+                    <dl className="deploy-aside-dl">
+                      <div>
+                        <dt>X handle</dt>
+                        <dd>
+                          {pcMeta.xHandle ? (
+                            <a
+                              href={`https://x.com/${pcMeta.xHandle}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              @{pcMeta.xHandle}
+                            </a>
+                          ) : (
+                            "—"
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Daily cap</dt>
+                        <dd className="tabular">{pcMeta.dailyCap ?? "10"}</dd>
+                      </div>
+                      <div>
+                        <dt>ERC-8004 id</dt>
+                        <dd className="tabular">
+                          {pcMeta.erc8004AgentId
+                            ? `celo:${pcMeta.erc8004AgentId}`
+                            : "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Campaigns</dt>
+                        <dd>
+                          <a
+                            href="https://www.productclank.com/amplify/campaigns"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Amplify board ↗
+                          </a>
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
+                ) : null}
+
+                {!isProductClankTab ? (
                 <section className="deploy-console-aside-block deploy-play-settings">
                   <h3>Play settings</h3>
                   <dl className="deploy-aside-dl">
@@ -1734,6 +1873,7 @@ export function DeployDashboard() {
                     )}
                   </dl>
                 </section>
+                ) : null}
 
                 <details className="deploy-console-details">
                   <summary>Technical details</summary>

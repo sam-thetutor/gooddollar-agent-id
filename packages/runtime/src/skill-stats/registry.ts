@@ -8,6 +8,7 @@ import { balaioSkillStatsAdapter } from "./balaio.js";
 import { gamearenaSkillStatsAdapter } from "./gamearena.js";
 import { genericSkillStatsAdapter } from "./generic.js";
 import { ubiSkillStatsAdapter } from "./ubi.js";
+import { productClankSkillStatsAdapter } from "./productclank.js";
 import type { SkillStatsAdapter } from "./types.js";
 
 const BY_KEY: Record<RegistryStatsAdapterKey, SkillStatsAdapter> = {
@@ -15,6 +16,7 @@ const BY_KEY: Record<RegistryStatsAdapterKey, SkillStatsAdapter> = {
   actionorder: actionOrderSkillStatsAdapter,
   balaio: balaioSkillStatsAdapter,
   ubi: ubiSkillStatsAdapter,
+  productclank: productClankSkillStatsAdapter,
   generic: genericSkillStatsAdapter,
 };
 
@@ -23,6 +25,7 @@ const ADAPTERS: SkillStatsAdapter[] = [
   actionOrderSkillStatsAdapter,
   balaioSkillStatsAdapter,
   ubiSkillStatsAdapter,
+  productClankSkillStatsAdapter,
   genericSkillStatsAdapter,
 ];
 

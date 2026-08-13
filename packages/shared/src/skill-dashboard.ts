@@ -4,6 +4,7 @@ import {
   isActionOrderSkillId,
   isBalaioSkillId,
   isGamearenaSkillId,
+  isProductClankSkillId,
   isUbiSkillId,
 } from "./deploy-skills.js";
 import type { RegistrySkillFlags } from "./skill-registry.js";
@@ -21,6 +22,7 @@ export type RegistryStatsAdapterKey =
   | "actionorder"
   | "balaio"
   | "ubi"
+  | "productclank"
   | "generic";
 
 export type RegistrySkillWithDashboard = RegistrySkillFlags & {
@@ -33,6 +35,7 @@ export function statsAdapterKeyForSkillId(skillId: string): RegistryStatsAdapter
   if (isActionOrderSkillId(skillId)) return "actionorder";
   if (isBalaioSkillId(skillId)) return "balaio";
   if (isUbiSkillId(skillId)) return "ubi";
+  if (isProductClankSkillId(skillId)) return "productclank";
   return "generic";
 }
 

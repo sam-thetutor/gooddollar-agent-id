@@ -428,6 +428,20 @@ function primarySkillId(
   return primarySkillInstall(agent?.skills ?? [])?.skillId ?? null;
 }
 
+/** Keys that must never leave the host in public status payloads. */
+const SECRET_CONFIG_KEY = /(API_KEY|SECRET|PRIVATE_KEY|BOT_TOKEN|AUTH_TOKEN)$/i;
+
+function sanitizeSkillConfiguration(
+  config: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (SECRET_CONFIG_KEY.test(key)) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 function buildSkillStatusPayload(
   agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
   skillStats?: Record<string, SkillStatsSummary>,
@@ -437,7 +451,9 @@ function buildSkillStatusPayload(
     registryPath: install.registryPath,
     status: install.status,
     lastError: install.lastError,
-    configuration: resolveSkillConfiguration(agent, install),
+    configuration: sanitizeSkillConfiguration(
+      resolveSkillConfiguration(agent, install),
+    ),
     stats: skillStats?.[install.skillId] ?? null,
   }));
 }
@@ -926,7 +942,7 @@ app.get("/deploy/:id/status", async (c) => {
       template: agent.template,
       skillId,
       skills: buildSkillStatusPayload(agent),
-      configuration: JSON.stringify(primaryConfig),
+      configuration: JSON.stringify(sanitizeSkillConfiguration(primaryConfig)),
       status: agent.status,
       ownerWallet: agent.ownerWallet,
       agentAddress: agent.agentAddress,
@@ -1130,7 +1146,7 @@ app.get("/deploy/:id/status", async (c) => {
     template: agent.template,
     skillId: primary?.skillId ?? null,
     skills: buildSkillStatusPayload(agent, skillStats),
-    configuration: JSON.stringify(primaryConfig),
+    configuration: JSON.stringify(sanitizeSkillConfiguration(primaryConfig)),
     status: agent.status,
     ownerWallet: agent.ownerWallet,
     agentAddress: agent.agentAddress,
@@ -1888,7 +1904,9 @@ app.get("/deploy/:id/skills/:skillId", async (c) => {
     registryPath: install.registryPath,
     status: install.status,
     lastError: install.lastError,
-    configuration: resolveSkillConfiguration(agent, install),
+    configuration: sanitizeSkillConfiguration(
+      resolveSkillConfiguration(agent, install),
+    ),
     stats,
   });
 });
