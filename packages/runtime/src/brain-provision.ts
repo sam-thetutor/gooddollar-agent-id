@@ -113,7 +113,13 @@ const KNOWLEDGE_SCAM_PATTERNS = `Common scam patterns in the GoodDollar communit
 
 export const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
 const PRODUCTCLANK_SKILL_FOLDER = "productclank-participant";
-const AMPLIFY_TOOLS = ["amplify_pending", "amplify_mark_posted"];
+const AMPLIFY_TOOLS = [
+  "amplify_pending",
+  "amplify_mark_posted",
+  "amplify_feed",
+  "amplify_campaigns",
+  "amplify_earnings",
+];
 
 /** Human-readable one-liners for known skills (persona context). */
 const SKILL_DESCRIPTIONS: Record<string, string> = {
@@ -160,6 +166,10 @@ const SHARED_RULES = `## Behaviour
 - You cannot send transactions, move funds, place bets for users, or change
   your own configuration from chat. Chat is read-only company; your skills run
   in a separate process.
+- If someone asks you to pause, stop, resume, or restart the agent, tell them
+  to send the exact command /pause, /resume, or /status. Those commands are
+  handled outside of you and only work for the linked operator (linked from
+  the agent dashboard). You cannot start or stop anything yourself.
 - If you are unsure, say so instead of guessing.
 `;
 
@@ -179,8 +189,19 @@ export function buildBrainPersona(input: {
   const amplifyRule = input.tools.includes("amplify_pending")
     ? "- You earn on ProductClank Amplify with a human-in-the-loop: call\n" +
       "  amplify_pending when the operator asks what there is to post, show each\n" +
-      "  draft's exact text and target tweet, and when the operator sends back the\n" +
-      "  URL of a posted reply, record it with amplify_mark_posted.\n"
+      "  draft's exact text, target post URL and platform, and when the operator\n" +
+      "  sends back the URL of a posted reply, record it with amplify_mark_posted.\n" +
+      "- amplify_pending shows only the small local approval queue. When the\n" +
+      "  operator asks what is available for a platform (Twitter, TikTok, …) or\n" +
+      "  what else is out there, call amplify_feed with that platform filter.\n" +
+      "- When the operator asks which campaigns exist or what they can join, call\n" +
+      "  amplify_campaigns (optionally with platform or keyword). Always include\n" +
+      "  each campaign's targetPosts links (the live posts on Twitter/TikTok/etc.)\n" +
+      "  when present — never link to ProductClank pages, the operator wants the\n" +
+      "  actual posts. There is no separate join step — posting a draft for a\n" +
+      "  campaign is participating.\n" +
+      "- When asked about Amplify earnings, points, credits, strikes or $PRO,\n" +
+      "  call amplify_earnings for live numbers instead of guessing.\n"
     : "";
   const toolRules = statsRule + amplifyRule;
 
@@ -234,11 +255,23 @@ export function provisionBrain(input: BrainProvisionInput): BrainProvisionResult
   const hasProductClankSkill = input.skills.some(
     (s) => s.skillId === PRODUCTCLANK_SKILL_ID,
   );
+  const productClankApiKey = hasProductClankSkill
+    ? input.skills
+        .find((s) => s.skillId === PRODUCTCLANK_SKILL_ID)
+        ?.configuration?.PRODUCTCLANK_API_KEY?.trim() || undefined
+    : undefined;
   const baseTools = input.settings.tools?.length
     ? input.settings.tools
     : DEFAULT_BRAIN_TOOLS;
+  // amplify_feed/amplify_earnings need the API key at runtime — enabling them
+  // without one would crash the brain at startup.
+  const amplifyTools = AMPLIFY_TOOLS.filter(
+    (t) =>
+      productClankApiKey ||
+      (t !== "amplify_feed" && t !== "amplify_earnings"),
+  );
   const tools = hasProductClankSkill
-    ? [...baseTools, ...AMPLIFY_TOOLS.filter((t) => !baseTools.includes(t))]
+    ? [...baseTools, ...amplifyTools.filter((t) => !baseTools.includes(t))]
     : baseTools;
 
   const personaPath = resolve(brainDir, "persona.md");
@@ -298,9 +331,16 @@ export function provisionBrain(input: BrainProvisionInput): BrainProvisionResult
       PRODUCTCLANK_SKILL_FOLDER,
       "amplify-queue.json",
     );
+    // amplify_feed / amplify_earnings talk to the ProductClank API directly.
+    if (productClankApiKey) env.PRODUCTCLANK_API_KEY = productClankApiKey;
   }
   if (process.env.BRAIN_LLM_API_KEY?.trim()) {
     env.BRAIN_LLM_API_KEY = process.env.BRAIN_LLM_API_KEY.trim();
+  }
+  // Enables Telegram control commands (/pause, /resume, /status): the brain
+  // calls host internal endpoints with this shared secret.
+  if (process.env.HOST_INTERNAL_SECRET?.trim()) {
+    env.HOST_INTERNAL_SECRET = process.env.HOST_INTERNAL_SECRET.trim();
   }
   if (!input.settings.model && process.env.BRAIN_DEFAULT_MODEL?.trim()) {
     env.BRAIN_MODEL = process.env.BRAIN_DEFAULT_MODEL.trim();

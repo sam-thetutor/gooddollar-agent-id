@@ -142,20 +142,52 @@ describe("provisionBrain", () => {
       agentsRoot,
       apiBase: "https://api.example",
       hostUrl: "http://127.0.0.1:3010",
-      skills: [{ skillId: "work/social/productclank_participant" }],
+      skills: [
+        {
+          skillId: "work/social/productclank_participant",
+          configuration: { PRODUCTCLANK_API_KEY: "pck_live_test" },
+        },
+      ],
       settings: { botToken: "t" },
     });
 
     const manifest = JSON.parse(readFileSync(result.manifestPath, "utf8"));
     expect(manifest.brain.tools).toContain("amplify_pending");
     expect(manifest.brain.tools).toContain("amplify_mark_posted");
+    expect(manifest.brain.tools).toContain("amplify_feed");
+    expect(manifest.brain.tools).toContain("amplify_campaigns");
+    expect(manifest.brain.tools).toContain("amplify_earnings");
     expect(result.env.AMPLIFY_QUEUE_FILE).toBe(
       resolve(agentsRoot, "dep3", "skills/productclank-participant/amplify-queue.json"),
     );
+    expect(result.env.PRODUCTCLANK_API_KEY).toBe("pck_live_test");
 
     const persona = readFileSync(result.personaPath, "utf8");
     expect(persona).toContain("amplify_pending");
+    expect(persona).toContain("amplify_campaigns");
     expect(persona).toContain("ProductClank Amplify participant");
+  });
+
+  it("skips the API-key amplify tools when no key is configured yet", () => {
+    const agentsRoot = makeAgentsRoot();
+    const result = provisionBrain({
+      deployId: "dep4",
+      displayName: "My Agent",
+      template: "social",
+      agentAddress: "0xabc",
+      agentsRoot,
+      apiBase: "https://api.example",
+      hostUrl: "http://127.0.0.1:3010",
+      skills: [{ skillId: "work/social/productclank_participant" }],
+      settings: { botToken: "t" },
+    });
+
+    const manifest = JSON.parse(readFileSync(result.manifestPath, "utf8"));
+    expect(manifest.brain.tools).toContain("amplify_pending");
+    expect(manifest.brain.tools).toContain("amplify_campaigns");
+    expect(manifest.brain.tools).not.toContain("amplify_feed");
+    expect(manifest.brain.tools).not.toContain("amplify_earnings");
+    expect(result.env.PRODUCTCLANK_API_KEY).toBeUndefined();
   });
 });
 

@@ -14,7 +14,12 @@ import {
 import {
   createAmplifyPendingTool,
   createAmplifyMarkPostedTool,
+  createAmplifyFeedTool,
+  createAmplifyCampaignsTool,
+  createAmplifyEarningsTool,
   type AmplifyToolOptions,
+  type AmplifyApiToolOptions,
+  type AmplifyCampaignsToolOptions,
 } from "./amplify.js";
 
 export { createVerifyAddressTool, type VerifyAddressToolOptions };
@@ -23,7 +28,12 @@ export { createAgentStatsTool, type AgentStatsToolOptions };
 export {
   createAmplifyPendingTool,
   createAmplifyMarkPostedTool,
+  createAmplifyFeedTool,
+  createAmplifyCampaignsTool,
+  createAmplifyEarningsTool,
   type AmplifyToolOptions,
+  type AmplifyApiToolOptions,
+  type AmplifyCampaignsToolOptions,
 };
 
 export interface BuiltinToolOptions {
@@ -31,8 +41,10 @@ export interface BuiltinToolOptions {
   /** Required for the `agent_stats` tool. */
   hostUrl?: string;
   deployId?: string;
-  /** Required for the `amplify_*` tools (path to amplify-queue.json). */
+  /** Required for the `amplify_pending`/`amplify_mark_posted` tools. */
   amplifyQueueFile?: string;
+  /** Required for the `amplify_feed`/`amplify_earnings` tools. */
+  productClankApiKey?: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -76,6 +88,33 @@ export function createBuiltinTools(
       }
       return createAmplifyMarkPostedTool({
         queueFile: options.amplifyQueueFile,
+      });
+    },
+    amplify_feed: () => {
+      if (!options.productClankApiKey) {
+        throw new Error(
+          "amplify_feed tool requires PRODUCTCLANK_API_KEY (productClankApiKey)",
+        );
+      }
+      return createAmplifyFeedTool({
+        apiKey: options.productClankApiKey,
+        fetchImpl: options.fetchImpl,
+      });
+    },
+    amplify_campaigns: () =>
+      createAmplifyCampaignsTool({
+        apiKey: options.productClankApiKey,
+        fetchImpl: options.fetchImpl,
+      }),
+    amplify_earnings: () => {
+      if (!options.productClankApiKey) {
+        throw new Error(
+          "amplify_earnings tool requires PRODUCTCLANK_API_KEY (productClankApiKey)",
+        );
+      }
+      return createAmplifyEarningsTool({
+        apiKey: options.productClankApiKey,
+        fetchImpl: options.fetchImpl,
       });
     },
   };
