@@ -37,6 +37,8 @@ export interface BrainConfig {
   hostUrl?: string;
   deployId?: string;
   workerUrl?: string;
+  /** Path to the productclank-participant skill queue — required for `amplify_*` tools. */
+  amplifyQueueFile?: string;
   telegramBotToken?: string;
   channels: string[];
   personaPath?: string;
@@ -86,6 +88,9 @@ export function loadBrainConfig(
     hostUrl: env.GOODAGENT_HOST_URL?.trim() || undefined,
     deployId: env.DEPLOY_ID?.trim() || manifestDeployId,
     workerUrl,
+    amplifyQueueFile: env.AMPLIFY_QUEUE_FILE?.trim()
+      ? resolve(env.AMPLIFY_QUEUE_FILE.trim())
+      : undefined,
     telegramBotToken: env.TELEGRAM_BOT_TOKEN?.trim() || undefined,
     channels: manifest.channels,
     personaPath: manifest.persona ? resolveFromManifest(manifest.persona) : undefined,

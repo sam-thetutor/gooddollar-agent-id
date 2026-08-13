@@ -50,6 +50,7 @@ const REGISTRY_URL =
 
 const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
 const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
+const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
 
 interface SkillEntry {
   name: string;
@@ -148,6 +149,14 @@ function defaultConfigForSkill(skillId: string): SkillConfiguration {
       MAX_ESCROW_GS: "500",
       MIN_WALLET_RESERVE_GS: "10",
       CREATE_ONCE: "1",
+    };
+  }
+  if (skillId === PRODUCTCLANK_SKILL_ID) {
+    return {
+      SCAN_INTERVAL_SECONDS: "1800",
+      DAILY_SUBMIT_CAP: "10",
+      MAX_PENDING_DRAFTS: "5",
+      ENABLE_PRO_CLAIM: "1",
     };
   }
   return {};
@@ -304,6 +313,73 @@ function UbiReminderFields({
   );
 }
 
+function ProductClankFields({
+  config,
+  onChange,
+  brainEnabled,
+}: {
+  config: SkillConfiguration;
+  onChange: (key: string, value: string) => void;
+  brainEnabled: boolean;
+}) {
+  return (
+    <div className="deploy-config-grid">
+      <label className="field deploy-config-full">
+        <span>ProductClank API key</span>
+        <input
+          type="password"
+          value={config.PRODUCTCLANK_API_KEY ?? ""}
+          onChange={(e) => onChange("PRODUCTCLANK_API_KEY", e.target.value)}
+          placeholder="pck_…  (from agent registration)"
+          autoComplete="off"
+        />
+      </label>
+
+      <label className="field">
+        <span>X (Twitter) handle</span>
+        <input
+          value={config.X_HANDLE ?? ""}
+          onChange={(e) => onChange("X_HANDLE", e.target.value.replace(/^@/, ""))}
+          placeholder="myagent"
+          autoComplete="off"
+        />
+      </label>
+
+      <label className="field">
+        <span>Daily submissions</span>
+        <input
+          value={config.DAILY_SUBMIT_CAP ?? "10"}
+          onChange={(e) => onChange("DAILY_SUBMIT_CAP", e.target.value)}
+          inputMode="numeric"
+        />
+      </label>
+
+      <p className="muted hint deploy-config-full">
+        The agent finds reply drafts in live{" "}
+        <a
+          href="https://www.productclank.com/amplify/campaigns"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Amplify campaigns
+        </a>
+        , AI-reviews them, and sends them to you on Telegram. You post approved
+        drafts from the agent&apos;s X account and reply with the tweet URL —
+        the agent submits it and earns points and $PRO (on Base). It never
+        posts to X by itself. Register the agent with ProductClank first to get
+        the API key; set your ERC-8004 id at registration or $PRO claims stay
+        locked.
+      </p>
+      {!brainEnabled ? (
+        <p className="muted hint deploy-config-full">
+          This skill needs AI chat enabled below — the Telegram bot is how you
+          approve drafts.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function BrainChatFields({
   enabled,
   onEnabledChange,
@@ -390,6 +466,9 @@ function deployFundingShort(
   }
   if (skillId === GAMEARENA_SKILL_ID) {
     return "G$ for refills + CELO for gas · 250 G$ bond at /issue";
+  }
+  if (skillId === PRODUCTCLANK_SKILL_ID) {
+    return "Earns $PRO on Base (needs a little ETH for claims) · 250 G$ bond at /issue";
   }
   return "200 G$ + CELO for gas · 250 G$ bond at /issue";
 }
@@ -527,6 +606,18 @@ function deployReviewRows(
       { label: "Reward tokens", value: config.REWARD_TOKENS ?? "G$" },
     ];
   }
+  if (skillId === PRODUCTCLANK_SKILL_ID) {
+    return [
+      {
+        label: "ProductClank API key",
+        value: config.PRODUCTCLANK_API_KEY?.trim()
+          ? `${config.PRODUCTCLANK_API_KEY.slice(0, 8)}… (set)`
+          : "Not set",
+      },
+      { label: "X handle", value: config.X_HANDLE?.trim() ? `@${config.X_HANDLE}` : "Not set" },
+      { label: "Daily submissions", value: config.DAILY_SUBMIT_CAP ?? "10" },
+    ];
+  }
   return [{ label: "Configuration", value: "Registry defaults" }];
 }
 
@@ -555,6 +646,9 @@ function previewHighlights(
     return isBalaioRoleEnabled(config, "creator")
       ? ["Balaio creator", "G$ escrow"]
       : ["Balaio worker", "On-chain tasks"];
+  }
+  if (skillId === PRODUCTCLANK_SKILL_ID) {
+    return ["Amplify campaigns", "Earns $PRO", "Human-approved posts"];
   }
   return ["Hosted runtime", "GoodAgent ID"];
 }
@@ -897,6 +991,8 @@ export function Deploy() {
       setName("My UBI Reminder Agent");
     } else if (activeSkillId === BALAIO_WORKER_SKILL_ID) {
       setName("My Balaio Worker");
+    } else if (activeSkillId === PRODUCTCLANK_SKILL_ID) {
+      setName("My Amplify Agent");
     }
   }, [activeSkillId]);
 
@@ -928,7 +1024,8 @@ export function Deploy() {
             : undefined,
         template: selectedSkillIds.includes(UBI_REMINDER_SKILL_ID)
           ? "social"
-          : selectedSkillIds.includes(BALAIO_WORKER_SKILL_ID)
+          : selectedSkillIds.includes(BALAIO_WORKER_SKILL_ID) ||
+              selectedSkillIds.includes(PRODUCTCLANK_SKILL_ID)
             ? "work"
             : "gaming",
         skipPayment: true,
@@ -993,10 +1090,15 @@ export function Deploy() {
     selectedSkillIds.every((id) =>
       deployableSkills.some((s) => s.skill_id === id),
     );
+  const productclankSelected = selectedSkillIds.includes(PRODUCTCLANK_SKILL_ID);
   const step2Valid =
     step1Valid &&
     (!selectedSkillIds.includes(UBI_REMINDER_SKILL_ID) ||
       botToken.trim().length > 0) &&
+    (!productclankSelected ||
+      (Boolean(skillConfigs[PRODUCTCLANK_SKILL_ID]?.PRODUCTCLANK_API_KEY?.trim()) &&
+        Boolean(skillConfigs[PRODUCTCLANK_SKILL_ID]?.X_HANDLE?.trim()) &&
+        brainEnabled)) &&
     (!brainEnabled || brainBotToken.trim().length > 0);
 
   const nameError =
@@ -1189,11 +1291,19 @@ export function Deploy() {
                             onChange={updateConfig}
                           />
                         )}
+                        {skillId === PRODUCTCLANK_SKILL_ID && (
+                          <ProductClankFields
+                            config={config}
+                            onChange={updateConfig}
+                            brainEnabled={brainEnabled}
+                          />
+                        )}
                         {skillId !== GAMEARENA_SKILL_ID &&
                           skillId !==
                             "gaming/card-fighter/actionorder_vshouse" &&
                           skillId !== UBI_REMINDER_SKILL_ID &&
-                          skillId !== BALAIO_WORKER_SKILL_ID && (
+                          skillId !== BALAIO_WORKER_SKILL_ID &&
+                          skillId !== PRODUCTCLANK_SKILL_ID && (
                             <p className="muted">
                               Registry defaults apply. Change settings from the
                               dashboard after deploy.

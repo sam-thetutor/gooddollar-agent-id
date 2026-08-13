@@ -25,10 +25,13 @@ export {
   createVerifyAddressTool,
   createCheckClaimEligibilityTool,
   createAgentStatsTool,
+  createAmplifyPendingTool,
+  createAmplifyMarkPostedTool,
   type BuiltinToolOptions,
   type VerifyAddressToolOptions,
   type CheckClaimEligibilityToolOptions,
   type AgentStatsToolOptions,
+  type AmplifyToolOptions,
 } from "./tools/index.js";
 
 export {

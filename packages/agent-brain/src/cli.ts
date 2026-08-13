@@ -56,6 +56,7 @@ async function main(): Promise<void> {
     apiBase: config.apiBase,
     hostUrl: config.hostUrl,
     deployId: config.deployId,
+    amplifyQueueFile: config.amplifyQueueFile,
   });
 
   const systemPrompt = buildSystemPrompt({

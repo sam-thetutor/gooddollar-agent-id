@@ -111,6 +111,10 @@ const KNOWLEDGE_SCAM_PATTERNS = `Common scam patterns in the GoodDollar communit
   processes never threaten immediate loss of funds.
 `;
 
+export const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
+const PRODUCTCLANK_SKILL_FOLDER = "productclank-participant";
+const AMPLIFY_TOOLS = ["amplify_pending", "amplify_mark_posted"];
+
 /** Human-readable one-liners for known skills (persona context). */
 const SKILL_DESCRIPTIONS: Record<string, string> = {
   "gaming/wagering/gamearena_1v1":
@@ -120,6 +124,9 @@ const SKILL_DESCRIPTIONS: Record<string, string> = {
     "ActionOrder vs-house — autonomous card-battle matches against the house.",
   "community/reminders/gooddollar_claim":
     "GoodDollar claim reminders — watches subscribed wallets and notifies when UBI is claimable.",
+  [PRODUCTCLANK_SKILL_ID]:
+    "ProductClank Amplify participant — finds reply drafts for live marketing campaigns, " +
+    "AI-reviews them, and earns points and $PRO once the operator posts them on X.",
 };
 
 function describeSkills(
@@ -169,6 +176,13 @@ export function buildBrainPersona(input: {
     ? "- When asked about your match record, stats, today's games, wins/losses, or\n" +
       "  how you are doing, call agent_stats for live numbers instead of guessing.\n"
     : "";
+  const amplifyRule = input.tools.includes("amplify_pending")
+    ? "- You earn on ProductClank Amplify with a human-in-the-loop: call\n" +
+      "  amplify_pending when the operator asks what there is to post, show each\n" +
+      "  draft's exact text and target tweet, and when the operator sends back the\n" +
+      "  URL of a posted reply, record it with amplify_mark_posted.\n"
+    : "";
+  const toolRules = statsRule + amplifyRule;
 
   if (preset === "gaming") {
     return `# ${input.displayName}
@@ -185,7 +199,7 @@ ${describeSkills(input.skills)}
 Your matches, wagers and results are all public on-chain activity. A verified
 human operator stands behind you with a refundable G$ bond.
 
-${statsRule}${SHARED_RULES}
+${toolRules}${SHARED_RULES}
 - Be a little competitive — you are a gamer, after all.
 - Explain what you play, your loss limits, and how GoodAgent verification
   works when asked.
@@ -203,7 +217,7 @@ ${describeSkills(input.skills)}
 
 A verified human operator stands behind you with a refundable G$ bond.
 
-${statsRule}${SHARED_RULES}`;
+${toolRules}${SHARED_RULES}`;
 }
 
 /**
@@ -217,9 +231,15 @@ export function provisionBrain(input: BrainProvisionInput): BrainProvisionResult
   mkdirSync(knowledgeDir, { recursive: true });
   mkdirSync(resolve(dir, "logs"), { recursive: true });
 
-  const tools = input.settings.tools?.length
+  const hasProductClankSkill = input.skills.some(
+    (s) => s.skillId === PRODUCTCLANK_SKILL_ID,
+  );
+  const baseTools = input.settings.tools?.length
     ? input.settings.tools
     : DEFAULT_BRAIN_TOOLS;
+  const tools = hasProductClankSkill
+    ? [...baseTools, ...AMPLIFY_TOOLS.filter((t) => !baseTools.includes(t))]
+    : baseTools;
 
   const personaPath = resolve(brainDir, "persona.md");
   writeFileSync(
@@ -271,6 +291,14 @@ export function provisionBrain(input: BrainProvisionInput): BrainProvisionResult
     API_BASE: input.apiBase,
     TELEGRAM_BOT_TOKEN: input.settings.botToken,
   };
+  if (hasProductClankSkill) {
+    env.AMPLIFY_QUEUE_FILE = resolve(
+      dir,
+      "skills",
+      PRODUCTCLANK_SKILL_FOLDER,
+      "amplify-queue.json",
+    );
+  }
   if (process.env.BRAIN_LLM_API_KEY?.trim()) {
     env.BRAIN_LLM_API_KEY = process.env.BRAIN_LLM_API_KEY.trim();
   }

@@ -131,6 +131,32 @@ describe("provisionBrain", () => {
     expect(manifest.brain.model).toBeUndefined();
     expect(manifest.brain.tools).toEqual(["verify_address"]);
   });
+
+  it("auto-enables amplify tools and queue env for the productclank skill", () => {
+    const agentsRoot = makeAgentsRoot();
+    const result = provisionBrain({
+      deployId: "dep3",
+      displayName: "My Agent",
+      template: "social",
+      agentAddress: "0xabc",
+      agentsRoot,
+      apiBase: "https://api.example",
+      hostUrl: "http://127.0.0.1:3010",
+      skills: [{ skillId: "work/social/productclank_participant" }],
+      settings: { botToken: "t" },
+    });
+
+    const manifest = JSON.parse(readFileSync(result.manifestPath, "utf8"));
+    expect(manifest.brain.tools).toContain("amplify_pending");
+    expect(manifest.brain.tools).toContain("amplify_mark_posted");
+    expect(result.env.AMPLIFY_QUEUE_FILE).toBe(
+      resolve(agentsRoot, "dep3", "skills/productclank-participant/amplify-queue.json"),
+    );
+
+    const persona = readFileSync(result.personaPath, "utf8");
+    expect(persona).toContain("amplify_pending");
+    expect(persona).toContain("ProductClank Amplify participant");
+  });
 });
 
 describe("validateTelegramBotToken", () => {
