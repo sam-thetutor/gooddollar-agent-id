@@ -408,6 +408,26 @@ export function updateDeployConfiguration(
   });
 }
 
+export interface ProductClankLinkResult {
+  alreadyLinked: boolean;
+  linkUrl: string | null;
+  expiresAt: string | null;
+  linkedUserName: string | null;
+}
+
+export function requestProductClankLink(
+  deployId: string,
+  auth: DeployControlAuth,
+) {
+  return hostFetch<{ link: ProductClankLinkResult }>(
+    `/deploy/${deployId}/productclank/link`,
+    {
+      method: "POST",
+      body: JSON.stringify(auth),
+    },
+  );
+}
+
 export function setDeploySkillEnabled(
   deployId: string,
   skillId: string,

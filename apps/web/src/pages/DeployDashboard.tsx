@@ -15,6 +15,7 @@ import {
   stopDeploy,
   setDeploySkillEnabled,
   updateDeployConfiguration,
+  requestProductClankLink,
   type DeployStatusResponse,
   type GamearenaLadder,
   type SkillConfiguration,
@@ -58,6 +59,7 @@ type HealthState = "live" | "paused" | "stopped" | "crashed" | "failed" | "deplo
 
 const REFRESH_MS = 20_000;
 const MATCHES_PAGE_SIZE = 10;
+const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
 
 function processHealth(s: DeployStatusResponse): HealthState {
   if (s.pipelineRunning) return "deploying";
@@ -189,6 +191,8 @@ export function DeployDashboard() {
   const [draftConfig, setDraftConfig] = useState<SkillConfiguration>({});
   const [configBusy, setConfigBusy] = useState(false);
   const [skillToggleBusy, setSkillToggleBusy] = useState<string | null>(null);
+  const [pcLinkBusy, setPcLinkBusy] = useState(false);
+  const [pcLinkNote, setPcLinkNote] = useState<string | null>(null);
   const [dashboardTab, setDashboardTab] = useState<string>("overview");
   const refreshInFlight = useRef(false);
   const liveSnapshotInFlight = useRef(false);
@@ -455,7 +459,13 @@ export function DeployDashboard() {
 
   const signControl = useCallback(
     async (
-      action: "pause" | "resume" | "baseline" | "configuration" | "run-pipeline",
+      action:
+        | "pause"
+        | "resume"
+        | "baseline"
+        | "configuration"
+        | "run-pipeline"
+        | "productclank-link",
     ) => {
       if (!id || !address) {
         throw new Error("Connect the owner wallet to control this agent.");
@@ -526,6 +536,34 @@ export function DeployDashboard() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBaselineBusy(false);
+    }
+  };
+
+  const requestPcLink = async () => {
+    if (!id) return;
+    setPcLinkBusy(true);
+    setPcLinkNote(null);
+    try {
+      const auth = await signControl("productclank-link");
+      const { link } = await requestProductClankLink(id, auth);
+      if (link.alreadyLinked) {
+        setPcLinkNote(
+          link.linkedUserName
+            ? `Already linked to ${link.linkedUserName}'s ProductClank account.`
+            : "Already linked to a ProductClank account.",
+        );
+      } else if (link.linkUrl) {
+        window.open(link.linkUrl, "_blank", "noopener");
+        setPcLinkNote(
+          "Linking page opened in a new tab — log in there to attach this agent to your ProductClank account.",
+        );
+      } else {
+        setPcLinkNote("ProductClank did not return a linking URL. Try again.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPcLinkBusy(false);
     }
   };
 
@@ -1124,7 +1162,25 @@ export function DeployDashboard() {
                                   Enable
                                 </button>
                               ) : null}
+                              {canControl &&
+                              skill.skillId === PRODUCTCLANK_SKILL_ID ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={pcLinkBusy || !isConnected}
+                                  onClick={() => void requestPcLink()}
+                                  title="Attach this agent to your ProductClank account (webapp dashboard + better standing)"
+                                >
+                                  {pcLinkBusy ? "Linking…" : "Link account"}
+                                </button>
+                              ) : null}
                             </div>
+                            {skill.skillId === PRODUCTCLANK_SKILL_ID &&
+                            pcLinkNote ? (
+                              <p className="deploy-skill-card-summary muted">
+                                {pcLinkNote}
+                              </p>
+                            ) : null}
                           </article>
                         );
                       })}

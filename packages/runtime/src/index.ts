@@ -117,8 +117,12 @@ export type { SkillConfiguration } from "./skill-env.js";
 export {
   ensureErc8004AgentId,
   registerWithProductClank,
+  createProductClankLink,
 } from "./productclank-provision.js";
-export type { ProductClankRegistration } from "./productclank-provision.js";
+export type {
+  ProductClankRegistration,
+  ProductClankLink,
+} from "./productclank-provision.js";
 
 export {
   applyDeployConfiguration,

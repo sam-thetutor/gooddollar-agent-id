@@ -276,3 +276,58 @@ export async function registerWithProductClank(input: {
     productClankAgentId: body.agent?.id ?? "",
   };
 }
+
+export interface ProductClankLink {
+  alreadyLinked: boolean;
+  linkUrl: string | null;
+  expiresAt: string | null;
+  linkedUserName: string | null;
+}
+
+/**
+ * Generate a short-lived owner-linking URL for a registered ProductClank
+ * agent. The owner opens the URL, logs in, and the agent gets attached to
+ * their ProductClank account (webapp dashboard visibility + better standing).
+ * Tokens expire, so call this on demand rather than caching the URL.
+ */
+export async function createProductClankLink(input: {
+  apiKey: string;
+  apiBase?: string;
+  fetchImpl?: typeof fetch;
+}): Promise<ProductClankLink> {
+  const fetchFn = input.fetchImpl ?? fetch;
+  const base = (input.apiBase ?? PRODUCTCLANK_API_BASE).replace(/\/$/, "");
+  const res = await fetchFn(`${base}/agents/create-link`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.apiKey}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const body = (await res.json().catch(() => null)) as
+    | {
+        success?: boolean;
+        error?: string;
+        message?: string;
+        already_linked?: boolean;
+        link_url?: string;
+        expires_at?: string;
+        user_name?: string;
+      }
+    | null;
+
+  if (!res.ok || !body?.success) {
+    throw new Error(
+      `[productclank] create-link failed (HTTP ${res.status}): ${
+        body?.message ?? body?.error ?? "unknown error"
+      }`,
+    );
+  }
+
+  return {
+    alreadyLinked: body.already_linked === true,
+    linkUrl: body.link_url ?? null,
+    expiresAt: body.expires_at ?? null,
+    linkedUserName: body.user_name ?? null,
+  };
+}

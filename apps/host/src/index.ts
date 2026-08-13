@@ -78,6 +78,8 @@ import {
   pauseGamearenaAgentAtDailyCap,
   patchAllGamearenaDailyCapGuards,
   patchAllActionOrderSecureSkills,
+  createProductClankLink,
+  PRODUCTCLANK_SKILL_ID,
   type SkillStatsSummary,
   type PipelineStatus,
   type DeployAgentRecord,
@@ -1566,6 +1568,50 @@ app.post("/deploy/:id/start", async (c) => {
     void scheduleDeployPipeline(id, agent, { skipIdentity: false }).catch(() => undefined);
     await updateDeployedAgent(id, { status: "provisioning", lastError: null });
     return c.json({ accepted: true, reprovisioning: true, deployId: id }, 202);
+  }
+});
+
+// Generate a fresh ProductClank owner-linking URL. Tokens are short-lived,
+// so the dashboard requests one on demand instead of caching it.
+app.post("/deploy/:id/productclank/link", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json<Record<string, unknown>>().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const authErr = await verifyDeployControl(
+    "productclank-link",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  const install = agent.skills.find((s) => s.skillId === PRODUCTCLANK_SKILL_ID);
+  if (!install) return c.json({ error: "SKILL_NOT_INSTALLED" }, 409);
+
+  const config = resolveSkillConfiguration(agent, install);
+  const apiKey = config.PRODUCTCLANK_API_KEY?.trim();
+  if (!apiKey) {
+    return c.json(
+      {
+        error: "NOT_REGISTERED",
+        message:
+          "This agent has no ProductClank API key yet — re-run the deploy pipeline to auto-register.",
+      },
+      409,
+    );
+  }
+
+  try {
+    const link = await createProductClankLink({ apiKey });
+    return c.json({ link });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "PRODUCTCLANK_ERROR", message }, 502);
   }
 });
 
