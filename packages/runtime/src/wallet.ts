@@ -60,6 +60,9 @@ export interface AgentWalletMeta {
   /** Registered GameArena Pass username on Celo (GamePass contract). */
   gamePassUsername?: string | null;
   gamePassRegisteredAt?: string | null;
+  /** On-chain ERC-8004 Identity Registry token id (Celo), once minted. */
+  erc8004AgentId?: string | null;
+  erc8004RegisteredAt?: string | null;
 }
 
 export function agentDir(agentsRoot: string, deployId: string): string {

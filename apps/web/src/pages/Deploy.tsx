@@ -324,17 +324,6 @@ function ProductClankFields({
 }) {
   return (
     <div className="deploy-config-grid">
-      <label className="field deploy-config-full">
-        <span>ProductClank API key</span>
-        <input
-          type="password"
-          value={config.PRODUCTCLANK_API_KEY ?? ""}
-          onChange={(e) => onChange("PRODUCTCLANK_API_KEY", e.target.value)}
-          placeholder="pck_…  (from agent registration)"
-          autoComplete="off"
-        />
-      </label>
-
       <label className="field">
         <span>X (Twitter) handle</span>
         <input
@@ -355,7 +344,10 @@ function ProductClankFields({
       </label>
 
       <p className="muted hint deploy-config-full">
-        The agent finds reply drafts in live{" "}
+        Just give your agent&apos;s X handle. On deploy, GoodAgent mints the
+        agent&apos;s ERC-8004 identity on Celo and registers it with
+        ProductClank automatically — no API key to copy. The agent then finds
+        reply drafts in live{" "}
         <a
           href="https://www.productclank.com/amplify/campaigns"
           target="_blank"
@@ -364,12 +356,25 @@ function ProductClankFields({
           Amplify campaigns
         </a>
         , AI-reviews them, and sends them to you on Telegram. You post approved
-        drafts from the agent&apos;s X account and reply with the tweet URL —
-        the agent submits it and earns points and $PRO (on Base). It never
-        posts to X by itself. Register the agent with ProductClank first to get
-        the API key; set your ERC-8004 id at registration or $PRO claims stay
-        locked.
+        drafts from this X account and reply with the tweet URL — the agent
+        submits it and earns points and $PRO (on Base). It never posts to X by
+        itself.
       </p>
+
+      <details className="skill-selfhost deploy-config-full">
+        <summary>Already registered? Use an existing API key</summary>
+        <label className="field deploy-config-full">
+          <span>ProductClank API key (optional)</span>
+          <input
+            type="password"
+            value={config.PRODUCTCLANK_API_KEY ?? ""}
+            onChange={(e) => onChange("PRODUCTCLANK_API_KEY", e.target.value)}
+            placeholder="pck_…  (leave blank to auto-register)"
+            autoComplete="off"
+          />
+        </label>
+      </details>
+
       {!brainEnabled ? (
         <p className="muted hint deploy-config-full">
           This skill needs AI chat enabled below — the Telegram bot is how you
@@ -608,13 +613,13 @@ function deployReviewRows(
   }
   if (skillId === PRODUCTCLANK_SKILL_ID) {
     return [
-      {
-        label: "ProductClank API key",
-        value: config.PRODUCTCLANK_API_KEY?.trim()
-          ? `${config.PRODUCTCLANK_API_KEY.slice(0, 8)}… (set)`
-          : "Not set",
-      },
       { label: "X handle", value: config.X_HANDLE?.trim() ? `@${config.X_HANDLE}` : "Not set" },
+      {
+        label: "ProductClank",
+        value: config.PRODUCTCLANK_API_KEY?.trim()
+          ? "Existing API key"
+          : "Auto-register on deploy",
+      },
       { label: "Daily submissions", value: config.DAILY_SUBMIT_CAP ?? "10" },
     ];
   }
@@ -1096,8 +1101,7 @@ export function Deploy() {
     (!selectedSkillIds.includes(UBI_REMINDER_SKILL_ID) ||
       botToken.trim().length > 0) &&
     (!productclankSelected ||
-      (Boolean(skillConfigs[PRODUCTCLANK_SKILL_ID]?.PRODUCTCLANK_API_KEY?.trim()) &&
-        Boolean(skillConfigs[PRODUCTCLANK_SKILL_ID]?.X_HANDLE?.trim()) &&
+      (Boolean(skillConfigs[PRODUCTCLANK_SKILL_ID]?.X_HANDLE?.trim()) &&
         brainEnabled)) &&
     (!brainEnabled || brainBotToken.trim().length > 0);
 

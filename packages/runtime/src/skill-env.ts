@@ -179,6 +179,42 @@ export { PROOF_OF_ALPHA_HUNT_SKILL_ID };
 export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
 export const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
 export const PLAYCHESSIFY_SKILL_ID = "gaming/wagering/playchessify_1v1";
+export const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
+
+export function buildProductClankEnv(
+  agentPrivateKey: `0x${string}` | null,
+  agentAddress: Address,
+  config: SkillConfiguration,
+): Record<string, string> {
+  const apiKey = config.PRODUCTCLANK_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error(
+      "productclank-participant requires PRODUCTCLANK_API_KEY (auto-registration may have failed — check the deploy logs)",
+    );
+  }
+  const xHandle = config.X_HANDLE?.trim().replace(/^@/, "");
+  if (!xHandle) {
+    throw new Error("productclank-participant requires X_HANDLE");
+  }
+  const env: Record<string, string> = {
+    PRODUCTCLANK_API_KEY: apiKey,
+    X_HANDLE: xHandle,
+    AGENT_ADDRESS: agentAddress,
+    LLM_BASE_URL: config.LLM_BASE_URL ?? "http://localhost:8377/v1",
+    SCAN_INTERVAL_SECONDS: config.SCAN_INTERVAL_SECONDS ?? "1800",
+    DAILY_SUBMIT_CAP: config.DAILY_SUBMIT_CAP ?? "10",
+    MAX_PENDING_DRAFTS: config.MAX_PENDING_DRAFTS ?? "5",
+    ENABLE_PRO_CLAIM: config.ENABLE_PRO_CLAIM ?? "0",
+    STATE_FILE: "./state.json",
+    QUEUE_FILE: "./amplify-queue.json",
+  };
+  if (config.LLM_MODEL?.trim()) env.LLM_MODEL = config.LLM_MODEL.trim();
+  if (config.ERC8004_AGENT_ID?.trim())
+    env.ERC8004_AGENT_ID = config.ERC8004_AGENT_ID.trim();
+  // Only needed for on-chain $PRO claims; harmless to include.
+  if (agentPrivateKey) env.PRIVATE_KEY = agentPrivateKey;
+  return env;
+}
 
 const BALAIO_SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhemF3dGFqYnB6aHBsdnR1amVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NjI0MjYsImV4cCI6MjA4MTAzODQyNn0.m1lboja6h24zePQexzWSY9MeC4WyLGa_kQvKbJxPmVg";
@@ -325,6 +361,12 @@ export function buildSkillEnv(
     env = buildProofOfAlphaHuntEnv(
       opts.agentAddress,
       opts.displayName,
+      opts.config,
+    );
+  } else if (skillId === PRODUCTCLANK_SKILL_ID) {
+    env = buildProductClankEnv(
+      opts.agentPrivateKey,
+      opts.agentAddress,
       opts.config,
     );
   } else {

@@ -50,6 +50,11 @@ import {
   validateTelegramBotToken,
   type BrainDeploySettings,
 } from "./brain-provision.js";
+import {
+  ensureErc8004AgentId,
+  registerWithProductClank,
+  PRODUCTCLANK_SKILL_ID,
+} from "./productclank-provision.js";
 import type { SkillInstall } from "@goodagent/db";
 
 export type PipelineStatus =
@@ -170,7 +175,8 @@ function skillNeedsAgentPrivateKey(skillId: string, spendsTokens: boolean): bool
   return (
     spendsTokens ||
     skillId === GAMEARENA_SKILL_ID ||
-    skillId === BALAIO_WORKER_SKILL_ID
+    skillId === BALAIO_WORKER_SKILL_ID ||
+    skillId === PRODUCTCLANK_SKILL_ID
   );
 }
 
@@ -215,13 +221,20 @@ export async function runDeployPipeline(
     const agentPrivateKey = deriveAgentPrivateKey(config.deployMnemonic, index);
     const pm2Name = pm2ProcessName(deployId);
 
+    let priorMeta: Partial<ReturnType<typeof readAgentMeta>> = {};
+    try {
+      priorMeta = readAgentMeta(config.agentsRoot, deployId);
+    } catch {
+      priorMeta = {};
+    }
     writeAgentMeta(config.agentsRoot, {
+      ...priorMeta,
       deployId,
       displayName,
       template,
       address: agentAddress,
       derivationIndex: index,
-      createdAt: new Date().toISOString(),
+      createdAt: priorMeta.createdAt ?? new Date().toISOString(),
     });
 
     await hooks.onStatus("provisioning", {
@@ -268,6 +281,51 @@ export async function runDeployPipeline(
 
     await relayAttestation(config, account as LocalAccount);
 
+    // ProductClank: mint an ERC-8004 identity and self-register so the operator
+    // only supplies an X handle. Best-effort — a failure here (e.g. handle
+    // already taken, no CELO for gas) must not sink the whole deploy; the skill
+    // simply won't start until its API key is present.
+    let productClankKey: string | null = null;
+    let productClankErc8004Id: string | null = null;
+    const productClankInput = pipelineSkills.find(
+      (s) => s.skillId === PRODUCTCLANK_SKILL_ID,
+    );
+    if (productClankInput) {
+      const pcConfig = productClankInput.configuration ?? {};
+      const existingKey = pcConfig.PRODUCTCLANK_API_KEY?.trim();
+      const xHandle = pcConfig.X_HANDLE?.trim();
+      try {
+        productClankErc8004Id = await ensureErc8004AgentId(config, {
+          deployId,
+          displayName,
+          agentAddress,
+          agentPrivateKey,
+        });
+        if (existingKey) {
+          productClankKey = existingKey;
+        } else if (xHandle) {
+          const reg = await registerWithProductClank({
+            displayName,
+            agentAddress,
+            erc8004AgentId: productClankErc8004Id,
+            xHandle,
+          });
+          productClankKey = reg.apiKey;
+          console.log(
+            `[productclank] registered "${displayName}" (@${xHandle}) → key stored`,
+          );
+        } else {
+          console.warn(
+            "[productclank] no X_HANDLE and no API key — skipping auto-registration",
+          );
+        }
+      } catch (err) {
+        console.warn(
+          `[productclank] auto-provision failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
     await hooks.onStatus("installing", { agentAddress, walletDerivationIndex: index, pm2Name });
 
     const skillDirs: string[] = [];
@@ -285,6 +343,11 @@ export async function runDeployPipeline(
       ) {
         skillConfig.PLAYER_NAME = gamePassUsername;
         skillConfig.GAME_PASS_USERNAME = gamePassUsername;
+      }
+      if (skillInput.skillId === PRODUCTCLANK_SKILL_ID) {
+        if (productClankKey) skillConfig.PRODUCTCLANK_API_KEY = productClankKey;
+        if (productClankErc8004Id)
+          skillConfig.ERC8004_AGENT_ID = productClankErc8004Id;
       }
 
       const skillDir = installSkillFromRegistry(config.agentsRoot, deployId, entry);

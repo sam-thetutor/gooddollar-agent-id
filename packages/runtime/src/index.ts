@@ -108,9 +108,17 @@ export {
   UBI_REMINDER_SKILL_ID,
   BALAIO_WORKER_SKILL_ID,
   PLAYCHESSIFY_SKILL_ID,
+  PRODUCTCLANK_SKILL_ID,
+  buildProductClankEnv,
   writeSkillEnv,
 } from "./skill-env.js";
 export type { SkillConfiguration } from "./skill-env.js";
+
+export {
+  ensureErc8004AgentId,
+  registerWithProductClank,
+} from "./productclank-provision.js";
+export type { ProductClankRegistration } from "./productclank-provision.js";
 
 export {
   applyDeployConfiguration,
