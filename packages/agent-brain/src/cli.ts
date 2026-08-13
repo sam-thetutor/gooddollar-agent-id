@@ -6,6 +6,7 @@ import { buildSystemPrompt } from "./persona.js";
 import { createBrain } from "./orchestrator.js";
 import { createBuiltinTools } from "./tools/index.js";
 import { createTelegramChannel } from "./channels/telegram.js";
+import { createControlClient } from "./control.js";
 import { createConsoleLogger } from "./types.js";
 
 function parseArgs(argv: string[]): { manifestPath?: string } {
@@ -57,6 +58,7 @@ async function main(): Promise<void> {
     hostUrl: config.hostUrl,
     deployId: config.deployId,
     amplifyQueueFile: config.amplifyQueueFile,
+    productClankApiKey: config.productClankApiKey,
   });
 
   const systemPrompt = buildSystemPrompt({
@@ -78,10 +80,24 @@ async function main(): Promise<void> {
     if (!config.telegramBotToken) {
       throw new Error("telegram channel enabled but TELEGRAM_BOT_TOKEN is not set");
     }
+    const control =
+      config.hostUrl && config.deployId && config.hostInternalSecret
+        ? createControlClient({
+            hostUrl: config.hostUrl,
+            deployId: config.deployId,
+            secret: config.hostInternalSecret,
+          })
+        : undefined;
+    if (!control) {
+      logger.warn(
+        "chat control disabled (needs GOODAGENT_HOST_URL, deployId and HOST_INTERNAL_SECRET)",
+      );
+    }
     const telegram = createTelegramChannel({
       botToken: config.telegramBotToken,
       brain,
       logger: createConsoleLogger("telegram"),
+      control,
     });
     telegram.start();
     channels.push(telegram);

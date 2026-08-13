@@ -36,9 +36,13 @@ export interface BrainConfig {
   /** GoodAgent host origin + deploy id — required for the `agent_stats` tool. */
   hostUrl?: string;
   deployId?: string;
+  /** Shared secret for host /internal endpoints — enables chat control commands. */
+  hostInternalSecret?: string;
   workerUrl?: string;
   /** Path to the productclank-participant skill queue — required for `amplify_*` tools. */
   amplifyQueueFile?: string;
+  /** ProductClank agent API key — required for `amplify_feed`/`amplify_earnings`. */
+  productClankApiKey?: string;
   telegramBotToken?: string;
   channels: string[];
   personaPath?: string;
@@ -87,10 +91,12 @@ export function loadBrainConfig(
     apiBase: env.API_BASE?.trim() || GOODAGENT_API_URL,
     hostUrl: env.GOODAGENT_HOST_URL?.trim() || undefined,
     deployId: env.DEPLOY_ID?.trim() || manifestDeployId,
+    hostInternalSecret: env.HOST_INTERNAL_SECRET?.trim() || undefined,
     workerUrl,
     amplifyQueueFile: env.AMPLIFY_QUEUE_FILE?.trim()
       ? resolve(env.AMPLIFY_QUEUE_FILE.trim())
       : undefined,
+    productClankApiKey: env.PRODUCTCLANK_API_KEY?.trim() || undefined,
     telegramBotToken: env.TELEGRAM_BOT_TOKEN?.trim() || undefined,
     channels: manifest.channels,
     personaPath: manifest.persona ? resolveFromManifest(manifest.persona) : undefined,

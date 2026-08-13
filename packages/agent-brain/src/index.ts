@@ -27,11 +27,16 @@ export {
   createAgentStatsTool,
   createAmplifyPendingTool,
   createAmplifyMarkPostedTool,
+  createAmplifyFeedTool,
+  createAmplifyCampaignsTool,
+  createAmplifyEarningsTool,
   type BuiltinToolOptions,
   type VerifyAddressToolOptions,
   type CheckClaimEligibilityToolOptions,
   type AgentStatsToolOptions,
   type AmplifyToolOptions,
+  type AmplifyApiToolOptions,
+  type AmplifyCampaignsToolOptions,
 } from "./tools/index.js";
 
 export {
@@ -44,10 +49,21 @@ export {
 
 export {
   createTelegramChannel,
+  parseControlCommand,
   stripMarkdown,
+  type ParsedControlCommand,
   type TelegramChannel,
   type TelegramChannelOptions,
 } from "./channels/telegram.js";
+
+export {
+  createControlClient,
+  type ClaimLinkResponse,
+  type ControlAction,
+  type ControlClient,
+  type ControlClientOptions,
+  type ControlResponse,
+} from "./control.js";
 
 export {
   brainManifestSchema,

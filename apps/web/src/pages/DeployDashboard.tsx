@@ -16,6 +16,7 @@ import {
   setDeploySkillEnabled,
   updateDeployConfiguration,
   requestProductClankLink,
+  requestTelegramLinkToken,
   type DeployStatusResponse,
   type GamearenaLadder,
   type SkillConfiguration,
@@ -193,6 +194,8 @@ export function DeployDashboard() {
   const [skillToggleBusy, setSkillToggleBusy] = useState<string | null>(null);
   const [pcLinkBusy, setPcLinkBusy] = useState(false);
   const [pcLinkNote, setPcLinkNote] = useState<string | null>(null);
+  const [tgLinkBusy, setTgLinkBusy] = useState(false);
+  const [tgLinkNote, setTgLinkNote] = useState<string | null>(null);
   const [dashboardTab, setDashboardTab] = useState<string>("overview");
   const refreshInFlight = useRef(false);
   const liveSnapshotInFlight = useRef(false);
@@ -467,7 +470,8 @@ export function DeployDashboard() {
         | "baseline"
         | "configuration"
         | "run-pipeline"
-        | "productclank-link",
+        | "productclank-link"
+        | "telegram-link",
     ) => {
       if (!id || !address) {
         throw new Error("Connect the owner wallet to control this agent.");
@@ -566,6 +570,24 @@ export function DeployDashboard() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setPcLinkBusy(false);
+    }
+  };
+
+  const requestTgLink = async () => {
+    if (!id) return;
+    setTgLinkBusy(true);
+    setTgLinkNote(null);
+    try {
+      const auth = await signControl("telegram-link");
+      const res = await requestTelegramLinkToken(id, auth);
+      window.open(res.deepLink, "_blank", "noopener");
+      setTgLinkNote(
+        `Telegram opened — press Start in the chat with @${res.botUsername} to finish linking (link valid 15 min).`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTgLinkBusy(false);
     }
   };
 
@@ -1050,10 +1072,35 @@ export function DeployDashboard() {
                             </a>
                           </>
                         ) : null}
+                        {status.brain.operatorLinked ? (
+                          <>
+                            {" · "}
+                            <span title="Chat control is linked — /pause, /resume and /status work from Telegram.">
+                              control linked
+                              {status.brain.operatorTelegramUsername
+                                ? ` (@${status.brain.operatorTelegramUsername})`
+                                : ""}
+                            </span>
+                          </>
+                        ) : canControl && status.brain.botUsername ? (
+                          <>
+                            {" · "}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              disabled={tgLinkBusy || !isConnected}
+                              onClick={() => void requestTgLink()}
+                              title="Link your Telegram account to pause/resume this agent from chat."
+                            >
+                              {tgLinkBusy ? "Linking…" : "Link Telegram control"}
+                            </button>
+                          </>
+                        ) : null}
                       </span>
                     </div>
                   ) : null}
                 </div>
+                {tgLinkNote ? <p className="muted small">{tgLinkNote}</p> : null}
 
                 {installedSkills.length > 0 ? (
                   <div className="deploy-overview-skills">

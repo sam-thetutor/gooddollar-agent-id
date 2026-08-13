@@ -550,6 +550,64 @@ export function stopDeployedAgent(deployId: string): void {
   }
 }
 
+/**
+ * Stop only the worker process(es); the brain stays online so the operator
+ * can resume the agent from Telegram chat.
+ */
+export function stopDeployedAgentWorkers(deployId: string): void {
+  try {
+    pm2Stop(pm2ProcessName(deployId));
+  } catch {
+    // Process may already be stopped or never started.
+  }
+}
+
+/**
+ * Start only the worker process(es), leaving the brain untouched — restarting
+ * the brain from inside a brain-initiated command would kill the bot mid-reply.
+ */
+export function startDeployedAgentWorkers(
+  config: RuntimeConfig,
+  deployId: string,
+): "started" | "restarted" {
+  const name = pm2ProcessName(deployId);
+  const ecoPath = resolve(
+    agentDir(config.agentsRoot, deployId),
+    "ecosystem.config.cjs",
+  );
+
+  if (!isPm2Available()) {
+    throw new Error("pm2 not found in PATH");
+  }
+
+  const snap = pm2ProcessSnapshot(name);
+  if (snap) {
+    if (snap.online) {
+      pm2Restart(name);
+      return "restarted";
+    }
+    execSync(`pm2 start ${JSON.stringify(name)}`, {
+      stdio: "inherit",
+      encoding: "utf8",
+    });
+    return "started";
+  }
+
+  if (existsSync(ecoPath)) {
+    execSync(
+      `pm2 start ${JSON.stringify(ecoPath)} --only ${JSON.stringify(name)}`,
+      { stdio: "inherit", encoding: "utf8" },
+    );
+    return "started";
+  }
+
+  const err = new Error(
+    "Agent files are missing on this host. Re-provision from the dashboard.",
+  );
+  (err as { code?: string }).code = "AGENT_NOT_PROVISIONED";
+  throw err;
+}
+
 /** Start or restart PM2 for a deploy; cold-starts from ecosystem when needed. */
 export function startDeployedAgent(
   config: RuntimeConfig,

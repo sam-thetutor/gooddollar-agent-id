@@ -33,6 +33,10 @@ export interface DeployBrainConfig {
   tools?: string[];
   /** Telegram bot username, filled in after the pipeline validates the token. */
   botUsername?: string;
+  /** Telegram user id of the linked operator (may control the agent from chat). */
+  operatorTelegramId?: number;
+  /** Telegram username of the linked operator, for display only. */
+  operatorTelegramUsername?: string | null;
 }
 
 export interface CreateDeployedAgentInput {

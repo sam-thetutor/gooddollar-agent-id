@@ -108,6 +108,8 @@ export interface DeployStatusResponse {
     enabled: boolean;
     model: string | null;
     botUsername: string | null;
+    operatorLinked?: boolean;
+    operatorTelegramUsername?: string | null;
     pm2: {
       name: string;
       status: string;
@@ -421,6 +423,28 @@ export function requestProductClankLink(
 ) {
   return hostFetch<{ link: ProductClankLinkResult }>(
     `/deploy/${deployId}/productclank/link`,
+    {
+      method: "POST",
+      body: JSON.stringify(auth),
+    },
+  );
+}
+
+export interface TelegramLinkTokenResult {
+  token: string;
+  botUsername: string;
+  deepLink: string;
+  expiresAt: string;
+  operatorLinked: boolean;
+}
+
+/** Issue a short-lived token that binds the owner's Telegram account for chat control. */
+export function requestTelegramLinkToken(
+  deployId: string,
+  auth: DeployControlAuth,
+) {
+  return hostFetch<TelegramLinkTokenResult>(
+    `/deploy/${deployId}/telegram/link-token`,
     {
       method: "POST",
       body: JSON.stringify(auth),

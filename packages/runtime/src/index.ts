@@ -137,6 +137,8 @@ export {
   runClaimBotPipeline,
   stopDeployedAgent,
   startDeployedAgent,
+  stopDeployedAgentWorkers,
+  startDeployedAgentWorkers,
   restartDeployedAgent,
   pm2ProcessSnapshot,
 } from "./pipeline.js";

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,6 +61,8 @@ import {
   runDeployPipeline,
   startDeployedAgent,
   stopDeployedAgent,
+  stopDeployedAgentWorkers,
+  startDeployedAgentWorkers,
   setDeployBaselineBalance,
   applyDeployConfiguration,
   applySkillInstallStatus,
@@ -418,6 +421,8 @@ function buildBrainStatusPayload(
     enabled: true,
     model: config.model ?? null,
     botUsername: config.botUsername ?? null,
+    operatorLinked: config.operatorTelegramId != null,
+    operatorTelegramUsername: config.operatorTelegramUsername ?? null,
     pm2: pm2ProcessSnapshot(brainPm2Name(agent.id)),
   };
 }
@@ -1628,6 +1633,204 @@ app.post("/deploy/:id/productclank/link", async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: "PRODUCTCLANK_ERROR", message }, 502);
+  }
+});
+
+// ---- Telegram chat control --------------------------------------------------
+// The owner links their Telegram account once via a short-lived token (issued
+// here, redeemed by the brain through /internal claim). After that the brain
+// forwards /pause, /resume and /status commands and the host verifies the
+// sender is the linked operator before touching PM2.
+
+const TELEGRAM_LINK_TOKEN_TTL_MS = 15 * 60 * 1000;
+const telegramLinkTokens = new Map<
+  string,
+  { deployId: string; expiresAt: number }
+>();
+
+function pruneTelegramLinkTokens(): void {
+  const now = Date.now();
+  for (const [token, entry] of telegramLinkTokens) {
+    if (entry.expiresAt <= now) telegramLinkTokens.delete(token);
+  }
+}
+
+app.post("/deploy/:id/telegram/link-token", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json<Record<string, unknown>>().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const authErr = await verifyDeployControl(
+    "telegram-link",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  const brain = parseDeployBrainConfig(agent);
+  if (!brain?.enabled || !brain.botUsername) {
+    return c.json(
+      {
+        error: "BRAIN_NOT_ENABLED",
+        message: "This agent has no chat brain — enable AI chat first.",
+      },
+      409,
+    );
+  }
+
+  pruneTelegramLinkTokens();
+  const token = randomUUID().replace(/-/g, "");
+  const expiresAt = Date.now() + TELEGRAM_LINK_TOKEN_TTL_MS;
+  telegramLinkTokens.set(token, { deployId: id, expiresAt });
+
+  return c.json({
+    token,
+    botUsername: brain.botUsername,
+    // Telegram start payload: [A-Za-z0-9_-]{1,64} — "link_" + 32 hex fits.
+    deepLink: `https://t.me/${brain.botUsername}?start=link_${token}`,
+    expiresAt: new Date(expiresAt).toISOString(),
+    operatorLinked: brain.operatorTelegramId != null,
+  });
+});
+
+app.post("/internal/deploy/:id/telegram/claim-link", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const body = (await c.req
+    .json<{ token?: unknown; telegramUserId?: unknown; telegramUsername?: unknown }>()
+    .catch(() => ({}))) as {
+    token?: unknown;
+    telegramUserId?: unknown;
+    telegramUsername?: unknown;
+  };
+
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  const telegramUserId =
+    typeof body.telegramUserId === "number" && Number.isInteger(body.telegramUserId)
+      ? body.telegramUserId
+      : null;
+  if (!token || telegramUserId == null) {
+    return c.json({ error: "token and telegramUserId are required" }, 400);
+  }
+
+  const entry = telegramLinkTokens.get(token);
+  if (!entry || entry.deployId !== id || entry.expiresAt <= Date.now()) {
+    return c.json(
+      {
+        error: "LINK_TOKEN_INVALID",
+        message:
+          "This link is invalid or expired — generate a fresh one from the agent dashboard.",
+      },
+      410,
+    );
+  }
+  telegramLinkTokens.delete(token);
+
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+  const brain = parseDeployBrainConfig(agent);
+  if (!brain) return c.json({ error: "BRAIN_NOT_ENABLED" }, 409);
+
+  await updateDeployedAgent(id, {
+    brainConfig: JSON.stringify({
+      ...brain,
+      operatorTelegramId: telegramUserId,
+      operatorTelegramUsername:
+        typeof body.telegramUsername === "string" && body.telegramUsername.trim()
+          ? body.telegramUsername.trim()
+          : null,
+    }),
+  });
+
+  return c.json({ ok: true, displayName: agent.displayName });
+});
+
+app.post("/internal/deploy/:id/control", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const body = (await c.req
+    .json<{ action?: unknown; telegramUserId?: unknown }>()
+    .catch(() => ({}))) as { action?: unknown; telegramUserId?: unknown };
+
+  const action = typeof body.action === "string" ? body.action : "";
+  const telegramUserId =
+    typeof body.telegramUserId === "number" && Number.isInteger(body.telegramUserId)
+      ? body.telegramUserId
+      : null;
+  if (!["pause", "resume", "status"].includes(action) || telegramUserId == null) {
+    return c.json({ error: "action (pause|resume|status) and telegramUserId required" }, 400);
+  }
+
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+  const brain = parseDeployBrainConfig(agent);
+  if (brain?.operatorTelegramId == null) {
+    return c.json(
+      {
+        error: "NOT_LINKED",
+        message:
+          "No operator is linked yet. Open the agent dashboard and use Link Telegram first.",
+      },
+      403,
+    );
+  }
+  if (brain.operatorTelegramId !== telegramUserId) {
+    return c.json(
+      {
+        error: "NOT_OPERATOR",
+        message: "Only the linked operator can control this agent.",
+      },
+      403,
+    );
+  }
+
+  if (action === "status") {
+    const workers = agent.pm2Name ? pm2ProcessSnapshot(agent.pm2Name) : null;
+    const brainProc = pm2ProcessSnapshot(brainPm2Name(id));
+    return c.json({
+      ok: true,
+      status: agent.status,
+      displayName: agent.displayName,
+      workers,
+      brain: brainProc,
+    });
+  }
+
+  if (action === "pause") {
+    stopDeployedAgentWorkers(id);
+    const updated = await updateDeployedAgent(id, { status: "paused" });
+    return c.json({ ok: true, status: updated.status, displayName: agent.displayName });
+  }
+
+  // resume
+  loadRuntimeEnv();
+  let config;
+  try {
+    config = getRuntimeConfig();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "HOST_CONFIG", message }, 500);
+  }
+  try {
+    const result = startDeployedAgentWorkers(config, id);
+    const updated = await updateDeployedAgent(id, {
+      status: "running",
+      lastError: null,
+    });
+    return c.json({
+      ok: true,
+      status: updated.status,
+      displayName: agent.displayName,
+      result,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "START_FAILED", message }, 500);
   }
 });
 
