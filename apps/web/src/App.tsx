@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { WagmiProvider } from "wagmi";
+import { SovAdsPopup } from "./components/SovAdsPopup.js";
 import { config } from "./lib/wagmi.js";
 import { shouldUseWalletConnect } from "./lib/wallet-mobile.js";
 import { AgentProfile } from "./pages/AgentProfile.js";
@@ -23,6 +24,7 @@ export function App() {
     <WagmiProvider config={config} reconnectOnMount={!shouldUseWalletConnect()}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
+          <SovAdsPopup />
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/issue" element={<IssueAgent />} />
