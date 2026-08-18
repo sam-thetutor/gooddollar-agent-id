@@ -29,9 +29,23 @@ export const UNISWAP_V3_QUOTER_ADDRESS = {
   [CELO_CHAIN_ID]: "0x82825d0554fA07f7FC52Ab63c961F330fdEFa8E8" as const,
 } as const;
 
+/** Legacy SwapRouter02 — G$ swaps revert; use Universal Router instead. */
 export const UNISWAP_V3_SWAP_ROUTER_ADDRESS = {
   [CELO_CHAIN_ID]: "0x5615CDAb10dc425a742d643d949a7F474C01abc4" as const,
 } as const;
+
+/** Uniswap Universal Router — required for G$ (ERC-677) swaps on Celo. */
+export const UNISWAP_UNIVERSAL_ROUTER_ADDRESS = {
+  [CELO_CHAIN_ID]: "0x643770E279d5D0733F21d6DC03A8efbABf3255B4" as const,
+} as const;
+
+/** Permit2 — Universal Router pulls tokens via Permit2, not direct ERC-20 approve. */
+export const PERMIT2_ADDRESS = {
+  [CELO_CHAIN_ID]: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as const,
+} as const;
+
+/** Best observed fee tier for G$/USDm on Celo Uniswap V3 (1% pool). */
+export const UNISWAP_GS_USDM_FEE = 10_000;
 
 /** Best observed fee tier for USDm/USDT on Celo Uniswap V3. */
 export const UNISWAP_USDM_USDT_FEE = 100;
@@ -44,3 +58,6 @@ export const MENTO_EXCHANGE_PROVIDER_CELO =
   MENTO_EXCHANGE_PROVIDER_ADDRESS[CELO_CHAIN_ID];
 export const UNISWAP_QUOTER_CELO = UNISWAP_V3_QUOTER_ADDRESS[CELO_CHAIN_ID];
 export const UNISWAP_ROUTER_CELO = UNISWAP_V3_SWAP_ROUTER_ADDRESS[CELO_CHAIN_ID];
+export const UNISWAP_UNIVERSAL_ROUTER_CELO =
+  UNISWAP_UNIVERSAL_ROUTER_ADDRESS[CELO_CHAIN_ID];
+export const PERMIT2_CELO = PERMIT2_ADDRESS[CELO_CHAIN_ID];

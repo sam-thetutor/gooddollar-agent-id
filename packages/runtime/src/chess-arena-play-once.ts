@@ -47,6 +47,13 @@ function findMatchId(output: string): string | null {
   return match?.[1] ?? null;
 }
 
+export function chessArenaSkillDir(
+  agentsRoot: string,
+  deployId: string,
+): string {
+  return resolve(agentDir(agentsRoot, deployId), "skills/chess-arena-player");
+}
+
 export interface PlayChessArenaMatchOnceResult {
   matchId: string | null;
   exitCode: number | null;

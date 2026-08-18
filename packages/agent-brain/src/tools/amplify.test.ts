@@ -8,6 +8,7 @@ import {
   createAmplifyMarkPostedTool,
   createAmplifyFeedTool,
   createAmplifyCampaignsTool,
+  createAmplifyCampaignDraftsTool,
   createAmplifyEarningsTool,
   platformFromUrl,
 } from "./amplify.js";
@@ -324,6 +325,136 @@ describe("amplify_campaigns", () => {
     };
     assert.equal(result.matches[0].campaignUrl, undefined);
     assert.equal(result.matches[0].targetPosts, undefined);
+  });
+});
+
+describe("amplify_campaign_drafts", () => {
+  const CAMPAIGNS_BODY = {
+    campaigns: [
+      {
+        id: "uuid-498",
+        campaignId: "CP-498",
+        title: "Warm-up: ProductClank",
+        product: { name: "ProductClank" },
+        platform: "tiktok",
+        status: "active",
+      },
+      {
+        id: "uuid-17",
+        campaignId: "CP-017",
+        title: "3 stocks",
+        product: { name: "TipRanks" },
+        platform: "twitter",
+        status: "active",
+      },
+    ],
+  };
+
+  const FEED_FOR_CAMPAIGN = {
+    success: true,
+    posts: [
+      {
+        id: "p1",
+        campaignId: "uuid-498",
+        campaign: { title: "Warm-up: ProductClank", campaignNumber: "CP-498" },
+        tweetUrl: "https://www.tiktok.com/@creator/video/1",
+        author: { username: "creator" },
+        unclaimedReplies: [{ id: "live-1", replyText: "great video!", actionType: "reply" }],
+      },
+      {
+        id: "p2",
+        campaignId: "uuid-17",
+        campaign: { title: "3 stocks", campaignNumber: "CP-017" },
+        tweetUrl: "https://x.com/analyst/status/9",
+        unclaimedReplies: [{ id: "live-2", replyText: "bullish", actionType: "reply" }],
+      },
+    ],
+  };
+
+  it("returns queued and live drafts for a matched campaign", async () => {
+    writeFileSync(
+      queueFile,
+      JSON.stringify({
+        version: 1,
+        pending: [
+          {
+            ...DRAFT,
+            replyId: "queued-1",
+            campaignTitle: "Warm-up: ProductClank",
+            tweetUrl: "https://www.tiktok.com/@creator/video/1",
+          },
+        ],
+        posted: [],
+      }),
+    );
+
+    let call = 0;
+    const fetchImpl = (async (url: string) => {
+      call += 1;
+      const isCampaignList = url.includes("/api/communiply/list");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => (isCampaignList ? CAMPAIGNS_BODY : FEED_FOR_CAMPAIGN),
+      };
+    }) as unknown as typeof fetch;
+
+    const tool = createAmplifyCampaignDraftsTool({
+      queueFile,
+      apiKey: "pck_live_x",
+      fetchImpl,
+    });
+    const result = (await tool.execute({ campaign: "ProductClank" })) as {
+      matchedCampaign: { campaign: string };
+      queuedDrafts: Array<Record<string, unknown>>;
+      liveDrafts: Array<Record<string, unknown>>;
+    };
+
+    assert.equal(result.matchedCampaign.campaign, "CP-498");
+    assert.equal(result.queuedDrafts.length, 1);
+    assert.equal(result.queuedDrafts[0].replyId, "queued-1");
+    assert.equal(result.liveDrafts.length, 1);
+    assert.equal(result.liveDrafts[0].replyId, "live-1");
+    assert.equal(result.liveDrafts[0].platform, "tiktok");
+  });
+
+  it("returns only queued drafts when no API key is set", async () => {
+    writeFileSync(
+      queueFile,
+      JSON.stringify({
+        version: 1,
+        pending: [{ ...DRAFT, campaignTitle: "Warm-up: ProductClank" }],
+        posted: [],
+      }),
+    );
+
+    const fetchImpl = mockFetch(200, CAMPAIGNS_BODY);
+    const tool = createAmplifyCampaignDraftsTool({ queueFile, fetchImpl });
+    const result = (await tool.execute({ campaign: "CP-498" })) as {
+      queuedDrafts: unknown[];
+      liveDrafts: unknown[];
+    };
+    assert.equal(result.queuedDrafts.length, 1);
+    assert.equal(result.liveDrafts.length, 0);
+  });
+
+  it("errors when campaign query is missing", async () => {
+    const tool = createAmplifyCampaignDraftsTool({ queueFile });
+    const result = (await tool.execute({})) as { error?: string };
+    assert.match(result.error ?? "", /campaign is required/);
+  });
+
+  it("reports no match when campaign is unknown", async () => {
+    const tool = createAmplifyCampaignDraftsTool({
+      queueFile,
+      fetchImpl: mockFetch(200, CAMPAIGNS_BODY),
+    });
+    const result = (await tool.execute({ campaign: "does-not-exist" })) as {
+      matchedCampaigns: unknown[];
+      note: string;
+    };
+    assert.equal(result.matchedCampaigns.length, 0);
+    assert.match(result.note, /No active campaign matched/);
   });
 });
 

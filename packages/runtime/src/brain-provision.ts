@@ -118,6 +118,7 @@ const AMPLIFY_TOOLS = [
   "amplify_mark_posted",
   "amplify_feed",
   "amplify_campaigns",
+  "amplify_campaign_drafts",
   "amplify_earnings",
 ];
 
@@ -200,6 +201,9 @@ export function buildBrainPersona(input: {
       "  when present — never link to ProductClank pages, the operator wants the\n" +
       "  actual posts. There is no separate join step — posting a draft for a\n" +
       "  campaign is participating.\n" +
+      "- When the operator asks for drafts or what to post for ONE specific\n" +
+      "  campaign (by name, CP id, or keyword), call amplify_campaign_drafts with\n" +
+      "  that campaign — it merges the local queue and live ProductClank feed.\n" +
       "- When asked about Amplify earnings, points, credits, strikes or $PRO,\n" +
       "  call amplify_earnings for live numbers instead of guessing.\n"
     : "";

@@ -156,6 +156,7 @@ describe("provisionBrain", () => {
     expect(manifest.brain.tools).toContain("amplify_mark_posted");
     expect(manifest.brain.tools).toContain("amplify_feed");
     expect(manifest.brain.tools).toContain("amplify_campaigns");
+    expect(manifest.brain.tools).toContain("amplify_campaign_drafts");
     expect(manifest.brain.tools).toContain("amplify_earnings");
     expect(result.env.AMPLIFY_QUEUE_FILE).toBe(
       resolve(agentsRoot, "dep3", "skills/productclank-participant/amplify-queue.json"),
@@ -165,6 +166,7 @@ describe("provisionBrain", () => {
     const persona = readFileSync(result.personaPath, "utf8");
     expect(persona).toContain("amplify_pending");
     expect(persona).toContain("amplify_campaigns");
+    expect(persona).toContain("amplify_campaign_drafts");
     expect(persona).toContain("ProductClank Amplify participant");
   });
 
@@ -185,6 +187,7 @@ describe("provisionBrain", () => {
     const manifest = JSON.parse(readFileSync(result.manifestPath, "utf8"));
     expect(manifest.brain.tools).toContain("amplify_pending");
     expect(manifest.brain.tools).toContain("amplify_campaigns");
+    expect(manifest.brain.tools).toContain("amplify_campaign_drafts");
     expect(manifest.brain.tools).not.toContain("amplify_feed");
     expect(manifest.brain.tools).not.toContain("amplify_earnings");
     expect(result.env.PRODUCTCLANK_API_KEY).toBeUndefined();

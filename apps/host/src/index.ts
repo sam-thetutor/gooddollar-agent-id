@@ -47,6 +47,7 @@ import {
   getDeployLogTail,
   syncGamearenaStateFile,
   syncDeployLogFile,
+  getPlatformStats,
   type GameArenaLiveMatch,
   type DeployStatus,
 } from "@goodagent/db";
@@ -108,6 +109,9 @@ import {
 import {
   registerActionOrderPartnerRoutes,
 } from "./partners/actionorder.js";
+import {
+  registerChessArenaPartnerRoutes,
+} from "./partners/chess-arena.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rootEnv = resolve(here, "../../../.env");
@@ -608,6 +612,11 @@ registerActionOrderPartnerRoutes(app, {
   fetchVerifyStatus,
 });
 
+registerChessArenaPartnerRoutes(app, {
+  publicHostBase: HOST_PUBLIC_BASE,
+  fetchVerifyStatus,
+});
+
 const GAMEARENA_SSE_UPSTREAM =
   process.env.GAMEARENA_LIVE_SSE_URL?.trim() ||
   "https://game-backend-production-6130.up.railway.app";
@@ -667,6 +676,22 @@ app.get("/health", (c) =>
     pm2: process.env.PM2_HOME ? "configured" : "local",
   }),
 );
+
+const PLATFORM_STATS_CACHE_TTL_MS = 60_000;
+let platformStatsCache: { at: number; body: unknown } | null = null;
+
+/** Platform-wide deploy, skill, and game aggregates for the public stats page. */
+app.get("/platform/stats", async (c) => {
+  if (
+    platformStatsCache &&
+    Date.now() - platformStatsCache.at < PLATFORM_STATS_CACHE_TTL_MS
+  ) {
+    return c.json(platformStatsCache.body as Record<string, unknown>);
+  }
+  const body = await getPlatformStats();
+  platformStatsCache = { at: Date.now(), body };
+  return c.json(body);
+});
 
 /** GameArena challenge-ai ladder with GoodAgent wallet metadata for filtering. */
 app.get("/leaderboard/gamearena", async (c) => {

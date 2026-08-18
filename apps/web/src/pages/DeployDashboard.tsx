@@ -24,6 +24,7 @@ import {
 import { isDeployOwner, signDeployControl } from "../lib/deploy-control.js";
 import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import { GamearenaConfigFields } from "../components/GamearenaConfigFields.js";
+import { ChessArenaConfigFields } from "../components/ChessArenaConfigFields.js";
 import {
   GameArenaLiveSection,
   isGamearenaSkill,
@@ -41,6 +42,7 @@ import {
   playModeLabel,
   strategyLabelFromConfig,
 } from "../lib/gamearena-config.js";
+import { isChessArenaSkillId } from "../lib/chess-arena-config.js";
 import { parseSkillConfig } from "../lib/skill-config.js";
 import {
   configurableSkillsFromStatus,
@@ -2023,6 +2025,14 @@ export function DeployDashboard() {
               )}
               {isBalaioSkill(activeSettingsSkillId) && (
                 <BalaioConfigFields
+                  config={draftConfig}
+                  onChange={(key, value) =>
+                    setDraftConfig((prev) => ({ ...prev, [key]: value }))
+                  }
+                />
+              )}
+              {isChessArenaSkillId(activeSettingsSkillId ?? "") && (
+                <ChessArenaConfigFields
                   config={draftConfig}
                   onChange={(key, value) =>
                     setDraftConfig((prev) => ({ ...prev, [key]: value }))

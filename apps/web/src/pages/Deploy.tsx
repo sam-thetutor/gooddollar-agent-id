@@ -5,6 +5,7 @@ import { useAccount, useSignMessage } from "wagmi";
 import { ConnectButton, Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { GamearenaConfigFields } from "../components/GamearenaConfigFields.js";
+import { ChessArenaConfigFields } from "../components/ChessArenaConfigFields.js";
 import { BalaioConfigFields } from "../components/BalaioConfigFields.js";
 import {
   createDeploy,
@@ -22,6 +23,13 @@ import {
   playModeLabel,
   strategyLabelFromConfig,
 } from "../lib/gamearena-config.js";
+import {
+  CHESS_ARENA_SKILL_ID,
+  chessArenaPlayModeLabel,
+  chessArenaSolverLabel,
+  defaultChessArenaConfig,
+  parseChessArenaSolverEngine,
+} from "../lib/chess-arena-config.js";
 import {
   isBalaioRoleEnabled,
 } from "../lib/balaio-config.js";
@@ -158,6 +166,9 @@ function defaultConfigForSkill(skillId: string): SkillConfiguration {
       MAX_PENDING_DRAFTS: "5",
       ENABLE_PRO_CLAIM: "1",
     };
+  }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return defaultChessArenaConfig();
   }
   return {};
 }
@@ -472,6 +483,9 @@ function deployFundingShort(
   if (skillId === GAMEARENA_SKILL_ID) {
     return "G$ for refills + CELO for gas · 250 G$ bond at /issue";
   }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return "9,000 G$ (→ ~1 USDT stake) + CELO for gas · 250 G$ bond at /issue";
+  }
   if (skillId === PRODUCTCLANK_SKILL_ID) {
     return "Earns $PRO on Base (needs a little ETH for claims) · 250 G$ bond at /issue";
   }
@@ -623,6 +637,26 @@ function deployReviewRows(
       { label: "Daily submissions", value: config.DAILY_SUBMIT_CAP ?? "10" },
     ];
   }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return [
+      { label: "Puzzle solver", value: chessArenaSolverLabel(config) },
+      { label: "Lobby mode", value: chessArenaPlayModeLabel(config) },
+      {
+        label: "Engine time / puzzle",
+        value:
+          parseChessArenaSolverEngine(config) === "stockfish"
+            ? `${config.SOLVER_MOVETIME_MS ?? "450"} ms`
+            : "—",
+      },
+      { label: "Auto-swap G$→USDT", value: (config.AUTO_SWAP ?? "1") !== "0" ? "On" : "Off" },
+      { label: "Daily match cap", value: config.DAILY_MATCH_CAP ?? "20" },
+      { label: "Max matches / run", value: config.MAX_MATCHES ?? "5" },
+      {
+        label: "Pause between matches",
+        value: `${config.MATCH_INTERVAL_SECONDS ?? "120"} sec`,
+      },
+    ];
+  }
   return [{ label: "Configuration", value: "Registry defaults" }];
 }
 
@@ -654,6 +688,13 @@ function previewHighlights(
   }
   if (skillId === PRODUCTCLANK_SKILL_ID) {
     return ["Amplify campaigns", "Earns $PRO", "Human-approved posts"];
+  }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return [
+      chessArenaSolverLabel(config),
+      chessArenaPlayModeLabel(config),
+      `${config.DAILY_MATCH_CAP ?? "20"} matches/day`,
+    ];
   }
   return ["Hosted runtime", "GoodAgent ID"];
 }
@@ -998,6 +1039,8 @@ export function Deploy() {
       setName("My Balaio Worker");
     } else if (activeSkillId === PRODUCTCLANK_SKILL_ID) {
       setName("My Amplify Agent");
+    } else if (activeSkillId === CHESS_ARENA_SKILL_ID) {
+      setName("My Chess Arena Agent");
     }
   }, [activeSkillId]);
 
@@ -1302,12 +1345,21 @@ export function Deploy() {
                             brainEnabled={brainEnabled}
                           />
                         )}
+                        {skillId === CHESS_ARENA_SKILL_ID && (
+                          <ChessArenaConfigFields
+                            config={config}
+                            onChange={updateConfig}
+                            compact
+                            variant="onboard"
+                          />
+                        )}
                         {skillId !== GAMEARENA_SKILL_ID &&
                           skillId !==
                             "gaming/card-fighter/actionorder_vshouse" &&
                           skillId !== UBI_REMINDER_SKILL_ID &&
                           skillId !== BALAIO_WORKER_SKILL_ID &&
-                          skillId !== PRODUCTCLANK_SKILL_ID && (
+                          skillId !== PRODUCTCLANK_SKILL_ID &&
+                          skillId !== CHESS_ARENA_SKILL_ID && (
                             <p className="muted">
                               Registry defaults apply. Change settings from the
                               dashboard after deploy.

@@ -238,6 +238,7 @@ export type { PlayGamearenaMatchOnceResult } from "./gamearena-play-once.js";
 
 export {
   playChessArenaMatchOnce,
+  chessArenaSkillDir,
 } from "./chess-arena-play-once.js";
 export type { PlayChessArenaMatchOnceResult } from "./chess-arena-play-once.js";
 

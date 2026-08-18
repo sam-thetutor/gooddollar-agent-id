@@ -470,3 +470,71 @@ export function setDeploySkillEnabled(
     body: JSON.stringify(auth),
   });
 }
+
+export interface PlatformSkillInstallBreakdown {
+  skillId: string;
+  label: string;
+  total: number;
+  activated: number;
+  failed: number;
+}
+
+export interface PlatformSkillGameBreakdown {
+  skillId: string;
+  label: string;
+  played: number;
+  wins: number;
+  losses: number;
+  unresolved: number;
+  wagerGs: string;
+}
+
+export interface PlatformRecentMatch {
+  matchId: string;
+  skillId: string | null;
+  skillLabel: string;
+  deployId: string;
+  deployName: string;
+  result: string;
+  wagerGs: string;
+  playedAt: string;
+}
+
+export interface PlatformDailyGames {
+  date: string;
+  total: number;
+  bySkill: Record<string, number>;
+}
+
+export interface PlatformStats {
+  deploys: {
+    total: number;
+    byStatus: Record<string, number>;
+    byTemplate: Record<string, number>;
+    withAgentId: number;
+    running: number;
+    healthy: number;
+  };
+  skills: {
+    totalInstalls: number;
+    bySkill: PlatformSkillInstallBreakdown[];
+  };
+  games: {
+    total: number;
+    totalWagerGs: string;
+    today: number;
+    liveNow: number;
+    bySkill: PlatformSkillGameBreakdown[];
+  };
+  payments: {
+    total: number;
+    completed: number;
+    totalUsd: string;
+  };
+  recentMatches: PlatformRecentMatch[];
+  dailyGames: PlatformDailyGames[];
+}
+
+export function getPlatformStats() {
+  return hostFetch<PlatformStats>("/platform/stats");
+}

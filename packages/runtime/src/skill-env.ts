@@ -180,8 +180,23 @@ export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
 export const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
 export const PLAYCHESSIFY_SKILL_ID = "gaming/wagering/playchessify_1v1";
 export const CHESS_ARENA_SKILL_ID = "gaming/wagering/chess_arena_1v1";
-/** Covers ~1 USDT swap (~8.8k G$ at current Mento rates) plus headroom. */
+/** Covers ~1 USDT swap (~9k G$ at current Uniswap rates) plus headroom. */
 export const CHESS_ARENA_MIN_FUNDING_GS = 9_000;
+
+/** Bundled Stockfish wrapper (skill cwd = install dir). */
+export const CHESS_ARENA_DEFAULT_SOLVER_CMD = "node scripts/stockfish-solver.mjs";
+
+export function resolveChessArenaSolverCmd(
+  config: SkillConfiguration,
+): string | undefined {
+  const engine = (config.SOLVER_ENGINE ?? "stockfish").trim().toLowerCase();
+  if (engine === "basic" || engine === "off" || engine === "none") {
+    return undefined;
+  }
+  const custom = config.SOLVER_CMD?.trim();
+  if (custom) return custom;
+  return CHESS_ARENA_DEFAULT_SOLVER_CMD;
+}
 
 export function buildChessArenaEnv(
   agentPrivateKey: `0x${string}` | null,
@@ -193,7 +208,7 @@ export function buildChessArenaEnv(
   if (!agentPrivateKey) {
     throw new Error("chess-arena-player requires agent private key");
   }
-  return {
+  const env: Record<string, string> = {
     PRIVATE_KEY: agentPrivateKey,
     PLAYER_ADDRESS: agentAddress,
     PLAYER_NAME: config.PLAYER_NAME ?? displayName,
@@ -211,7 +226,14 @@ export function buildChessArenaEnv(
     MAX_MATCHES: config.MAX_MATCHES ?? "5",
     DAILY_MATCH_CAP: config.DAILY_MATCH_CAP ?? "20",
     MATCH_INTERVAL_SECONDS: config.MATCH_INTERVAL_SECONDS ?? "120",
+    SOLVER_ENGINE: config.SOLVER_ENGINE ?? "stockfish",
   };
+  const solverCmd = resolveChessArenaSolverCmd(config);
+  if (solverCmd) {
+    env.SOLVER_CMD = solverCmd;
+    env.SOLVER_MOVETIME_MS = config.SOLVER_MOVETIME_MS ?? "450";
+  }
+  return env;
 }
 
 export function computeChessArenaFundingGs(baseGs: number): number {

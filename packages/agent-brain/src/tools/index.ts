@@ -16,10 +16,12 @@ import {
   createAmplifyMarkPostedTool,
   createAmplifyFeedTool,
   createAmplifyCampaignsTool,
+  createAmplifyCampaignDraftsTool,
   createAmplifyEarningsTool,
   type AmplifyToolOptions,
   type AmplifyApiToolOptions,
   type AmplifyCampaignsToolOptions,
+  type AmplifyCampaignDraftsToolOptions,
 } from "./amplify.js";
 
 export { createVerifyAddressTool, type VerifyAddressToolOptions };
@@ -30,10 +32,12 @@ export {
   createAmplifyMarkPostedTool,
   createAmplifyFeedTool,
   createAmplifyCampaignsTool,
+  createAmplifyCampaignDraftsTool,
   createAmplifyEarningsTool,
   type AmplifyToolOptions,
   type AmplifyApiToolOptions,
   type AmplifyCampaignsToolOptions,
+  type AmplifyCampaignDraftsToolOptions,
 };
 
 export interface BuiltinToolOptions {
@@ -106,6 +110,18 @@ export function createBuiltinTools(
         apiKey: options.productClankApiKey,
         fetchImpl: options.fetchImpl,
       }),
+    amplify_campaign_drafts: () => {
+      if (!options.amplifyQueueFile) {
+        throw new Error(
+          "amplify_campaign_drafts tool requires AMPLIFY_QUEUE_FILE (amplifyQueueFile)",
+        );
+      }
+      return createAmplifyCampaignDraftsTool({
+        queueFile: options.amplifyQueueFile,
+        apiKey: options.productClankApiKey,
+        fetchImpl: options.fetchImpl,
+      });
+    },
     amplify_earnings: () => {
       if (!options.productClankApiKey) {
         throw new Error(
