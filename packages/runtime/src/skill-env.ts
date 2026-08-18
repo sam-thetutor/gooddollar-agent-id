@@ -179,6 +179,44 @@ export { PROOF_OF_ALPHA_HUNT_SKILL_ID };
 export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
 export const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
 export const PLAYCHESSIFY_SKILL_ID = "gaming/wagering/playchessify_1v1";
+export const CHESS_ARENA_SKILL_ID = "gaming/wagering/chess_arena_1v1";
+/** Covers ~1 USDT swap (~8.8k G$ at current Mento rates) plus headroom. */
+export const CHESS_ARENA_MIN_FUNDING_GS = 9_000;
+
+export function buildChessArenaEnv(
+  agentPrivateKey: `0x${string}` | null,
+  rpcUrl: string,
+  config: SkillConfiguration,
+  agentAddress: Address,
+  displayName: string,
+): Record<string, string> {
+  if (!agentPrivateKey) {
+    throw new Error("chess-arena-player requires agent private key");
+  }
+  return {
+    PRIVATE_KEY: agentPrivateKey,
+    PLAYER_ADDRESS: agentAddress,
+    PLAYER_NAME: config.PLAYER_NAME ?? displayName,
+    CELO_RPC_URL: config.CELO_RPC_URL ?? rpcUrl,
+    ARENA_URL: config.ARENA_URL ?? "https://arena.chesspuzzles.xyz",
+    ARENA_CONTRACT:
+      config.ARENA_CONTRACT ??
+      "0x8fe68a574f0b8c2819897363195ed3d66fde4ec1",
+    USDT_ADDRESS:
+      config.USDT_ADDRESS ?? "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
+    AUTO_SWAP: config.AUTO_SWAP ?? "1",
+    MIN_GS_RESERVE: config.MIN_GS_RESERVE ?? "50",
+    USDT_STAKE_BUFFER: config.USDT_STAKE_BUFFER ?? "1000000",
+    PLAY_MODE: config.PLAY_MODE ?? "auto",
+    MAX_MATCHES: config.MAX_MATCHES ?? "5",
+    DAILY_MATCH_CAP: config.DAILY_MATCH_CAP ?? "20",
+    MATCH_INTERVAL_SECONDS: config.MATCH_INTERVAL_SECONDS ?? "120",
+  };
+}
+
+export function computeChessArenaFundingGs(baseGs: number): number {
+  return Math.max(baseGs, CHESS_ARENA_MIN_FUNDING_GS);
+}
 export const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
 
 export function buildProductClankEnv(
@@ -351,6 +389,14 @@ export function buildSkillEnv(
     );
   } else if (skillId === PLAYCHESSIFY_SKILL_ID) {
     env = buildPlaychessifyEnv(
+      opts.agentPrivateKey,
+      opts.rpcUrl,
+      opts.config,
+      opts.agentAddress,
+      opts.displayName,
+    );
+  } else if (skillId === CHESS_ARENA_SKILL_ID) {
+    env = buildChessArenaEnv(
       opts.agentPrivateKey,
       opts.rpcUrl,
       opts.config,

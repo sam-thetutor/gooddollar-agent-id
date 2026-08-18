@@ -11,6 +11,39 @@ export {
   getGoodDollarEnv,
   getRpcUrl,
 } from "./addresses.js";
+export {
+  CELO_USDT_ADDRESS,
+  CELO_USDM_ADDRESS,
+  G_DOLLAR_CELO,
+  G_DOLLAR_USDM_EXCHANGE_ID,
+  MENTO_BROKER_ADDRESS,
+  MENTO_BROKER_CELO,
+  MENTO_EXCHANGE_PROVIDER_ADDRESS,
+  MENTO_EXCHANGE_PROVIDER_CELO,
+  UNISWAP_USDM_USDT_FEE,
+  UNISWAP_V3_QUOTER_ADDRESS,
+  UNISWAP_V3_SWAP_ROUTER_ADDRESS,
+  UNISWAP_QUOTER_CELO,
+  UNISWAP_ROUTER_CELO,
+  USDM_CELO,
+  USDT_CELO,
+} from "./swap-addresses.js";
+export {
+  DEFAULT_MIN_GS_RESERVE,
+  DEFAULT_SLIPPAGE_BPS,
+  DEFAULT_USDT_TARGET,
+  createSwapPublicClient,
+  ensureUsdtBalance,
+  quoteGsToUsdt,
+  readGsBalance,
+  readUsdtBalance,
+  usdmForUsdtTarget,
+} from "./gs-to-usdt.js";
+export type {
+  EnsureUsdtBalanceOptions,
+  EnsureUsdtBalanceResult,
+  GsToUsdtQuote,
+} from "./gs-to-usdt.js";
 export { createCeloPublicClient, getChainId, pingChain } from "./client.js";
 export {
   getAgentAttestations,

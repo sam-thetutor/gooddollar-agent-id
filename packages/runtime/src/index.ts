@@ -22,6 +22,13 @@ export {
 export type { IssueResult } from "./identity.js";
 
 export {
+  fundAgentUsdtFromGs,
+  fundAgentUsdtFromGsByKey,
+  quoteAgentUsdtFunding,
+} from "./agent-usdt-funding.js";
+export type { FundAgentUsdtResult } from "./agent-usdt-funding.js";
+
+export {
   writeEcosystemConfig,
   pm2Start,
   pm2Stop,
@@ -104,6 +111,10 @@ export {
   buildUbiReminderEnv,
   buildBalaioEnv,
   buildPlaychessifyEnv,
+  buildChessArenaEnv,
+  CHESS_ARENA_SKILL_ID,
+  CHESS_ARENA_MIN_FUNDING_GS,
+  computeChessArenaFundingGs,
   resolveGamearenaAgentApiEnv,
   UBI_REMINDER_SKILL_ID,
   BALAIO_WORKER_SKILL_ID,
@@ -224,6 +235,11 @@ export {
   playGamearenaMatchOnce,
 } from "./gamearena-play-once.js";
 export type { PlayGamearenaMatchOnceResult } from "./gamearena-play-once.js";
+
+export {
+  playChessArenaMatchOnce,
+} from "./chess-arena-play-once.js";
+export type { PlayChessArenaMatchOnceResult } from "./chess-arena-play-once.js";
 
 export {
   playActionOrderMatchOnce,

@@ -353,6 +353,9 @@ importers:
       '@goodagent/agent-runtime':
         specifier: workspace:*
         version: link:../agent-runtime
+      '@goodagent/chain':
+        specifier: workspace:*
+        version: link:../chain
       '@goodagent/db':
         specifier: workspace:*
         version: link:../db

@@ -92,6 +92,7 @@ function skillNeedsPrivateKey(
   if (skillId === BALAIO_WORKER_SKILL_ID) return true;
   if (skillId === "gaming/wagering/gamearena_1v1") return true;
   if (skillId === "gaming/wagering/playchessify_1v1") return true;
+  if (skillId === "gaming/wagering/chess_arena_1v1") return true;
   return false;
 }
 

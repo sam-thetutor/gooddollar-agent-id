@@ -25,12 +25,14 @@
     "test:partner-gamearena": "tsx scripts/test-partner-gamearena-api.mts",
     "test:partner-actionorder": "tsx scripts/test-partner-actionorder-api.mts",
     "test:proof-of-alpha-hunt": "tsx scripts/test-proof-of-alpha-hunt.mts",
+    "test:gs-to-usdt": "tsx scripts/test-gs-to-usdt.mts",
     "test": "vitest run"
   },
   "dependencies": {
     "@goodagent/agent-brain": "workspace:*",
     "@goodagent/agent-id": "workspace:*",
     "@goodagent/agent-runtime": "workspace:*",
+    "@goodagent/chain": "workspace:*",
     "@goodagent/db": "workspace:*",
     "@goodagent/shared": "workspace:*",
     "@goodagent/skill-sdk": "workspace:*",

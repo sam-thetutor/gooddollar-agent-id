@@ -9,6 +9,7 @@ import {
   fundAgentGDollar,
   relayAttestation,
 } from "./identity.js";
+import { fundAgentUsdtFromGs } from "./agent-usdt-funding.js";
 import {
   isPm2Available,
   pm2ProcessName,
@@ -27,7 +28,9 @@ import { isSkillDeployable } from "@goodagent/shared";
 import {
   buildSkillEnv,
   BALAIO_WORKER_SKILL_ID,
+  CHESS_ARENA_SKILL_ID,
   computeBalaioFundingGs,
+  computeChessArenaFundingGs,
   type SkillConfiguration,
   writeSkillEnv,
   buildHostReportEnv,
@@ -167,6 +170,9 @@ function computeFundingTargetGs(
     if (skill.skillId === BALAIO_WORKER_SKILL_ID) {
       target = Math.max(target, computeBalaioFundingGs(config, baseGs));
     }
+    if (skill.skillId === CHESS_ARENA_SKILL_ID) {
+      target = Math.max(target, computeChessArenaFundingGs(baseGs));
+    }
   }
   return target;
 }
@@ -175,6 +181,7 @@ function skillNeedsAgentPrivateKey(skillId: string, spendsTokens: boolean): bool
   return (
     spendsTokens ||
     skillId === GAMEARENA_SKILL_ID ||
+    skillId === CHESS_ARENA_SKILL_ID ||
     skillId === BALAIO_WORKER_SKILL_ID ||
     skillId === PRODUCTCLANK_SKILL_ID
   );
@@ -272,6 +279,10 @@ export async function runDeployPipeline(
       config.agentInitialGs,
       "snapshot",
     );
+
+    if (pipelineSkills.some((s) => s.skillId === CHESS_ARENA_SKILL_ID)) {
+      await fundAgentUsdtFromGs(config, account as LocalAccount);
+    }
 
     if (input.skipIdentity) {
       throw new Error(
