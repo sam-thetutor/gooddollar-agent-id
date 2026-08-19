@@ -1,6 +1,6 @@
 {
   "name": "@goodagent/widget",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Embeddable GoodAgent widget — marketplace or single-skill deploy, vouch, and dashboard for partner sites",
   "type": "module",
   "keywords": [
@@ -10,6 +10,8 @@
     "react",
     "ai-agents",
     "gamearena",
+    "chess",
+    "chesspuzzles",
     "celo",
     "embed",
     "privy",
@@ -40,13 +42,18 @@
     "./partner-gamearena": {
       "types": "./dist/partner-gamearena.d.ts",
       "import": "./dist/partner-gamearena.js"
+    },
+    "./partner-chess-arena": {
+      "types": "./dist/partner-chess-arena.d.ts",
+      "import": "./dist/partner-chess-arena.js"
     }
   },
   "files": [
     "dist",
     "README.md",
     "EXAMPLES.md",
-    "GAMEARENA_INTEGRATION.md"
+    "GAMEARENA_INTEGRATION.md",
+    "CHESS_ARENA_INTEGRATION.md"
   ],
   "sideEffects": [
     "**/*.css"

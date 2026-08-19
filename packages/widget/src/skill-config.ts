@@ -1,4 +1,10 @@
 import type { SkillConfiguration } from "./types.js";
+import {
+  CHESS_ARENA_SKILL_ID,
+  defaultChessArenaConfig,
+} from "./chess-arena-config.js";
+
+export { CHESS_ARENA_SKILL_ID, CHESS_ARENA_DEFAULT_URL } from "./chess-arena-config.js";
 
 export const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1" as const;
 export const ACTIONORDER_SKILL_ID =
@@ -31,6 +37,9 @@ export function defaultConfigForSkill(skillId: string): SkillConfiguration {
       MAX_MATCHES: "10",
       MATCH_INTERVAL_SECONDS: "300",
     };
+  }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return defaultChessArenaConfig();
   }
   if (skillId === ACTIONORDER_SKILL_ID) {
     return {
@@ -84,6 +93,7 @@ export function deployTemplateForSkill(skillId: string): DeployTemplate {
 
 export function defaultDisplayNameForSkill(skillId: string): string {
   if (skillId === GAMEARENA_SKILL_ID) return "My GameArena Agent";
+  if (skillId === CHESS_ARENA_SKILL_ID) return "My Chess Arena Agent";
   if (skillId === ACTIONORDER_SKILL_ID) return "My ACTION-ORDER Agent";
   if (skillId === PROOF_OF_ALPHA_HUNT_SKILL_ID) return "My Alpha Hunt Agent";
   if (skillId === UBI_REMINDER_SKILL_ID) return "My UBI Reminder Agent";
@@ -105,6 +115,9 @@ export function deployHintForSkill(skillId: string): string {
   }
   if (skillId === GAMEARENA_SKILL_ID) {
     return "Your wallet owns the agent. GoodAgent runs gameplay on a dedicated server wallet — no key export needed.";
+  }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return "Your wallet owns the agent. GoodAgent runs 1v1 Chess Puzzle Arena matches with USDT stakes — we swap G$ to USDT and run Stockfish when needed.";
   }
   if (skillId === PROOF_OF_ALPHA_HUNT_SKILL_ID) {
     return "Your wallet owns the agent. GoodAgent runs the daily Alpha Hunt skill — discovers txs, submits to the arena, and shows up on the leaderboard.";

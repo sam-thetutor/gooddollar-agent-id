@@ -10,6 +10,7 @@ export {
   hasGamearenaInStatus,
   isActionOrderSkillId,
   isBalaioSkillId,
+  isChessArenaSkillId,
   isGamearenaSkillId,
   isSkillEnabled,
   skillIdsFromStatus,

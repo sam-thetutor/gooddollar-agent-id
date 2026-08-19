@@ -23,6 +23,17 @@
  *   mode="full"
  * />
  * ```
+ *
+ * @example Chess Puzzle Arena preset
+ * ```tsx
+ * import { GoodAgentWidget, createChessArenaWidgetConfig } from "@goodagent/widget";
+ *
+ * <GoodAgentWidget
+ *   config={createChessArenaWidgetConfig({ partnerId: "chesspuzzles" })}
+ *   wallet={wallet}
+ *   mode="full"
+ * />
+ * ```
  */
 
 export { GoodAgentWidget } from "./components/GoodAgentWidget.js";
@@ -68,6 +79,19 @@ export {
   skillShortLabel,
 } from "./skill-config.js";
 
+export { ChessArenaConfigFields } from "./components/ChessArenaConfigFields.js";
+
+export {
+  CHESS_ARENA_SKILL_ID,
+  CHESS_ARENA_DEFAULT_URL,
+  CHESS_ARENA_PLAY_MODES,
+  CHESS_ARENA_SOLVER_ENGINES,
+  defaultChessArenaConfig,
+  isChessArenaSkillId,
+  parseChessArenaPlayMode,
+  parseChessArenaSolverEngine,
+} from "./chess-arena-config.js";
+
 export {
   DEFAULT_REGISTRY_URL,
   fetchSkillRegistry,
@@ -79,6 +103,7 @@ export type { RegistrySkillEntry, SkillRegistry } from "./skill-registry.js";
 export {
   createGoodAgentWidgetConfig,
   createGameArenaWidgetConfig,
+  createChessArenaWidgetConfig,
   createProofOfAlphaWidgetConfig,
   createMarketplaceWidgetConfig,
   resolveWidgetConfig,

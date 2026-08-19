@@ -46,12 +46,29 @@ export function filterListedSkills<T extends RegistrySkillFlags & { skill_id: st
   return skills.filter((s) => isSkillListed(s));
 }
 
-/** Prefer GameArena when listed; otherwise first listed skill. */
+/** Skills hidden from the deploy wizard picker (still supported for existing deploys). */
+export const DEPLOY_PICKER_EXCLUDED_SKILL_IDS = new Set([
+  "work/marketplace/balaio_worker",
+  "gaming/wagering/playchessify_1v1",
+  "gaming/intelligence/proof_of_alpha_hunt",
+]);
+
+export function filterDeployPickerSkills<
+  T extends RegistrySkillFlags & { skill_id: string },
+>(skills: T[]): T[] {
+  return filterListedSkills(skills).filter(
+    (s) => !DEPLOY_PICKER_EXCLUDED_SKILL_IDS.has(s.skill_id),
+  );
+}
+
+/** Prefer GameArena when listed; otherwise first deploy-picker skill. */
 export function defaultDeploySkillId(
   skills: Array<RegistrySkillFlags & { skill_id: string }>,
 ): string {
-  const listed = filterListedSkills(skills);
+  const listed = filterDeployPickerSkills(skills);
   const preferred = "gaming/wagering/gamearena_1v1";
   if (listed.some((s) => s.skill_id === preferred)) return preferred;
+  const chessArena = "gaming/wagering/chess_arena_1v1";
+  if (listed.some((s) => s.skill_id === chessArena)) return chessArena;
   return listed[0]?.skill_id ?? preferred;
 }

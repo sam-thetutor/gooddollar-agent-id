@@ -1,8 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Address } from "viem";
-import type { LocalAccount } from "viem/accounts";
+import type { Address, Hex, LocalAccount } from "viem";
 import type { RuntimeConfig } from "./config.js";
 import {
   fundAgentCelo,
@@ -40,9 +39,15 @@ import { installSkillFromRegistry } from "./skill-install.js";
 import { writeBaselineIfAbsent } from "./baseline-balance.js";
 import {
   allocateDerivationIndex,
+  accountFromImportedPrivateKey,
   deriveAgentAccount,
   deriveAgentPrivateKey,
+  IMPORTED_WALLET_DERIVATION_INDEX,
+  isImportedWalletIndex,
+  normalizeAgentPrivateKey,
+  readImportedPrivateKey,
   writeAgentMeta,
+  writeImportedPrivateKey,
   agentDir,
   readAgentMeta,
 } from "./wallet.js";
@@ -119,6 +124,8 @@ export interface RunPipelineInput {
     agentAddress: `0x${string}`;
     walletDerivationIndex: number;
   };
+  /** Import an existing GameArena / external wallet instead of HD derivation. */
+  importedPrivateKey?: string;
   minDerivationIndex?: number;
 }
 
@@ -217,15 +224,37 @@ export async function runDeployPipeline(
 
     await hooks.onStatus("provisioning");
 
-    const index = input.resume
-      ? input.resume.walletDerivationIndex
-      : allocateDerivationIndex(
-          config.agentsRoot,
-          (input.minDerivationIndex ?? -1) + 1,
-        );
-    const account = deriveAgentAccount(config.deployMnemonic, index);
-    const agentAddress = (input.resume?.agentAddress ?? account.address) as `0x${string}`;
-    const agentPrivateKey = deriveAgentPrivateKey(config.deployMnemonic, index);
+    const importedKey = input.importedPrivateKey?.trim();
+    let index: number;
+    let account: LocalAccount;
+    let agentAddress: `0x${string}`;
+    let agentPrivateKey: Hex;
+
+    if (input.resume && isImportedWalletIndex(input.resume.walletDerivationIndex)) {
+      index = IMPORTED_WALLET_DERIVATION_INDEX;
+      agentPrivateKey = readImportedPrivateKey(config.agentsRoot, deployId);
+      account = accountFromImportedPrivateKey(agentPrivateKey);
+      agentAddress = (input.resume.agentAddress ?? account.address) as `0x${string}`;
+      if (account.address.toLowerCase() !== agentAddress.toLowerCase()) {
+        throw new Error("imported wallet key does not match stored agent address");
+      }
+    } else if (importedKey) {
+      index = IMPORTED_WALLET_DERIVATION_INDEX;
+      account = accountFromImportedPrivateKey(importedKey);
+      agentAddress = account.address as `0x${string}`;
+      agentPrivateKey = normalizeAgentPrivateKey(importedKey);
+      writeImportedPrivateKey(config.agentsRoot, deployId, agentPrivateKey);
+    } else {
+      index = input.resume
+        ? input.resume.walletDerivationIndex
+        : allocateDerivationIndex(
+            config.agentsRoot,
+            (input.minDerivationIndex ?? -1) + 1,
+          );
+      account = deriveAgentAccount(config.deployMnemonic, index);
+      agentAddress = (input.resume?.agentAddress ?? account.address) as `0x${string}`;
+      agentPrivateKey = deriveAgentPrivateKey(config.deployMnemonic, index);
+    }
     const pm2Name = pm2ProcessName(deployId);
 
     let priorMeta: Partial<ReturnType<typeof readAgentMeta>> = {};
@@ -241,6 +270,7 @@ export async function runDeployPipeline(
       template,
       address: agentAddress,
       derivationIndex: index,
+      importedWallet: isImportedWalletIndex(index) ? true : priorMeta.importedWallet,
       createdAt: priorMeta.createdAt ?? new Date().toISOString(),
     });
 

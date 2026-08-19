@@ -160,7 +160,7 @@ set -euo pipefail
 export PATH="\$HOME/.local/share/pnpm:\$HOME/.npm-global/bin:\$PATH"
 cd /home/geinz/gcopilot
 command -v pnpm >/dev/null || npm i -g pnpm@9.15.0
-pnpm install --filter @goodagent/host... --filter @goodagent/runtime... --filter @goodagent/agent-runtime... --filter @goodagent/agent-brain... --filter @goodagent/skill-sdk... --filter @goodagent/db... --filter @goodagent/shared... --filter @goodagent/live-arena...
+pnpm install --filter @goodagent/host... --filter @goodagent/runtime... --filter @goodagent/agent-runtime... --filter @goodagent/agent-brain... --filter @goodagent/skill-sdk... --filter @goodagent/db... --filter @goodagent/shared... --filter @goodagent/live-arena... --filter @goodagent/chain...
 # Prisma db push needs session pool (5432), not transaction pool (6543/pgbouncer).
 # Transaction pool hangs indefinitely on DDL; schema is usually already in sync.
 SESSION_DB_URL="\$(grep '^DATABASE_URL=' .env | cut -d= -f2- | sed 's|6543/postgres?pgbouncer=true&|5432/postgres?|')"
@@ -173,6 +173,7 @@ pnpm --filter @goodagent/shared build
 pnpm --filter @goodagent/skill-sdk build
 pnpm --filter @goodagent/live-arena build
 pnpm --filter @goodagent/db build
+pnpm --filter @goodagent/chain build
 pnpm --filter @goodagent/agent-runtime build
 pnpm --filter @goodagent/agent-brain build
 pnpm --filter @goodagent/runtime build

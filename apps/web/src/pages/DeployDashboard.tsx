@@ -42,7 +42,7 @@ import {
   playModeLabel,
   strategyLabelFromConfig,
 } from "../lib/gamearena-config.js";
-import { isChessArenaSkillId } from "../lib/chess-arena-config.js";
+import { chessArenaPlayModeLabel, chessArenaSolverLabel } from "../lib/chess-arena-config.js";
 import { parseSkillConfig } from "../lib/skill-config.js";
 import {
   configurableSkillsFromStatus,
@@ -51,6 +51,7 @@ import {
   formatSkillList,
   hasGamearenaInStatus,
   isActionOrderSkillId,
+  isChessArenaSkillId,
   isSkillEnabled,
   skillInstallStatusLabel,
   skillShortLabel,
@@ -388,6 +389,10 @@ export function DeployDashboard() {
     dashboardTab !== "overview" &&
     dashboardPanelForSkillId(dashboardTab) === "actionorder";
 
+  const showChessArenaPanel =
+    dashboardTab !== "overview" &&
+    dashboardPanelForSkillId(dashboardTab) === "chessarena";
+
   const isProductClankTab = dashboardTab === PRODUCTCLANK_SKILL_ID;
 
   const displaySkillId = useMemo(() => {
@@ -418,6 +423,22 @@ export function DeployDashboard() {
     hasGamearenaInStatus(status ?? {}) &&
     (playMode === "onchain" || (!offchainPlay && playMode !== "auto"));
   const autoGamearena = playMode === "auto";
+  const chessArenaSkillId = useMemo(() => {
+    if (!status) return null;
+    return (
+      configurableSkillsFromStatus(status).find((s) =>
+        isChessArenaSkillId(s.skillId),
+      )?.skillId ?? null
+    );
+  }, [status]);
+  const chessConfig = useMemo(
+    () =>
+      chessArenaSkillId && status
+        ? configForSkill(status, chessArenaSkillId)
+        : null,
+    [status, chessArenaSkillId],
+  );
+
   const walletPnL = status?.stats?.walletPnL;
   const balances = status?.stats?.balances;
   const gBalance = formatBalance(balances?.gDollarFormatted, 0);
@@ -659,6 +680,7 @@ export function DeployDashboard() {
     dashboardTab !== "overview" &&
     !showGamearenaPanel &&
     !showActionOrderPanel &&
+    !showChessArenaPanel &&
     !isProductClankTab;
 
   const pcMeta = (activeSkillStats?.meta ?? {}) as Record<
@@ -1286,23 +1308,41 @@ export function DeployDashboard() {
               </div>
               <div className="deploy-hero-stat">
                 <span className="deploy-hero-label">
-                  {offchainPlay ? "Tickets today" : "P&amp;L"}
+                  {showChessArenaPanel
+                    ? "Matches today"
+                    : offchainPlay
+                      ? "Tickets today"
+                      : "P&amp;L"}
                 </span>
                 <span
                   className={`deploy-hero-value tabular${
-                    offchainPlay ? "" : pnlClass(walletPnL?.walletDeltaGs ?? displayPerf?.netPnLGs)
+                    showChessArenaPanel || offchainPlay
+                      ? ""
+                      : pnlClass(walletPnL?.walletDeltaGs ?? displayPerf?.netPnLGs)
                   }`}
                 >
-                  {offchainPlay
-                    ? `${displayPerf?.matchesToday ?? 0}`
-                    : walletPnL?.walletDeltaGs != null
-                      ? signedGs(walletPnL.walletDeltaGs)
-                      : displayPerf
-                        ? signedGs(displayPerf.netPnLGs)
-                        : "0"}
-                  <small>{offchainPlay ? "played" : "G$"}</small>
+                  {showChessArenaPanel
+                    ? `${activeSkillStats?.matchesToday ?? 0}`
+                    : offchainPlay
+                      ? `${displayPerf?.matchesToday ?? 0}`
+                      : walletPnL?.walletDeltaGs != null
+                        ? signedGs(walletPnL.walletDeltaGs)
+                        : displayPerf
+                          ? signedGs(displayPerf.netPnLGs)
+                          : "0"}
+                  <small>
+                    {showChessArenaPanel
+                      ? "played"
+                      : offchainPlay
+                        ? "played"
+                        : "G$"}
+                  </small>
                 </span>
-                {offchainPlay ? (
+                {showChessArenaPanel ? (
+                  <span className="deploy-hero-meta muted">
+                    cap {chessConfig?.DAILY_MATCH_CAP ?? "20"}/day
+                  </span>
+                ) : offchainPlay ? (
                   <span className="deploy-hero-meta muted">
                     cap {config.DAILY_MATCH_CAP ?? "50"}/day
                   </span>
@@ -1352,29 +1392,51 @@ export function DeployDashboard() {
               <div className="deploy-hero-stat">
                 <span className="deploy-hero-label">Record</span>
                 <span className="deploy-hero-value tabular">
-                  {displayPerf?.wins ?? 0}
-                  <span className="deploy-hero-record-sep">–</span>
-                  {displayPerf?.losses ?? 0}
+                  {showChessArenaPanel ? (
+                    activeSkillStats && activeSkillStats.gamesPlayed > 0
+                      ? `${activeSkillStats.wins}–${activeSkillStats.losses}`
+                      : "0–0"
+                  ) : (
+                    <>
+                      {displayPerf?.wins ?? 0}
+                      <span className="deploy-hero-record-sep">–</span>
+                      {displayPerf?.losses ?? 0}
+                    </>
+                  )}
                 </span>
-                {displayPerf && displayPerf.gamesPlayed > 0 && (
+                {showChessArenaPanel ? (
+                  <span className="deploy-hero-meta muted">
+                    {activeSkillStats?.gamesPlayed ?? 0} tournaments
+                  </span>
+                ) : displayPerf && displayPerf.gamesPlayed > 0 ? (
                   <span className="deploy-hero-meta muted">
                     {displayPerf.gamesPlayed}
                     {winRate != null ? ` · ${winRate}%` : ""}
                   </span>
-                )}
+                ) : null}
               </div>
               <div className="deploy-hero-stat">
                 <span className="deploy-hero-label">
-                  {offchainPlay ? "Tickets" : "CELO"}
+                  {showChessArenaPanel
+                    ? "USDT stake"
+                    : offchainPlay
+                      ? "Tickets"
+                      : "CELO"}
                 </span>
                 <span className="deploy-hero-value tabular">
-                  {offchainPlay
-                    ? (config.DAILY_MATCH_CAP ?? "50")
-                    : formatBalance(balances?.celoFormatted, 3)}
+                  {showChessArenaPanel
+                    ? chessConfig?.USDT_STAKE_BUFFER
+                      ? `${Number(chessConfig.USDT_STAKE_BUFFER) / 1_000_000}`
+                      : "1"
+                    : offchainPlay
+                      ? (config.DAILY_MATCH_CAP ?? "50")
+                      : formatBalance(balances?.celoFormatted, 3)}
                 </span>
-                {offchainPlay && (
+                {showChessArenaPanel ? (
+                  <span className="deploy-hero-meta muted">per match</span>
+                ) : offchainPlay ? (
                   <span className="deploy-hero-meta muted">daily cap</span>
-                )}
+                ) : null}
               </div>
             </section>
             ) : null}
@@ -1422,6 +1484,39 @@ export function DeployDashboard() {
                       {
                         label: "Match interval",
                         value: `${actionOrderConfig.MATCH_INTERVAL_SECONDS ?? "10"}s`,
+                      },
+                    ]}
+                  />
+                ) : null}
+
+                {showChessArenaPanel && chessConfig ? (
+                  <SkillStatsPanel
+                    title="Chess Puzzle Arena"
+                    stats={activeSkillStats}
+                    canEdit={canControl}
+                    onEditSettings={() => beginEditConfig(dashboardTab)}
+                    configRows={[
+                      {
+                        label: "Puzzle solver",
+                        value: chessArenaSolverLabel(chessConfig),
+                      },
+                      {
+                        label: "Lobby mode",
+                        value: chessArenaPlayModeLabel(chessConfig),
+                      },
+                      {
+                        label: "USDT stake",
+                        value: chessConfig.USDT_STAKE_BUFFER
+                          ? `${Number(chessConfig.USDT_STAKE_BUFFER) / 1_000_000} USDT`
+                          : "1 USDT",
+                      },
+                      {
+                        label: "Daily match cap",
+                        value: chessConfig.DAILY_MATCH_CAP ?? "20",
+                      },
+                      {
+                        label: "Match interval",
+                        value: `${chessConfig.MATCH_INTERVAL_SECONDS ?? "120"}s`,
                       },
                     ]}
                   />
@@ -1828,6 +1923,38 @@ export function DeployDashboard() {
                         </div>
                       </>
                     )}
+                    {chessArenaSkillId && chessConfig ? (
+                      <>
+                        <div>
+                          <dt>Puzzle solver</dt>
+                          <dd>{chessArenaSolverLabel(chessConfig)}</dd>
+                        </div>
+                        <div>
+                          <dt>Lobby mode</dt>
+                          <dd>{chessArenaPlayModeLabel(chessConfig)}</dd>
+                        </div>
+                        <div>
+                          <dt>Auto-swap</dt>
+                          <dd>
+                            {(chessConfig.AUTO_SWAP ?? "1") !== "0" ? "On" : "Off"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>USDT stake</dt>
+                          <dd className="tabular">
+                            {chessConfig.USDT_STAKE_BUFFER
+                              ? `${Number(chessConfig.USDT_STAKE_BUFFER) / 1_000_000} USDT`
+                              : "1 USDT"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Daily match cap</dt>
+                          <dd className="tabular">
+                            {chessConfig.DAILY_MATCH_CAP ?? "20"}
+                          </dd>
+                        </div>
+                      </>
+                    ) : null}
                     {isBalaioSkill(status?.skillId) && (
                       <>
                         <div>

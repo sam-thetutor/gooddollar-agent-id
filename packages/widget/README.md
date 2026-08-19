@@ -4,10 +4,11 @@ React embed for **GoodAgent**: your users connect a wallet on **your site**, pic
 
 | | |
 |---|---|
-| **npm** | `@goodagent/widget@0.3.5` |
+| **npm** | `@goodagent/widget@0.3.6` |
 | **Skills catalog** | [goodagentids.xyz/skills](https://goodagentids.xyz/skills) |
 | **Hosted backend** | `https://goodagentids.xyz/host` + `/api` (you do not run agents yourself) |
 | **GameArena deep-dive** | [GAMEARENA_INTEGRATION.md](./GAMEARENA_INTEGRATION.md) |
+| **Chess Puzzle Arena** | [CHESS_ARENA_INTEGRATION.md](./CHESS_ARENA_INTEGRATION.md) |
 
 Install with **`npm install --legacy-peer-deps`** if React 19 peer resolution conflicts with your app.
 
@@ -20,6 +21,7 @@ Install with **`npm install --legacy-peer-deps`** if React 19 peer resolution co
 | **Marketplace (recommended)** | `createMarketplaceWidgetConfig` | Partner sites where users **choose any listed skill** (Agent Haus, dashboards, hubs) |
 | **Single skill** | `createGoodAgentWidgetConfig(skillId, …)` | One skill only (e.g. Action Order partner page) |
 | **GameArena preset** | `createGameArenaWidgetConfig` | GameArena MARKOV defaults locked in; optional `hideSkillConfig` |
+| **Chess Puzzle Arena preset** | `createChessArenaWidgetConfig` | Chess Arena 1v1 USDT stakes, Stockfish solver, auto-swap defaults |
 
 All helpers take **`partnerId`** (your project slug for deploy attribution). URLs, RPC, vault, and registry defaults are filled in automatically.
 
@@ -203,6 +205,7 @@ Single-skill configs accept the same optional overrides: `defaultDisplayName`, `
 | Export | Registry id |
 |--------|-------------|
 | `GAMEARENA_SKILL_ID` | `gaming/wagering/gamearena_1v1` |
+| `CHESS_ARENA_SKILL_ID` | `gaming/wagering/chess_arena_1v1` |
 | `ACTIONORDER_SKILL_ID` | `gaming/card-fighter/actionorder_vshouse` |
 | `UBI_REMINDER_SKILL_ID` | `social/reminder/ubi_claim_reminder` |
 | `BALAIO_WORKER_SKILL_ID` | `work/marketplace/balaio_worker` |
@@ -223,11 +226,21 @@ import { createGameArenaPartnerClient } from "@goodagent/widget/partner-gamearen
 
 Use after `mode="onboard"` completes. See [GAMEARENA_PARTNER_API.md](./GAMEARENA_PARTNER_API.md).
 
+### Chess Puzzle Arena partner API (no widget UI)
+
+```tsx
+import { createChessArenaPartnerClient } from "@goodagent/widget/partner-chess-arena";
+```
+
+Use after `mode="onboard"` completes for play/settings/live polling on [arena.chesspuzzles.xyz](https://arena.chesspuzzles.xyz). See [CHESS_ARENA_INTEGRATION.md](./CHESS_ARENA_INTEGRATION.md).
+
 Wrap the widget and override CSS variables under a parent class (see Agent Haus `goodagent-embed` pattern): `--ga-bg`, `--ga-primary`, `--ga-border`, etc.
 
 ---
 
-## What's new in 0.3.2
+## What's new in 0.3.6
+
+- **Chess Puzzle Arena:** `createChessArenaWidgetConfig`, `ChessArenaConfigFields`, `CHESS_ARENA_SKILL_ID`, and `@goodagent/widget/partner-chess-arena` partner client
 
 - **npm install fix:** `@goodagent/live-arena` / `@goodagent/shared` are bundled in the build — no unpublished workspace packages in `dependencies`.
 

@@ -267,9 +267,16 @@ export function Stats() {
   const statusEntries = useMemo(
     () =>
       platform
-        ? Object.entries(platform.deploys.byStatus).sort((a, b) => b[1] - a[1])
+        ? Object.entries(platform.deploys.byStatus)
+            .filter(([status]) => status !== "awaiting_vouch")
+            .sort((a, b) => b[1] - a[1])
         : [],
     [platform],
+  );
+
+  const statusBarTotal = useMemo(
+    () => statusEntries.reduce((sum, [, count]) => sum + count, 0),
+    [statusEntries],
   );
 
   const maxSkillInstalls = useMemo(
@@ -336,7 +343,6 @@ export function Stats() {
               <KpiCard
                 label="Agent IDs active"
                 value={registry?.active ?? 0}
-                sub={registry ? `${formatNum(registry.humans)} humans vouching` : undefined}
                 accent="gold"
               />
               <KpiCard
@@ -446,7 +452,7 @@ export function Stats() {
                   </div>
                   <StatusBar
                     entries={statusEntries}
-                    total={platform.deploys.total}
+                    total={statusBarTotal}
                   />
                 </section>
               )}

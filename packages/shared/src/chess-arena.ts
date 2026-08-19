@@ -2,11 +2,9 @@ export const CHESS_ARENA_SKILL_ID = "gaming/wagering/chess_arena_1v1" as const;
 
 export const CHESS_ARENA_DEFAULT_URL = "https://arena.chesspuzzles.xyz" as const;
 
-const CHESS_ARENA_MATCH_ID_RE = /^arena-\d+$/i;
+import { isChessArenaMatchId } from "./deploy-skills.js";
 
-export function isChessArenaMatchId(matchId: string): boolean {
-  return CHESS_ARENA_MATCH_ID_RE.test(matchId.trim());
-}
+export { isChessArenaMatchId };
 
 /** Parse tournament id from a chess arena match id (`arena-123` → 123). */
 export function parseChessArenaTournamentId(matchId: string): number | null {

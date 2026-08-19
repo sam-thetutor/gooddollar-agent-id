@@ -411,8 +411,15 @@ export async function assertOperatorCanIssueAgent(
   agentAddress: Address,
 ): Promise<void> {
   if (!config.operatorPrivateKey) return;
-
   const operator = privateKeyToAccount(config.operatorPrivateKey).address;
+  return assertOperatorCanIssueAgentFor(config, agentAddress, operator);
+}
+
+async function assertOperatorCanIssueAgentFor(
+  config: RuntimeConfig,
+  agentAddress: Address,
+  operator: Address,
+): Promise<void> {
   const verifyRes = await fetch(`${config.apiBase}/agent/verify/${agentAddress}`);
   if (verifyRes.ok) {
     const verifyBody = (await verifyRes.json()) as { valid?: boolean };
@@ -455,7 +462,22 @@ export async function issueAgentCredential(
     return { issued: false, verifyUrl };
   }
 
-  const operator = privateKeyToAccount(config.operatorPrivateKey);
+  return issueAgentCredentialForOperatorKey(
+    config,
+    agentAddress,
+    config.operatorPrivateKey,
+    opts,
+  );
+}
+
+/** Issue an Agent ID using a specific GoodDollar-verified operator wallet. */
+export async function issueAgentCredentialForOperatorKey(
+  config: RuntimeConfig,
+  agentAddress: Address,
+  operatorPrivateKey: Hex,
+  _opts?: { required?: boolean },
+): Promise<IssueResult> {
+  const operator = privateKeyToAccount(operatorPrivateKey);
   const verifyUrl = `${config.apiBase.replace(/\/$/, "")}/agent/verify/${agentAddress}`;
 
   const existingVerify = await fetch(verifyUrl);
@@ -467,7 +489,7 @@ export async function issueAgentCredential(
     }
   }
 
-  await assertOperatorCanIssueAgent(config, agentAddress);
+  await assertOperatorCanIssueAgentFor(config, agentAddress, operator.address);
 
   const { pub } = clients(config);
   const wallet = createWalletClient({

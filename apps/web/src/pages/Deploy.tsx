@@ -21,6 +21,7 @@ import {
   GAMEARENA_SKILL_ID,
   parsePlayMode,
   playModeLabel,
+  skillSpendPill,
   strategyLabelFromConfig,
 } from "../lib/gamearena-config.js";
 import {
@@ -35,7 +36,7 @@ import {
 } from "../lib/balaio-config.js";
 import {
   DEFAULT_DEPLOY_SKILL_ID,
-  filterListedSkills,
+  filterDeployPickerSkills,
   resolveDefaultDeploySkillId,
 } from "../lib/skill-registry.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
@@ -851,7 +852,7 @@ export function Deploy() {
   });
 
   const deployableSkills = useMemo(
-    () => filterListedSkills(registry?.skills ?? []),
+    () => filterDeployPickerSkills(registry?.skills ?? []),
     [registry],
   );
 
@@ -998,6 +999,19 @@ export function Deploy() {
     }, 4000);
     return () => clearInterval(t);
   }, [deployId, poll]);
+
+  useEffect(() => {
+    if (deployableSkills.length === 0) return;
+    const allowed = new Set(deployableSkills.map((s) => s.skill_id));
+    setSelectedSkillIds((prev) => {
+      const next = prev.filter((id) => allowed.has(id));
+      if (next.length === 0) return [defaultSkillId];
+      return next.length === prev.length ? prev : next;
+    });
+    setActiveSkillId((prev) =>
+      allowed.has(prev) ? prev : defaultSkillId,
+    );
+  }, [deployableSkills, defaultSkillId]);
 
   useEffect(() => {
     const fromUrl = searchParams.get("skill");
@@ -1238,6 +1252,7 @@ export function Deploy() {
                               const checked = selectedSkillIds.includes(
                                 skill.skill_id,
                               );
+                              const pill = skillSpendPill(skill);
                               return (
                                 <label
                                   key={skill.skill_id}
@@ -1257,6 +1272,24 @@ export function Deploy() {
                                   <span>
                                     <strong>{skill.name}</strong>
                                     <small>{skill.description.slice(0, 96)}</small>
+                                    <span className="onboard-skill-meta">
+                                      <span
+                                        className={`pill pill-sm ${pill.variant === "warn" ? "pill-warn" : "pill-ok"}`}
+                                      >
+                                        {pill.label}
+                                      </span>
+                                      {skill.game && skill.game_url ? (
+                                        <a
+                                          className="onboard-skill-game"
+                                          href={skill.game_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {skill.game} ↗
+                                        </a>
+                                      ) : null}
+                                    </span>
                                   </span>
                                 </label>
                               );

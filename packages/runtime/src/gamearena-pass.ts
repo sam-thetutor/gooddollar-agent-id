@@ -272,6 +272,10 @@ export async function registerGamePassUsername(opts: {
   deployId: string;
 }): Promise<RegisterGamePassResult> {
   const { account, displayName, deployId, rpcUrl } = opts;
+  const profile = await readGamePassProfile(account.address, rpcUrl);
+  if (profile.hasMinted && profile.username) {
+    return { username: profile.username, action: "skip" };
+  }
   const targetUsername = await pickAvailableUsername(
     displayName,
     deployId,

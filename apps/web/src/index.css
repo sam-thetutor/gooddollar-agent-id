@@ -3204,6 +3204,29 @@ a:hover {
   line-height: 1.4;
 }
 
+.onboard-skill-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin-top: 0.45rem;
+}
+
+.onboard-skill-meta .pill-sm {
+  font-size: 0.68rem;
+  padding: 0.12rem 0.45rem;
+}
+
+.onboard-skill-game {
+  color: var(--accent);
+  font-size: 0.68rem;
+  text-decoration: none;
+}
+
+.onboard-skill-game:hover {
+  text-decoration: underline;
+}
+
 .onboard-actions {
   display: flex;
   align-items: center;

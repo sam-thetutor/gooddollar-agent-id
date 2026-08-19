@@ -2,10 +2,12 @@ import type { SkillConfiguration } from "../types.js";
 import {
   ACTIONORDER_SKILL_ID,
   BALAIO_WORKER_SKILL_ID,
+  CHESS_ARENA_SKILL_ID,
   GAMEARENA_SKILL_ID,
   PROOF_OF_ALPHA_HUNT_SKILL_ID,
   UBI_REMINDER_SKILL_ID,
 } from "../skill-config.js";
+import { ChessArenaConfigFields } from "./ChessArenaConfigFields.js";
 
 const ACTIONORDER_CHARACTERS = [
   { id: "riven", label: "Riven" },
@@ -98,6 +100,16 @@ export function SkillConfigFields({
           />
         </label>
       </div>
+    );
+  }
+
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return (
+      <ChessArenaConfigFields
+        config={config}
+        onChange={onChange}
+        compact={compact}
+      />
     );
   }
 

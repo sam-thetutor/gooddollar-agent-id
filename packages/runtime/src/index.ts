@@ -5,6 +5,12 @@ export {
   allocateDerivationIndex,
   deriveAgentAccount,
   deriveAgentPrivateKey,
+  normalizeAgentPrivateKey,
+  accountFromImportedPrivateKey,
+  isImportedWalletIndex,
+  isAgentProvisioned,
+  IMPORTED_WALLET_DERIVATION_INDEX,
+  resolveAgentPrivateKey,
   writeAgentMeta,
   readAgentMeta,
   agentDir,
@@ -16,6 +22,7 @@ export {
   fundAgentGDollar,
   relayAttestation,
   issueAgentCredential,
+  issueAgentCredentialForOperatorKey,
   assertAgentPlayReady,
   assertOwnerVouchedForAgent,
 } from "./identity.js";
@@ -142,6 +149,15 @@ export {
   syncAgentAfterPassRename,
 } from "./apply-config.js";
 export type { DeployAgentRecord } from "./apply-config.js";
+
+export {
+  importWalletDeploy,
+  IMPORTED_WALLET_DERIVATION_INDEX as IMPORTED_WALLET_INDEX,
+} from "./import-wallet-deploy.js";
+export type {
+  ImportWalletDeployInput,
+  ImportWalletDeployResult,
+} from "./import-wallet-deploy.js";
 
 export {
   runDeployPipeline,

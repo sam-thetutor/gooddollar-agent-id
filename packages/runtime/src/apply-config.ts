@@ -27,7 +27,7 @@ import {
   resolveAgentRuntimeCli,
 } from "./provision.js";
 import { pm2ProcessSnapshot } from "./pipeline.js";
-import { deriveAgentPrivateKey, readAgentMeta, writeAgentMeta } from "./wallet.js";
+import { readAgentMeta, writeAgentMeta, isAgentProvisioned, resolveAgentPrivateKey } from "./wallet.js";
 import { GAMEARENA_SKILL_ID } from "./gamearena-pass.js";
 import { ACTIONORDER_SKILL_ID } from "@goodagent/shared";
 import { ensureLegacySkillPlugin } from "./legacy-plugin.js";
@@ -168,7 +168,7 @@ export async function applyDeployConfiguration(
     agent.skills.find((s) => s.skillId === targetSkillId) ?? agent.skills[0];
   if (!target) throw new Error("deploy has no skills");
 
-  if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+  if (!isAgentProvisioned(agent.agentAddress, agent.walletDerivationIndex)) {
     throw new Error("agent not provisioned");
   }
 
@@ -191,7 +191,11 @@ export async function applyDeployConfiguration(
   }
 
   const agentPrivateKey = skillNeedsPrivateKey(target.skillId, merged)
-    ? deriveAgentPrivateKey(config.deployMnemonic, agent.walletDerivationIndex)
+    ? resolveAgentPrivateKey(
+        config,
+        agent.id,
+        agent.walletDerivationIndex!,
+      )
     : null;
 
   const skillEnv = buildSkillEnv(target.skillId, {
@@ -230,7 +234,7 @@ export async function applyDeployConfiguration(
         agent.id,
         agent.skills,
         agent.agentAddress as Address,
-        agent.walletDerivationIndex,
+        agent.walletDerivationIndex!,
       )
     : buildLegacySkillPm2Env(agent.id, skillEnv);
 
@@ -263,7 +267,7 @@ export async function syncAgentAfterPassRename(
     throw new Error("syncAgentAfterPassRename requires a GameArena deploy");
   }
 
-  if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+  if (!isAgentProvisioned(agent.agentAddress, agent.walletDerivationIndex)) {
     throw new Error("agent not provisioned");
   }
 
@@ -350,7 +354,7 @@ export function applySkillInstallStatus(
   const target = agent.skills.find((s) => s.skillId === skillId);
   if (!target) throw new Error(`skill not installed: ${skillId}`);
 
-  if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+  if (!isAgentProvisioned(agent.agentAddress, agent.walletDerivationIndex)) {
     throw new Error("agent not provisioned");
   }
 

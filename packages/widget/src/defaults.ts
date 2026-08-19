@@ -12,10 +12,12 @@ import {
   deployHintForSkill,
   deployTemplateForSkill,
   GAMEARENA_SKILL_ID,
+  CHESS_ARENA_SKILL_ID,
   PROOF_OF_ALPHA_DEFAULT_URL,
   PROOF_OF_ALPHA_HUNT_SKILL_ID,
   skillShortLabel,
 } from "./skill-config.js";
+import { defaultChessArenaConfig } from "./chess-arena-config.js";
 import type {
   GoodAgentWidgetConfig,
   GoodAgentWidgetPartnerConfig,
@@ -164,6 +166,35 @@ export function createProofOfAlphaWidgetConfig(
       ETHERSCAN_TX_LIMIT: "40",
       FORENSIC_PREVIEW_COUNT: "3",
       DRY_RUN: "0",
+      ...opts.skillConfiguration,
+    },
+  });
+}
+
+/**
+ * Preset for Chess Puzzle Arena agents — 1 USDT stakes, Stockfish solver, G$→USDT auto-swap.
+ */
+export function createChessArenaWidgetConfig(opts: {
+  partnerId: string;
+  skillLabel?: string;
+  defaultDisplayName?: string;
+  fvCallbackUrl?: string;
+  hideSkillConfig?: boolean;
+  deployHint?: string;
+  skillConfiguration?: SkillConfiguration;
+}): GoodAgentWidgetConfig {
+  return resolveWidgetConfig({
+    skillId: CHESS_ARENA_SKILL_ID,
+    partnerId: opts.partnerId,
+    skillLabel: opts.skillLabel ?? "Chess Puzzle Arena",
+    defaultDisplayName: opts.defaultDisplayName ?? "My Chess Arena Agent",
+    hideSkillConfig: opts.hideSkillConfig ?? false,
+    deployHint:
+      opts.deployHint ??
+      "Deploy an agent that plays timed chess-puzzle battles on arena.chesspuzzles.xyz. Your wallet owns it — we fund USDT stakes and run the solver.",
+    fvCallbackUrl: opts.fvCallbackUrl,
+    skillConfiguration: {
+      ...defaultChessArenaConfig(),
       ...opts.skillConfiguration,
     },
   });
