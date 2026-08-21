@@ -2,10 +2,10 @@
 export const METAMASK_WALLET_ID =
   "c57ca95a47517794e3bf213b5da8df63640a96fd8bc6145ca71bd446dbb20212";
 
-/** Public client id — safe to ship in the bundle; env overrides for other environments. */
+/** Public client id — must match the Privy dashboard WalletConnect project. */
 export const WALLETCONNECT_PROJECT_ID =
   (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined)?.trim() ||
-  "e4f0acb8bbf35146eb2bce8c7006d1c3";
+  "6e8f2397a02218d02f0e4eb026af2831";
 
 export function isMobileBrowser(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);

@@ -158,6 +158,15 @@ describe("provisionBrain", () => {
     expect(manifest.brain.tools).toContain("amplify_campaigns");
     expect(manifest.brain.tools).toContain("amplify_campaign_drafts");
     expect(manifest.brain.tools).toContain("amplify_earnings");
+    expect(manifest.brain.tools).toContain("amplify_account");
+    expect(manifest.brain.tools).toContain("amplify_products_search");
+    expect(manifest.brain.tools).toContain("amplify_boost_preview");
+    expect(manifest.brain.tools).toContain("amplify_boost_post");
+    expect(manifest.brain.tools).toContain("amplify_my_campaigns");
+    expect(manifest.brain.tools).toContain("amplify_discover_create");
+    expect(manifest.brain.tools).toContain("amplify_content_launch");
+    expect(manifest.brain.tools).toContain("amplify_credits_history");
+    expect(manifest.brain.tools).toContain("amplify_discover_review");
     expect(result.env.AMPLIFY_QUEUE_FILE).toBe(
       resolve(agentsRoot, "dep3", "skills/productclank-participant/amplify-queue.json"),
     );
@@ -167,7 +176,10 @@ describe("provisionBrain", () => {
     expect(persona).toContain("amplify_pending");
     expect(persona).toContain("amplify_campaigns");
     expect(persona).toContain("amplify_campaign_drafts");
-    expect(persona).toContain("ProductClank Amplify participant");
+    expect(persona).toContain("ProductClank Amplify");
+    expect(persona).toContain("amplify_discover_create");
+    expect(persona).toContain("amplify_content_launch");
+    expect(persona).toContain("amplify_credits_history");
   });
 
   it("skips the API-key amplify tools when no key is configured yet", () => {
@@ -190,6 +202,10 @@ describe("provisionBrain", () => {
     expect(manifest.brain.tools).toContain("amplify_campaign_drafts");
     expect(manifest.brain.tools).not.toContain("amplify_feed");
     expect(manifest.brain.tools).not.toContain("amplify_earnings");
+    expect(manifest.brain.tools).not.toContain("amplify_account");
+    expect(manifest.brain.tools).not.toContain("amplify_boost_post");
+    expect(manifest.brain.tools).not.toContain("amplify_content_launch");
+    expect(manifest.brain.tools).not.toContain("amplify_credits_history");
     expect(result.env.PRODUCTCLANK_API_KEY).toBeUndefined();
   });
 });

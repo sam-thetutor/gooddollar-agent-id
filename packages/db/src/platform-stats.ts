@@ -43,6 +43,7 @@ export interface PlatformStats {
     withAgentId: number;
     running: number;
     healthy: number;
+    revoked: number;
   };
   skills: {
     totalInstalls: number;
@@ -85,6 +86,36 @@ function toCountMap<T extends { _count: { _all: number } }>(
   return out;
 }
 
+type SkillStatusRow = { skill_id: string; status: string; count: bigint };
+type StatusCountRow = { status: string; count: bigint };
+
+function buildSkillInstallMap(rows: SkillStatusRow[]) {
+  const skillInstallMap = new Map<
+    string,
+    { total: number; activated: number; failed: number }
+  >();
+  for (const row of rows) {
+    const entry = skillInstallMap.get(row.skill_id) ?? {
+      total: 0,
+      activated: 0,
+      failed: 0,
+    };
+    const count = Number(row.count);
+    entry.total += count;
+    if (row.status === "failed") entry.failed += count;
+    else if (row.status === "installed" || row.status === "active") {
+      entry.activated += count;
+    }
+    skillInstallMap.set(row.skill_id, entry);
+  }
+  return skillInstallMap;
+}
+
+const ACTIVE_AGENT_DEPLOY_FROM = `
+FROM deployed_agents d
+INNER JOIN agent_credentials c ON LOWER(c.agent) = LOWER(d.agent_address)
+WHERE d.agent_address IS NOT NULL AND c.revoked_at IS NULL`;
+
 export async function getPlatformStats(): Promise<PlatformStats> {
   const now = new Date();
   const todayStart = new Date(now);
@@ -96,10 +127,11 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     deployTotal,
     deployByStatus,
     deployByTemplate,
-    deployWithAgentId,
     deployRunning,
     deployHealthy,
+    deployRevoked,
     skillBySkillStatus,
+    agentsWithSkills,
     matchTotal,
     matchBySkillResult,
     matchToday,
@@ -109,27 +141,44 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     liveNow,
     dailyRows,
   ] = await Promise.all([
-    prisma.deployedAgent.count(),
-    prisma.deployedAgent.groupBy({
-      by: ["status"],
-      _count: { _all: true },
-    }),
+    prisma.$queryRawUnsafe<[{ count: bigint }]>(
+      `SELECT COUNT(*)::bigint AS count ${ACTIVE_AGENT_DEPLOY_FROM}`,
+    ).then((rows) => Number(rows[0]?.count ?? 0n)),
+    prisma.$queryRawUnsafe<StatusCountRow[]>(
+      `SELECT d.status, COUNT(*)::bigint AS count ${ACTIVE_AGENT_DEPLOY_FROM} GROUP BY d.status`,
+    ),
     prisma.deployedAgent.groupBy({
       by: ["template"],
       _count: { _all: true },
     }),
-    prisma.deployedAgent.count({ where: { agentAddress: { not: null } } }),
-    prisma.deployedAgent.count({ where: { status: "running" } }),
-    prisma.deployedAgent.count({
-      where: {
-        status: "running",
-        lastHeartbeatAt: { gte: heartbeatCutoff },
-      },
-    }),
-    prisma.skillInstall.groupBy({
-      by: ["skillId", "status"],
-      _count: { _all: true },
-    }),
+    prisma.$queryRawUnsafe<[{ count: bigint }]>(
+      `SELECT COUNT(*)::bigint AS count ${ACTIVE_AGENT_DEPLOY_FROM} AND d.status = 'running'`,
+    ).then((rows) => Number(rows[0]?.count ?? 0n)),
+    prisma.$queryRawUnsafe<[{ count: bigint }]>(
+      `SELECT COUNT(*)::bigint AS count ${ACTIVE_AGENT_DEPLOY_FROM} AND d.status = 'running' AND d.last_heartbeat_at >= $1`,
+      heartbeatCutoff,
+    ).then((rows) => Number(rows[0]?.count ?? 0n)),
+    prisma.$queryRaw<[{ count: bigint }]>`
+      SELECT COUNT(*)::bigint AS count
+      FROM deployed_agents d
+      INNER JOIN agent_credentials c ON LOWER(c.agent) = LOWER(d.agent_address)
+      WHERE d.agent_address IS NOT NULL AND c.revoked_at IS NOT NULL
+    `.then((rows) => Number(rows[0]?.count ?? 0n)),
+    prisma.$queryRaw<SkillStatusRow[]>`
+      SELECT si.skill_id, si.status, COUNT(*)::bigint AS count
+      FROM skill_installs si
+      INNER JOIN deployed_agents d ON d.id = si.deployed_agent_id
+      INNER JOIN agent_credentials c ON LOWER(c.agent) = LOWER(d.agent_address)
+      WHERE d.agent_address IS NOT NULL AND c.revoked_at IS NULL
+      GROUP BY si.skill_id, si.status
+    `,
+    prisma.$queryRaw<[{ count: bigint }]>`
+      SELECT COUNT(DISTINCT LOWER(d.agent_address))::bigint AS count
+      FROM skill_installs si
+      INNER JOIN deployed_agents d ON d.id = si.deployed_agent_id
+      INNER JOIN agent_credentials c ON LOWER(c.agent) = LOWER(d.agent_address)
+      WHERE d.agent_address IS NOT NULL AND c.revoked_at IS NULL
+    `.then((rows) => Number(rows[0]?.count ?? 0n)),
     prisma.deployMatch.count(),
     prisma.deployMatch.groupBy({
       by: ["skillId", "result"],
@@ -162,22 +211,11 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     }),
   ]);
 
-  const skillInstallMap = new Map<
-    string,
-    { total: number; activated: number; failed: number }
-  >();
-  for (const row of skillBySkillStatus) {
-    const entry = skillInstallMap.get(row.skillId) ?? {
-      total: 0,
-      activated: 0,
-      failed: 0,
-    };
-    entry.total += row._count._all;
-    if (row.status === "failed") entry.failed += row._count._all;
-    else if (row.status === "installed" || row.status === "active") {
-      entry.activated += row._count._all;
-    }
-    skillInstallMap.set(row.skillId, entry);
+  const skillInstallMap = buildSkillInstallMap(skillBySkillStatus);
+
+  const deployStatusMap: Record<string, number> = {};
+  for (const row of deployByStatus) {
+    deployStatusMap[row.status] = Number(row.count);
   }
 
   const skillGameMap = new Map<
@@ -237,17 +275,15 @@ export async function getPlatformStats(): Promise<PlatformStats> {
   return {
     deploys: {
       total: deployTotal,
-      byStatus: toCountMap(deployByStatus, (r) => r.status),
+      byStatus: deployStatusMap,
       byTemplate: toCountMap(deployByTemplate, (r) => r.template),
-      withAgentId: deployWithAgentId,
+      withAgentId: deployTotal,
       running: deployRunning,
       healthy: deployHealthy,
+      revoked: deployRevoked,
     },
     skills: {
-      totalInstalls: [...skillInstallMap.values()].reduce(
-        (sum, s) => sum + s.total,
-        0,
-      ),
+      totalInstalls: agentsWithSkills,
       bySkill: [...skillInstallMap.entries()]
         .map(([skillId, counts]) => ({
           skillId,

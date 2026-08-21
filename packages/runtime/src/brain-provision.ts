@@ -120,7 +120,55 @@ const AMPLIFY_TOOLS = [
   "amplify_campaigns",
   "amplify_campaign_drafts",
   "amplify_earnings",
+  "amplify_account",
+  "amplify_products_search",
+  "amplify_boost_preview",
+  "amplify_boost_post",
+  "amplify_my_campaigns",
+  "amplify_campaign_detail",
+  "amplify_campaign_posts",
+  "amplify_products_list",
+  "amplify_discover_preview",
+  "amplify_discover_create",
+  "amplify_discover_research",
+  "amplify_discover_generate_preview",
+  "amplify_discover_generate",
+  "amplify_content_preview",
+  "amplify_content_launch",
+  "amplify_credits_history",
+  "amplify_campaign_delegate",
+  "amplify_discover_regenerate_preview",
+  "amplify_discover_regenerate",
+  "amplify_discover_review_preview",
+  "amplify_discover_review",
 ];
+
+/** Tools that call the ProductClank API — omitted from the manifest until PRODUCTCLANK_API_KEY is set. */
+const AMPLIFY_TOOLS_REQUIRING_API_KEY = new Set([
+  "amplify_feed",
+  "amplify_earnings",
+  "amplify_account",
+  "amplify_products_search",
+  "amplify_boost_preview",
+  "amplify_boost_post",
+  "amplify_my_campaigns",
+  "amplify_campaign_detail",
+  "amplify_campaign_posts",
+  "amplify_products_list",
+  "amplify_discover_preview",
+  "amplify_discover_create",
+  "amplify_discover_research",
+  "amplify_discover_generate_preview",
+  "amplify_discover_generate",
+  "amplify_content_preview",
+  "amplify_content_launch",
+  "amplify_credits_history",
+  "amplify_campaign_delegate",
+  "amplify_discover_regenerate_preview",
+  "amplify_discover_regenerate",
+  "amplify_discover_review_preview",
+  "amplify_discover_review",
+]);
 
 /** Human-readable one-liners for known skills (persona context). */
 const SKILL_DESCRIPTIONS: Record<string, string> = {
@@ -132,8 +180,8 @@ const SKILL_DESCRIPTIONS: Record<string, string> = {
   "community/reminders/gooddollar_claim":
     "GoodDollar claim reminders — watches subscribed wallets and notifies when UBI is claimable.",
   [PRODUCTCLANK_SKILL_ID]:
-    "ProductClank Amplify participant — finds reply drafts for live marketing campaigns, " +
-    "AI-reviews them, and earns points and $PRO once the operator posts them on X.",
+    "ProductClank Amplify — earns by participating in campaigns (reply drafts, submit, $PRO) " +
+    "and can launch Boost, Discover, and Content campaigns billed to the linked owner's ProductClank credits.",
 };
 
 function describeSkills(
@@ -205,7 +253,21 @@ export function buildBrainPersona(input: {
       "  campaign (by name, CP id, or keyword), call amplify_campaign_drafts with\n" +
       "  that campaign — it merges the local queue and live ProductClank feed.\n" +
       "- When asked about Amplify earnings, points, credits, strikes or $PRO,\n" +
-      "  call amplify_earnings for live numbers instead of guessing.\n"
+      "  call amplify_earnings for live numbers instead of guessing.\n" +
+      "- Campaign creation (Boost) bills the linked owner's ProductClank credits — never\n" +
+      "  the agent's wallet. Before any spend, call amplify_account to confirm the owner\n" +
+      "  linked their ProductClank account. For Boost: amplify_boost_preview → confirm cost\n" +
+      "  with the operator → amplify_boost_post with confirmed=true. Search products with\n" +
+      "  amplify_products_search; list new ones with amplify_products_list (confirmed=true).\n" +
+      "- Discover campaigns (find Twitter conversations): amplify_discover_preview →\n" +
+      "  amplify_discover_create (10 credits) → amplify_discover_research (free) →\n" +
+      "  amplify_discover_generate_preview → amplify_discover_generate (~12 credits/post).\n" +
+      "  Manage with amplify_my_campaigns, amplify_campaign_detail, amplify_campaign_posts;\n" +
+      "  regenerate replies (5/post) or review relevancy (2/post) via the discover_regenerate/review tools.\n" +
+      "- Content campaigns (UGC briefs): amplify_content_preview → amplify_content_launch (1000 credits).\n" +
+      "  Submissions and winners are handled in the ProductClank web app.\n" +
+      "- amplify_credits_history shows owner credit spend. amplify_campaign_delegate adds a web-app co-manager.\n" +
+      "  Never purchase credits for the agent — the operator tops up their ProductClank account.\n"
     : "";
   const toolRules = statsRule + amplifyRule;
 
@@ -270,9 +332,7 @@ export function provisionBrain(input: BrainProvisionInput): BrainProvisionResult
   // amplify_feed/amplify_earnings need the API key at runtime — enabling them
   // without one would crash the brain at startup.
   const amplifyTools = AMPLIFY_TOOLS.filter(
-    (t) =>
-      productClankApiKey ||
-      (t !== "amplify_feed" && t !== "amplify_earnings"),
+    (t) => productClankApiKey || !AMPLIFY_TOOLS_REQUIRING_API_KEY.has(t),
   );
   const tools = hasProductClankSkill
     ? [...baseTools, ...amplifyTools.filter((t) => !baseTools.includes(t))]

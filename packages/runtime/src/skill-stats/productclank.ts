@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { dashboardPanelForSkillId } from "@goodagent/shared";
 import { getDeployLogTailForSkill } from "@goodagent/db";
+import { fetchProductClankAgentProfile } from "../productclank-api.js";
 import type { SkillStatsAdapter } from "./types.js";
 
 const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
@@ -51,6 +52,23 @@ export const productClankSkillStatsAdapter: SkillStatsAdapter = {
     const pendingDrafts = queue?.pending?.length ?? 0;
     const awaitingSubmit = queue?.posted?.length ?? 0;
 
+    let ownerCredits: number | null = null;
+    let ownerLinked = false;
+    let linkedUserName: string | null = null;
+    const apiKey = ctx.configuration.PRODUCTCLANK_API_KEY?.trim();
+    if (apiKey) {
+      try {
+        const profile = await fetchProductClankAgentProfile({ apiKey });
+        if (profile.success) {
+          ownerLinked = Boolean(profile.linkedUserName || profile.linkedUserId);
+          ownerCredits = profile.credits ?? 0;
+          linkedUserName = profile.linkedUserName ?? null;
+        }
+      } catch {
+        // Best-effort — dashboard still shows participation stats.
+      }
+    }
+
     const parts: string[] = [];
     if (earnings?.points != null) parts.push(`${earnings.points} pts`);
     if (earnings?.credits) parts.push(`${earnings.credits} credits`);
@@ -58,6 +76,11 @@ export const productClankSkillStatsAdapter: SkillStatsAdapter = {
       parts.push(`${pendingDrafts} draft${pendingDrafts === 1 ? "" : "s"} awaiting approval`);
     if (awaitingSubmit > 0) parts.push(`${awaitingSubmit} posted, awaiting submit`);
     if (earnings?.strikes) parts.push(`${earnings.strikes} strike${earnings.strikes === 1 ? "" : "s"}`);
+    if (ownerLinked && ownerCredits != null) {
+      parts.push(`${ownerCredits} owner credits`);
+    } else if (apiKey) {
+      parts.push("owner account not linked");
+    }
 
     return {
       skillId: ctx.skillId,
@@ -90,6 +113,9 @@ export const productClankSkillStatsAdapter: SkillStatsAdapter = {
         dailyCap: ctx.configuration.DAILY_SUBMIT_CAP ?? "10",
         xHandle: ctx.configuration.X_HANDLE ?? "",
         erc8004AgentId: ctx.configuration.ERC8004_AGENT_ID ?? "",
+        ownerLinked,
+        ownerCredits: ownerCredits ?? 0,
+        linkedUserName: linkedUserName ?? "",
       },
     };
   },

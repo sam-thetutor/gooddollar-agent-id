@@ -514,6 +514,7 @@ export interface PlatformStats {
     withAgentId: number;
     running: number;
     healthy: number;
+    revoked: number;
   };
   skills: {
     totalInstalls: number;

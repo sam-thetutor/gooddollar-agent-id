@@ -1248,7 +1248,7 @@ export function DeployDashboard() {
                                   className="btn btn-ghost btn-sm"
                                   disabled={pcLinkBusy || !isConnected}
                                   onClick={() => void requestPcLink()}
-                                  title="Attach this agent to your ProductClank account (webapp dashboard + better standing)"
+                                  title="Link your ProductClank account — Boost campaigns bill your credits"
                                 >
                                   {pcLinkBusy ? "Linking…" : "Link account"}
                                 </button>
@@ -1577,6 +1577,50 @@ export function DeployDashboard() {
                         <dd className="tabular">{pcMeta.proClaimable ?? 0}</dd>
                       </div>
                     </dl>
+                    <h3 style={{ marginTop: "1.25rem", fontSize: "0.9375rem" }}>
+                      Owner account (Boost · Discover · Content)
+                    </h3>
+                    <dl className="deploy-aside-dl deploy-amplify-stats">
+                      <div>
+                        <dt>Linked</dt>
+                        <dd>
+                          {pcMeta.ownerLinked
+                            ? pcMeta.linkedUserName
+                              ? pcMeta.linkedUserName
+                              : "Yes"
+                            : "No — link to spend credits"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Owner credits</dt>
+                        <dd className="tabular">{pcMeta.ownerCredits ?? 0}</dd>
+                      </div>
+                    </dl>
+                    {!pcMeta.ownerLinked ? (
+                      <p className="muted hint">
+                        Link your ProductClank account above so Boost, Discover, and Content
+                        campaigns bill your credit balance — the agent never purchases credits.{" "}
+                        <a
+                          href="https://www.productclank.com/amplify/credits"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Buy credits
+                        </a>
+                      </p>
+                    ) : (
+                      <p className="muted hint">
+                        Ask the Telegram bot for credit history or to launch campaigns. Top up at{" "}
+                        <a
+                          href="https://www.productclank.com/amplify/credits"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          ProductClank credits
+                        </a>
+                        .
+                      </p>
+                    )}
                     {activeSkillStats?.summary ? (
                       <p className="muted" style={{ fontSize: "0.875rem" }}>
                         {activeSkillStats.summary}
@@ -1902,6 +1946,14 @@ export function DeployDashboard() {
                             Amplify board ↗
                           </a>
                         </dd>
+                      </div>
+                      <div>
+                        <dt>Owner linked</dt>
+                        <dd>{pcMeta.ownerLinked ? "Yes" : "No"}</dd>
+                      </div>
+                      <div>
+                        <dt>Owner credits</dt>
+                        <dd className="tabular">{pcMeta.ownerCredits ?? 0}</dd>
                       </div>
                     </dl>
                   </section>

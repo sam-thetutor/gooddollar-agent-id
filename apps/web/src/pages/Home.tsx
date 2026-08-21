@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAccount } from "wagmi";
 import { Nav, ConnectButton } from "../components/Nav.js";
+import { GoodVotingCard } from "../components/GoodVotingCard.js";
 import { Footer } from "../components/Footer.js";
 import { SITE_ORIGIN } from "../lib/site.js";
 import {
@@ -360,6 +361,10 @@ export function Home() {
       <ActivityTicker events={activity} />
 
       <main className="container lp-main">
+        <section className="lp-section lp-vote-section">
+          <GoodVotingCard />
+        </section>
+
         {/* ============ HOW IT WORKS ============ */}
         <section className="lp-section">
           <p className="lp-eyebrow lp-reveal">How it works</p>

@@ -23,6 +23,36 @@ import {
   type AmplifyCampaignsToolOptions,
   type AmplifyCampaignDraftsToolOptions,
 } from "./amplify.js";
+import {
+  createAmplifyAccountTool,
+  createAmplifyProductsSearchTool,
+  createAmplifyBoostPreviewTool,
+  createAmplifyBoostPostTool,
+  type AmplifyCampaignToolOptions,
+} from "./amplify-campaigns.js";
+import {
+  createAmplifyMyCampaignsTool,
+  createAmplifyCampaignDetailTool,
+  createAmplifyCampaignPostsTool,
+  createAmplifyProductsListTool,
+  createAmplifyDiscoverPreviewTool,
+  createAmplifyDiscoverCreateTool,
+  createAmplifyDiscoverResearchTool,
+  createAmplifyDiscoverGeneratePreviewTool,
+  createAmplifyDiscoverGenerateTool,
+} from "./amplify-discover.js";
+import {
+  createAmplifyContentPreviewTool,
+  createAmplifyContentLaunchTool,
+} from "./amplify-content.js";
+import {
+  createAmplifyCreditsHistoryTool,
+  createAmplifyCampaignDelegateTool,
+  createAmplifyDiscoverRegeneratePreviewTool,
+  createAmplifyDiscoverRegenerateTool,
+  createAmplifyDiscoverReviewPreviewTool,
+  createAmplifyDiscoverReviewTool,
+} from "./amplify-campaign-admin.js";
 
 export { createVerifyAddressTool, type VerifyAddressToolOptions };
 export { createCheckClaimEligibilityTool, type CheckClaimEligibilityToolOptions };
@@ -39,6 +69,36 @@ export {
   type AmplifyCampaignsToolOptions,
   type AmplifyCampaignDraftsToolOptions,
 };
+export {
+  createAmplifyAccountTool,
+  createAmplifyProductsSearchTool,
+  createAmplifyBoostPreviewTool,
+  createAmplifyBoostPostTool,
+  type AmplifyCampaignToolOptions,
+};
+export {
+  createAmplifyMyCampaignsTool,
+  createAmplifyCampaignDetailTool,
+  createAmplifyCampaignPostsTool,
+  createAmplifyProductsListTool,
+  createAmplifyDiscoverPreviewTool,
+  createAmplifyDiscoverCreateTool,
+  createAmplifyDiscoverResearchTool,
+  createAmplifyDiscoverGeneratePreviewTool,
+  createAmplifyDiscoverGenerateTool,
+};
+export {
+  createAmplifyContentPreviewTool,
+  createAmplifyContentLaunchTool,
+};
+export {
+  createAmplifyCreditsHistoryTool,
+  createAmplifyCampaignDelegateTool,
+  createAmplifyDiscoverRegeneratePreviewTool,
+  createAmplifyDiscoverRegenerateTool,
+  createAmplifyDiscoverReviewPreviewTool,
+  createAmplifyDiscoverReviewTool,
+};
 
 export interface BuiltinToolOptions {
   apiBase: string;
@@ -52,11 +112,29 @@ export interface BuiltinToolOptions {
   fetchImpl?: typeof fetch;
 }
 
+function registerSpendTool(
+  name: string,
+  factory: () => BrainTool,
+  options: BuiltinToolOptions,
+  factories: Record<string, () => BrainTool>,
+): void {
+  factories[name] = () => {
+    if (!options.productClankApiKey) {
+      throw new Error(`${name} tool requires PRODUCTCLANK_API_KEY (productClankApiKey)`);
+    }
+    return factory();
+  };
+}
+
 /** Factory registry so manifests can enable tools by name. */
 export function createBuiltinTools(
   names: string[],
   options: BuiltinToolOptions,
 ): BrainTool[] {
+  const pcOpts = {
+    apiKey: options.productClankApiKey ?? "",
+    fetchImpl: options.fetchImpl,
+  };
   const factories: Record<string, () => BrainTool> = {
     verify_address: () =>
       createVerifyAddressTool({
@@ -133,7 +211,139 @@ export function createBuiltinTools(
         fetchImpl: options.fetchImpl,
       });
     },
+    amplify_boost_post: () => {
+      if (!options.productClankApiKey) {
+        throw new Error(
+          "amplify_boost_post tool requires PRODUCTCLANK_API_KEY (productClankApiKey)",
+        );
+      }
+      return createAmplifyBoostPostTool({
+        apiKey: options.productClankApiKey,
+        fetchImpl: options.fetchImpl,
+      });
+    },
   };
+
+  registerSpendTool(
+    "amplify_account",
+    () => createAmplifyAccountTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_products_search",
+    () => createAmplifyProductsSearchTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_boost_preview",
+    () => createAmplifyBoostPreviewTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_my_campaigns",
+    () => createAmplifyMyCampaignsTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_campaign_detail",
+    () => createAmplifyCampaignDetailTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_campaign_posts",
+    () => createAmplifyCampaignPostsTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_products_list",
+    () => createAmplifyProductsListTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_discover_preview",
+    () => createAmplifyDiscoverPreviewTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_discover_create",
+    () => createAmplifyDiscoverCreateTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_discover_research",
+    () => createAmplifyDiscoverResearchTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_discover_generate_preview",
+    () => createAmplifyDiscoverGeneratePreviewTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_discover_generate",
+    () => createAmplifyDiscoverGenerateTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_content_preview",
+    () => createAmplifyContentPreviewTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_content_launch",
+    () => createAmplifyContentLaunchTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_credits_history",
+    () => createAmplifyCreditsHistoryTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_campaign_delegate",
+    () => createAmplifyCampaignDelegateTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_discover_regenerate_preview",
+    () => createAmplifyDiscoverRegeneratePreviewTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_discover_regenerate",
+    () => createAmplifyDiscoverRegenerateTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_discover_review_preview",
+    () => createAmplifyDiscoverReviewPreviewTool(pcOpts),
+    options,
+    factories,
+  );
+  registerSpendTool(
+    "amplify_discover_review",
+    () => createAmplifyDiscoverReviewTool(pcOpts),
+    options,
+    factories,
+  );
 
   return names.map((name) => {
     const factory = factories[name];

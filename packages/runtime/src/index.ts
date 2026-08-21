@@ -143,6 +143,24 @@ export type {
 } from "./productclank-provision.js";
 
 export {
+  fetchProductClankAgentProfile,
+  searchProductClankProducts,
+  boostProductClankPost,
+  isProductClankOwnerLinked,
+  normalizeBoostAction,
+  boostCreditsForAction,
+  BOOST_ACTION_CREDITS,
+  DISCOVER_CREATE_CREDITS,
+  DISCOVER_GENERATE_CREDITS_PER_POST,
+  PRODUCTCLANK_API_BASE as PRODUCTCLANK_AGENT_API_BASE,
+} from "./productclank-api.js";
+export type {
+  ProductClankAgentProfile,
+  ProductClankProductSearchHit,
+  ProductClankBoostResult,
+} from "./productclank-api.js";
+
+export {
   applyDeployConfiguration,
   applySkillInstallStatus,
   mergeDeployConfiguration,

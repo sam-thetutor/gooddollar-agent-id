@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
           manualChunks(id) {
             if (!id.includes("node_modules")) return;
             if (
-              id.includes("@reown/appkit") ||
+              id.includes("@privy-io") ||
               id.includes("@wagmi") ||
               id.includes("/wagmi/") ||
               id.includes("/viem/")

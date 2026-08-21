@@ -262,8 +262,18 @@ export function createTelegramChannel(
     try {
       reply = await options.brain.handleMessage(sessionId, text);
     } catch (err) {
-      logger.error("brain error", { error: (err as Error).message });
-      reply = "Sorry, something went wrong on my side. Please try again.";
+      const message = (err as Error).message;
+      logger.error("brain error", { error: message });
+      if (message.includes("402") || message.includes("payment_required")) {
+        reply =
+          "I'm out of AI compute credits (AntSeed). Top up G$ on the agent dashboard " +
+          "or ask your operator to fund inference — then message me again.";
+      } else if (message.includes("llm request failed")) {
+        reply =
+          "My inference backend is temporarily unavailable. Please try again in a minute.";
+      } else {
+        reply = "Sorry, something went wrong on my side. Please try again.";
+      }
     }
 
     for (const part of chunk(stripMarkdown(reply))) {

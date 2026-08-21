@@ -38,11 +38,11 @@ function skillCategory(skillId: string): string {
 const STATUS_COLORS: Record<string, string> = {
   running: "#4ade80",
   paused: "#8b95a3",
-  failed: "#e06a6a",
   awaiting_vouch: "#e0895a",
   provisioning: "#e6b23c",
   pending_payment: "#6b7480",
   installing: "#c4a035",
+  stopped: "#6b7480",
 };
 
 function CountUp({ value }: { value: number }) {
@@ -268,7 +268,9 @@ export function Stats() {
     () =>
       platform
         ? Object.entries(platform.deploys.byStatus)
-            .filter(([status]) => status !== "awaiting_vouch")
+            .filter(
+              ([status]) => status !== "awaiting_vouch" && status !== "failed",
+            )
             .sort((a, b) => b[1] - a[1])
         : [],
     [platform],
@@ -280,9 +282,8 @@ export function Stats() {
   );
 
   const maxSkillInstalls = useMemo(
-    () =>
-      platform?.skills.bySkill.reduce((m, s) => Math.max(m, s.total), 0) ?? 1,
-    [platform],
+    () => registry?.active ?? 1,
+    [registry],
   );
 
   const maxGamesPlayed = useMemo(
@@ -350,18 +351,20 @@ export function Stats() {
                 value={platform?.deploys.total ?? 0}
                 sub={
                   platform
-                    ? `${formatNum(platform.deploys.running)} running now`
+                    ? `${formatNum(platform.deploys.running)} running · active Agent IDs only`
                     : undefined
                 }
                 accent="blue"
               />
               <KpiCard
-                label="Skill installs"
+                label="Agents with skills"
                 value={platform?.skills.totalInstalls ?? 0}
                 sub={
-                  platform
-                    ? `${platform.skills.bySkill.length} unique skills`
-                    : undefined
+                  registry
+                    ? `of ${formatNum(registry.active)} active Agent IDs`
+                    : platform
+                      ? `${platform.skills.bySkill.length} unique skills`
+                      : undefined
                 }
               />
               <KpiCard
@@ -425,7 +428,7 @@ export function Stats() {
               {platform && (
                 <section className="stats-panel stats-panel--deploys">
                   <div className="stats-panel-head">
-                    <h2>Deploy health</h2>
+                    <h2>Deploy status</h2>
                     <span className="stats-panel-badge">
                       {formatNum(platform.games.liveNow)} live
                     </span>
@@ -438,16 +441,16 @@ export function Stats() {
                       <span className="stats-deploy-metric-lbl">running</span>
                     </div>
                     <div className="stats-deploy-metric">
-                      <span className="stats-deploy-metric-val stats-deploy-metric-val--ok">
-                        {formatNum(platform.deploys.healthy)}
-                      </span>
-                      <span className="stats-deploy-metric-lbl">healthy</span>
-                    </div>
-                    <div className="stats-deploy-metric">
                       <span className="stats-deploy-metric-val">
                         {formatNum(platform.deploys.withAgentId)}
                       </span>
                       <span className="stats-deploy-metric-lbl">linked ID</span>
+                    </div>
+                    <div className="stats-deploy-metric">
+                      <span className="stats-deploy-metric-val">
+                        {formatNum(platform.deploys.revoked ?? 0)}
+                      </span>
+                      <span className="stats-deploy-metric-lbl">revoked</span>
                     </div>
                   </div>
                   <StatusBar
@@ -462,7 +465,8 @@ export function Stats() {
                   <div className="stats-panel-head">
                     <h2>Skill adoption</h2>
                     <span className="muted stats-panel-meta">
-                      {formatNum(platform.skills.totalInstalls)} total installs
+                      {formatNum(platform.skills.totalInstalls)} agents with skills
+                      {registry ? ` · ${formatNum(registry.active)} active IDs` : ""}
                     </span>
                   </div>
                   <div className="stats-skill-list">
@@ -470,10 +474,14 @@ export function Stats() {
                       <ProgressRow
                         key={row.skillId}
                         label={row.label}
-                        meta={`${skillCategory(row.skillId)} · ${row.failed > 0 ? `${row.failed} failed` : "all healthy"}`}
+                        meta={`${skillCategory(row.skillId)}${row.failed > 0 ? ` · ${row.failed} failed` : ""}`}
                         value={row.activated}
                         max={maxSkillInstalls}
-                        suffix={` / ${formatNum(row.total)}`}
+                        suffix={
+                          registry
+                            ? ` / ${formatNum(registry.active)}`
+                            : ` / ${formatNum(row.total)}`
+                        }
                         tone={row.failed > 0 ? "warn" : "accent"}
                       />
                     ))}
