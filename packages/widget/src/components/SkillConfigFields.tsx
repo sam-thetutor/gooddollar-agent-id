@@ -2,9 +2,12 @@ import type { SkillConfiguration } from "../types.js";
 import {
   ACTIONORDER_SKILL_ID,
   BALAIO_WORKER_SKILL_ID,
+  CHESS_ARENA_SKILL_ID,
   GAMEARENA_SKILL_ID,
+  PROOF_OF_ALPHA_HUNT_SKILL_ID,
   UBI_REMINDER_SKILL_ID,
 } from "../skill-config.js";
+import { ChessArenaConfigFields } from "./ChessArenaConfigFields.js";
 
 const ACTIONORDER_CHARACTERS = [
   { id: "riven", label: "Riven" },
@@ -100,6 +103,16 @@ export function SkillConfigFields({
     );
   }
 
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return (
+      <ChessArenaConfigFields
+        config={config}
+        onChange={onChange}
+        compact={compact}
+      />
+    );
+  }
+
   if (skillId === ACTIONORDER_SKILL_ID) {
     return (
       <>
@@ -185,6 +198,46 @@ export function SkillConfigFields({
           />
         </label>
       </>
+    );
+  }
+
+  if (skillId === PROOF_OF_ALPHA_HUNT_SKILL_ID) {
+    return (
+      <div className={`ga-widget-config-fields${gridClass}`}>
+        <label className={fieldClass}>
+          <span>Forensic previews</span>
+          <input
+            className={inputClass}
+            type="number"
+            min={0}
+            max={10}
+            value={config.FORENSIC_PREVIEW_COUNT ?? "3"}
+            onChange={(e) => onChange("FORENSIC_PREVIEW_COUNT", e.target.value)}
+          />
+        </label>
+        <label className={fieldClass}>
+          <span>Tx scan limit</span>
+          <input
+            className={inputClass}
+            type="number"
+            min={5}
+            max={100}
+            value={config.ETHERSCAN_TX_LIMIT ?? "40"}
+            onChange={(e) => onChange("ETHERSCAN_TX_LIMIT", e.target.value)}
+          />
+        </label>
+        <label className={`${fieldClass} ga-widget-config-grid-span2`}>
+          <span>Etherscan API key (optional)</span>
+          <input
+            className={inputClass}
+            type="password"
+            value={config.ETHERSCAN_API_KEY ?? ""}
+            onChange={(e) => onChange("ETHERSCAN_API_KEY", e.target.value)}
+            placeholder="Improves tx discovery"
+            autoComplete="off"
+          />
+        </label>
+      </div>
     );
   }
 

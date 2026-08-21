@@ -416,7 +416,7 @@ async function applyPartnerSkillConfiguration(
 ) {
   loadRuntimeEnv();
   const runtimeConfig = getRuntimeConfig();
-  const { merged, skillId, restarted } = applyDeployConfiguration(
+  const { merged, skillId, restarted } = await applyDeployConfiguration(
     runtimeConfig,
     toDeployAgentRecord(agent),
     sanitized,

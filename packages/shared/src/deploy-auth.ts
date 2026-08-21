@@ -6,13 +6,24 @@ export type DeployControlAction =
   | "display-name"
   | "run-pipeline"
   | "confirm-vouch"
-  | "play";
+  | "play"
+  | "credits-record"
+  | "productclank-link"
+  | "telegram-link";
 
 export interface DeployControlAuth {
   ownerWallet: string;
   signature: `0x${string}`;
   issuedAt: number;
+  /**
+   * Optional single-use id. When present it is part of the signed message and
+   * the verifier rejects any nonce it has already seen, closing the replay
+   * window that freshness checks alone leave open.
+   */
+  nonce?: string;
 }
+
+const NONCE_RE = /^[A-Za-z0-9-]{8,64}$/;
 
 /** Signatures older than this are rejected (replay window). */
 export const DEPLOY_CONTROL_MAX_AGE_MS = 5 * 60 * 1000;
@@ -24,13 +35,16 @@ export function buildDeployControlMessage(
   action: DeployControlAction,
   deployId: string,
   issuedAt: number,
+  nonce?: string,
 ): string {
-  return [
+  const lines = [
     "GoodAgent deploy control",
     `Action: ${action}`,
     `Deploy: ${deployId}`,
     `Issued: ${issuedAt}`,
-  ].join("\n");
+  ];
+  if (nonce) lines.push(`Nonce: ${nonce}`);
+  return lines.join("\n");
 }
 
 export function parseDeployControlAuth(
@@ -51,9 +65,13 @@ export function parseDeployControlAuth(
     return null;
   }
 
+  const rawNonce = typeof body.nonce === "string" ? body.nonce.trim() : "";
+  if (rawNonce && !NONCE_RE.test(rawNonce)) return null;
+
   return {
     ownerWallet,
     signature: signature as `0x${string}`,
     issuedAt,
+    ...(rawNonce ? { nonce: rawNonce } : {}),
   };
 }

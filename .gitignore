@@ -20,4 +20,5 @@ docs/
 apps/telegram-bot/
 apps/bot-site/
 .env*
+scripts/agents.local.json
 packages/widget/.npmrc.publish

@@ -40,6 +40,20 @@ export function findGamearenaSkillInstall(
   return skills.find((s) => s.skillId.includes("gamearena"));
 }
 
+export function findChessArenaSkillInstall(
+  skills: SkillInstall[],
+): SkillInstall | undefined {
+  return skills.find((s) => s.skillId.includes("chess_arena"));
+}
+
+export function findEnabledChessArenaSkillInstall(
+  skills: SkillInstall[],
+): SkillInstall | undefined {
+  return skills.find(
+    (s) => s.skillId.includes("chess_arena") && s.status !== "disabled",
+  );
+}
+
 export function findActionOrderSkillInstall(
   skills: SkillInstall[],
 ): SkillInstall | undefined {

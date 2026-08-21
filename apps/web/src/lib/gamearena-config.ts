@@ -93,6 +93,9 @@ export function skillSpendPill(skill: {
   if (skill.skill_id === "work/marketplace/balaio_worker") {
     return { label: "G$ escrow when creating tasks", variant: "warn" };
   }
+  if (skill.skill_id === "gaming/wagering/chess_arena_1v1") {
+    return { label: "1 USDT stake · G$ auto-swap", variant: "warn" };
+  }
   if (skill.spends_tokens) {
     return {
       label: `Spends ${skill.token ?? "G$"} · capped`,

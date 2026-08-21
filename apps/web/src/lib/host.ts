@@ -104,6 +104,19 @@ export interface DeployStatusResponse {
     uptimeMs?: number;
     restarts?: number;
   } | null;
+  brain?: {
+    enabled: boolean;
+    model: string | null;
+    botUsername: string | null;
+    operatorLinked?: boolean;
+    operatorTelegramUsername?: string | null;
+    pm2: {
+      name: string;
+      status: string;
+      online: boolean;
+      uptimeMs?: number;
+    } | null;
+  } | null;
   verify: {
     found?: boolean;
     valid?: boolean;
@@ -263,6 +276,11 @@ export function createDeploy(input: {
   skillConfigurations?: Record<string, SkillConfiguration>;
   configuration?: SkillConfiguration;
   telegramBotToken?: string;
+  brain?: {
+    enabled: boolean;
+    botToken: string;
+    model?: string;
+  };
   template?: string;
   skipPayment?: boolean;
 }) {
@@ -276,6 +294,7 @@ export function createDeploy(input: {
       skillConfigurations: input.skillConfigurations,
       configuration: input.configuration,
       telegramBotToken: input.telegramBotToken,
+      brain: input.brain,
       template: input.template ?? "gaming",
       skipPayment: input.skipPayment ?? true,
     }),
@@ -391,6 +410,48 @@ export function updateDeployConfiguration(
   });
 }
 
+export interface ProductClankLinkResult {
+  alreadyLinked: boolean;
+  linkUrl: string | null;
+  expiresAt: string | null;
+  linkedUserName: string | null;
+}
+
+export function requestProductClankLink(
+  deployId: string,
+  auth: DeployControlAuth,
+) {
+  return hostFetch<{ link: ProductClankLinkResult }>(
+    `/deploy/${deployId}/productclank/link`,
+    {
+      method: "POST",
+      body: JSON.stringify(auth),
+    },
+  );
+}
+
+export interface TelegramLinkTokenResult {
+  token: string;
+  botUsername: string;
+  deepLink: string;
+  expiresAt: string;
+  operatorLinked: boolean;
+}
+
+/** Issue a short-lived token that binds the owner's Telegram account for chat control. */
+export function requestTelegramLinkToken(
+  deployId: string,
+  auth: DeployControlAuth,
+) {
+  return hostFetch<TelegramLinkTokenResult>(
+    `/deploy/${deployId}/telegram/link-token`,
+    {
+      method: "POST",
+      body: JSON.stringify(auth),
+    },
+  );
+}
+
 export function setDeploySkillEnabled(
   deployId: string,
   skillId: string,
@@ -408,4 +469,72 @@ export function setDeploySkillEnabled(
     method: "POST",
     body: JSON.stringify(auth),
   });
+}
+
+export interface PlatformSkillInstallBreakdown {
+  skillId: string;
+  label: string;
+  total: number;
+  activated: number;
+  failed: number;
+}
+
+export interface PlatformSkillGameBreakdown {
+  skillId: string;
+  label: string;
+  played: number;
+  wins: number;
+  losses: number;
+  unresolved: number;
+  wagerGs: string;
+}
+
+export interface PlatformRecentMatch {
+  matchId: string;
+  skillId: string | null;
+  skillLabel: string;
+  deployId: string;
+  deployName: string;
+  result: string;
+  wagerGs: string;
+  playedAt: string;
+}
+
+export interface PlatformDailyGames {
+  date: string;
+  total: number;
+  bySkill: Record<string, number>;
+}
+
+export interface PlatformStats {
+  deploys: {
+    total: number;
+    byStatus: Record<string, number>;
+    byTemplate: Record<string, number>;
+    withAgentId: number;
+    running: number;
+    healthy: number;
+  };
+  skills: {
+    totalInstalls: number;
+    bySkill: PlatformSkillInstallBreakdown[];
+  };
+  games: {
+    total: number;
+    totalWagerGs: string;
+    today: number;
+    liveNow: number;
+    bySkill: PlatformSkillGameBreakdown[];
+  };
+  payments: {
+    total: number;
+    completed: number;
+    totalUsd: string;
+  };
+  recentMatches: PlatformRecentMatch[];
+  dailyGames: PlatformDailyGames[];
+}
+
+export function getPlatformStats() {
+  return hostFetch<PlatformStats>("/platform/stats");
 }

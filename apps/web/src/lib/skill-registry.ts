@@ -1,5 +1,6 @@
 export {
   defaultDeploySkillId,
+  filterDeployPickerSkills,
   filterListedSkills,
   isSkillListed,
   type RegistrySkillFlags,

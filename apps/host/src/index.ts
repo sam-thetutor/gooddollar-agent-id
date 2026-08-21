@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,8 +7,10 @@ import { serve } from "@hono/node-server";
 import {
   confirmDeployPayment,
   createDeployedAgent,
+  decryptBrainBotToken,
   decryptTelegramBotToken,
   getDeployedAgent,
+  parseDeployBrainConfig,
   listActiveSubscribers,
   listChatSubscriptions,
   listDeployedAgentsByOwner,
@@ -44,6 +47,7 @@ import {
   getDeployLogTail,
   syncGamearenaStateFile,
   syncDeployLogFile,
+  getPlatformStats,
   type GameArenaLiveMatch,
   type DeployStatus,
 } from "@goodagent/db";
@@ -53,10 +57,13 @@ import {
   getDeployStats,
   getRuntimeConfig,
   loadRuntimeEnv,
+  brainPm2Name,
   pm2ProcessSnapshot,
   runDeployPipeline,
   startDeployedAgent,
   stopDeployedAgent,
+  stopDeployedAgentWorkers,
+  startDeployedAgentWorkers,
   setDeployBaselineBalance,
   applyDeployConfiguration,
   applySkillInstallStatus,
@@ -65,6 +72,9 @@ import {
   enrichGamearenaLadder,
   fetchGamearenaLadder,
   deriveAgentAccount,
+  accountFromImportedPrivateKey,
+  isAgentProvisioned,
+  importWalletDeploy,
   checkGamePassUsernameForAgent,
   setGamePassUsername,
   syncAgentAfterPassRename,
@@ -74,11 +84,15 @@ import {
   collectSkillStats,
   pauseGamearenaAgentAtDailyCap,
   patchAllGamearenaDailyCapGuards,
+  patchAllActionOrderSecureSkills,
+  createProductClankLink,
+  PRODUCTCLANK_SKILL_ID,
   type SkillStatsSummary,
   type PipelineStatus,
   type DeployAgentRecord,
 } from "@goodagent/runtime";
 import { inferLiveMatchFromLogTail } from "@goodagent/live-arena";
+import { createGdAntseedCreditsClient } from "@goodagent/agent-brain";
 import {
   isSkillDeployable,
   assertDeploySkillCount,
@@ -98,6 +112,9 @@ import {
 import {
   registerActionOrderPartnerRoutes,
 } from "./partners/actionorder.js";
+import {
+  registerChessArenaPartnerRoutes,
+} from "./partners/chess-arena.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rootEnv = resolve(here, "../../../.env");
@@ -310,7 +327,23 @@ async function scheduleDeployPipeline(
       agent,
       config.encryptionSecret,
     );
-    await runDeployPipeline(
+
+    // Optional LLM brain — configured at deploy creation, token encrypted at rest.
+    const brainConfig = parseDeployBrainConfig(agent);
+    const brainBotToken = brainConfig
+      ? await decryptBrainBotToken(agent, config.encryptionSecret)
+      : null;
+    const brain =
+      brainConfig && brainBotToken
+        ? {
+            model: brainConfig.model,
+            personaPreset: brainConfig.personaPreset,
+            tools: brainConfig.tools,
+            botToken: brainBotToken,
+          }
+        : null;
+
+    const result = await runDeployPipeline(
       config,
       {
         deployId: id,
@@ -324,6 +357,7 @@ async function scheduleDeployPipeline(
           installId: install.id,
         })),
         telegramBotToken,
+        brain,
         skipIdentity: opts.skipIdentity,
         dryRun: opts.dryRun,
         minDerivationIndex,
@@ -352,6 +386,15 @@ async function scheduleDeployPipeline(
         },
       },
     );
+
+    if (brainConfig && result.brainBotUsername) {
+      await updateDeployedAgent(id, {
+        brainConfig: JSON.stringify({
+          ...brainConfig,
+          botUsername: result.brainBotUsername,
+        }),
+      }).catch(() => undefined);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[host] pipeline failed for ${id}:`, err);
@@ -365,17 +408,50 @@ async function scheduleDeployPipeline(
 }
 
 
-function publicAgent<T extends { telegramBotTokenEnc?: string | null }>(
-  agent: T,
-): Omit<T, "telegramBotTokenEnc"> {
-  const { telegramBotTokenEnc: _, ...rest } = agent;
+function publicAgent<
+  T extends {
+    telegramBotTokenEnc?: string | null;
+    brainBotTokenEnc?: string | null;
+  },
+>(agent: T): Omit<T, "telegramBotTokenEnc" | "brainBotTokenEnc"> {
+  const { telegramBotTokenEnc: _t, brainBotTokenEnc: _b, ...rest } = agent;
   return rest;
+}
+
+/** Brain chat status for dashboards: config + live PM2 state of ga-brain-<id>. */
+function buildBrainStatusPayload(
+  agent: NonNullable<Awaited<ReturnType<typeof getDeployedAgent>>>,
+) {
+  const config = parseDeployBrainConfig(agent);
+  if (!config) return null;
+  return {
+    enabled: true,
+    model: config.model ?? null,
+    botUsername: config.botUsername ?? null,
+    operatorLinked: config.operatorTelegramId != null,
+    operatorTelegramUsername: config.operatorTelegramUsername ?? null,
+    pm2: pm2ProcessSnapshot(brainPm2Name(agent.id)),
+  };
 }
 
 function primarySkillId(
   agent: Awaited<ReturnType<typeof getDeployedAgent>>,
 ): string | null {
   return primarySkillInstall(agent?.skills ?? [])?.skillId ?? null;
+}
+
+/** Keys that must never leave the host in public status payloads. */
+const SECRET_CONFIG_KEY = /(API_KEY|SECRET|PRIVATE_KEY|BOT_TOKEN|AUTH_TOKEN)$/i;
+
+function sanitizeSkillConfiguration(
+  config: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (SECRET_CONFIG_KEY.test(key)) continue;
+    out[key] = value;
+  }
+  return out;
 }
 
 function buildSkillStatusPayload(
@@ -387,7 +463,9 @@ function buildSkillStatusPayload(
     registryPath: install.registryPath,
     status: install.status,
     lastError: install.lastError,
-    configuration: resolveSkillConfiguration(agent, install),
+    configuration: sanitizeSkillConfiguration(
+      resolveSkillConfiguration(agent, install),
+    ),
     stats: skillStats?.[install.skillId] ?? null,
   }));
 }
@@ -537,6 +615,11 @@ registerActionOrderPartnerRoutes(app, {
   fetchVerifyStatus,
 });
 
+registerChessArenaPartnerRoutes(app, {
+  publicHostBase: HOST_PUBLIC_BASE,
+  fetchVerifyStatus,
+});
+
 const GAMEARENA_SSE_UPSTREAM =
   process.env.GAMEARENA_LIVE_SSE_URL?.trim() ||
   "https://game-backend-production-6130.up.railway.app";
@@ -596,6 +679,22 @@ app.get("/health", (c) =>
     pm2: process.env.PM2_HOME ? "configured" : "local",
   }),
 );
+
+const PLATFORM_STATS_CACHE_TTL_MS = 60_000;
+let platformStatsCache: { at: number; body: unknown } | null = null;
+
+/** Platform-wide deploy, skill, and game aggregates for the public stats page. */
+app.get("/platform/stats", async (c) => {
+  if (
+    platformStatsCache &&
+    Date.now() - platformStatsCache.at < PLATFORM_STATS_CACHE_TTL_MS
+  ) {
+    return c.json(platformStatsCache.body as Record<string, unknown>);
+  }
+  const body = await getPlatformStats();
+  platformStatsCache = { at: Date.now(), body };
+  return c.json(body);
+});
 
 /** GameArena challenge-ai ladder with GoodAgent wallet metadata for filtering. */
 app.get("/leaderboard/gamearena", async (c) => {
@@ -676,6 +775,13 @@ app.post("/deploy", async (c) => {
     skillConfigurations?: Record<string, Record<string, string>>;
     configuration?: Record<string, string>;
     telegramBotToken?: string;
+    brain?: {
+      enabled?: boolean;
+      botToken?: string;
+      model?: string;
+      personaPreset?: string;
+      tools?: string[];
+    };
     skipPayment?: boolean;
   }>();
 
@@ -688,8 +794,17 @@ app.post("/deploy", async (c) => {
   const configuration = { ...(body.configuration ?? {}) };
   delete configuration.TELEGRAM_BOT_TOKEN;
 
+  const brainEnabled = Boolean(body.brain?.enabled);
+  const brainBotToken = body.brain?.botToken?.trim() || null;
+  if (brainEnabled && !brainBotToken) {
+    return c.json(
+      { error: "brain.botToken is required when brain chat is enabled" },
+      400,
+    );
+  }
+
   let encryptionSecret: string | null = null;
-  if (telegramBotToken) {
+  if (telegramBotToken || brainBotToken) {
     loadRuntimeEnv();
     encryptionSecret = process.env.ENCRYPTION_SECRET?.trim() || null;
     if (!encryptionSecret) {
@@ -745,6 +860,15 @@ app.post("/deploy", async (c) => {
     configuration: Object.keys(configuration).length ? configuration : null,
     skillConfigurations: body.skillConfigurations ?? null,
     telegramBotToken,
+    brain: brainEnabled
+      ? {
+          enabled: true,
+          model: body.brain?.model?.trim() || undefined,
+          personaPreset: body.brain?.personaPreset?.trim() || undefined,
+          tools: body.brain?.tools?.length ? body.brain.tools : undefined,
+          botToken: brainBotToken,
+        }
+      : null,
     encryptionSecret,
   });
 
@@ -851,7 +975,7 @@ app.get("/deploy/:id/status", async (c) => {
       template: agent.template,
       skillId,
       skills: buildSkillStatusPayload(agent),
-      configuration: JSON.stringify(primaryConfig),
+      configuration: JSON.stringify(sanitizeSkillConfiguration(primaryConfig)),
       status: agent.status,
       ownerWallet: agent.ownerWallet,
       agentAddress: agent.agentAddress,
@@ -861,6 +985,7 @@ app.get("/deploy/:id/status", async (c) => {
       deployedAt: agent.deployedAt,
       pipelineRunning: runningPipelines.has(agent.id),
       pm2,
+      brain: buildBrainStatusPayload(agent),
       verify,
       stats: logTail ? { logTail } : null,
       liveMatch: resolved.liveMatch,
@@ -1054,7 +1179,7 @@ app.get("/deploy/:id/status", async (c) => {
     template: agent.template,
     skillId: primary?.skillId ?? null,
     skills: buildSkillStatusPayload(agent, skillStats),
-    configuration: JSON.stringify(primaryConfig),
+    configuration: JSON.stringify(sanitizeSkillConfiguration(primaryConfig)),
     status: agent.status,
     ownerWallet: agent.ownerWallet,
     agentAddress: agent.agentAddress,
@@ -1064,6 +1189,7 @@ app.get("/deploy/:id/status", async (c) => {
     deployedAt: agent.deployedAt,
     pipelineRunning: runningPipelines.has(agent.id),
     pm2,
+    brain: buildBrainStatusPayload(agent),
     verify,
     stats,
     liveMatch: resolved.liveMatch,
@@ -1150,6 +1276,149 @@ app.post("/deploy/:id/run-pipeline", async (c) => {
   }).catch(() => undefined);
 
   return c.json({ accepted: true, deployId: id }, 202);
+});
+
+/** Internal: import an existing wallet key as a self-owned GameArena agent. */
+app.post("/internal/import-wallet-deploy", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+
+  const body = await c.req.json<{
+    displayName?: string;
+    importedPrivateKey?: string;
+    skillConfigurations?: Record<string, Record<string, string>>;
+    deployId?: string;
+  }>();
+
+  if (!body.displayName?.trim()) {
+    return c.json({ error: "displayName is required" }, 400);
+  }
+  if (!body.importedPrivateKey?.trim()) {
+    return c.json({ error: "importedPrivateKey is required" }, 400);
+  }
+
+  let account: ReturnType<typeof accountFromImportedPrivateKey>;
+  try {
+    account = accountFromImportedPrivateKey(body.importedPrivateKey);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 400);
+  }
+
+  const ownerWallet = account.address;
+
+  let skills;
+  try {
+    const registry = await fetchSkillsRegistry();
+    const skillId = GAMEARENA_SKILL_ID;
+    const entry = findRegistrySkill(registry, skillId);
+    if (!entry) throw new Error(`skill_id not in registry: ${skillId}`);
+    skills = [
+      {
+        skillId: entry.skill_id,
+        registryPath: entry.path,
+        configuration:
+          body.skillConfigurations?.[skillId] ??
+          body.skillConfigurations?.[entry.skill_id] ??
+          {},
+      },
+    ];
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 400);
+  }
+
+  loadRuntimeEnv();
+
+  let agent = body.deployId?.trim()
+    ? await getDeployedAgent(body.deployId.trim())
+    : null;
+  if (body.deployId?.trim() && !agent) {
+    return c.json({ error: "NOT_FOUND", deployId: body.deployId.trim() }, 404);
+  }
+  if (agent && agent.status === "running") {
+    const verify = await fetchVerifyStatus(ownerWallet);
+    return c.json({ agent: publicAgent(agent), import: { resumed: true }, verify });
+  }
+
+  if (!agent) {
+    agent = await createDeployedAgent({
+      displayName: body.displayName.trim(),
+      template: "gaming",
+      ownerWallet,
+      skills,
+      skillConfigurations: body.skillConfigurations ?? null,
+    });
+
+    if (DEV_SKIP_PAYMENT) {
+      await skipPaymentForDeploy(agent.id);
+      agent = (await getDeployedAgent(agent.id)) ?? agent;
+    }
+  } else if (DEV_SKIP_PAYMENT && agent.status === "pending_payment") {
+    await skipPaymentForDeploy(agent.id);
+    agent = (await getDeployedAgent(agent.id)) ?? agent;
+  }
+
+  let config;
+  try {
+    config = getRuntimeConfig();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "HOST_CONFIG", message }, 500);
+  }
+
+  if (runningPipelines.has(agent.id)) {
+    return c.json({ error: "PIPELINE_ALREADY_RUNNING" }, 409);
+  }
+
+  runningPipelines.add(agent.id);
+  try {
+    const result = await importWalletDeploy(
+      config,
+      {
+        deployId: agent.id,
+        displayName: agent.displayName,
+        importedPrivateKey: body.importedPrivateKey.trim(),
+        ownerWallet: ownerWallet as `0x${string}`,
+      },
+      {
+        onStatus: async (status, fields) => {
+          await updateDeployedAgent(agent.id, {
+            status: pipelineToDeployStatus(status),
+            ...fields,
+          });
+        },
+        onSkillInstalled: async ({ skillId, configuration }) => {
+          await updateSkillInstall(agent.id, skillId, {
+            status: "installed",
+            configJson: JSON.stringify(configuration),
+            activatedAt: new Date(),
+            lastError: null,
+          });
+        },
+      },
+    );
+
+    await updateDeployedAgent(agent.id, {
+      status: result.started ? "running" : "awaiting_vouch",
+      deployedAt: new Date(),
+      lastError: null,
+    });
+
+    const verify = await fetchVerifyStatus(ownerWallet);
+    return c.json({
+      agent: publicAgent((await getDeployedAgent(agent.id)) ?? agent),
+      import: result,
+      verify,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await updateDeployedAgent(agent.id, { status: "failed", lastError: message }).catch(
+      () => undefined,
+    );
+    return c.json({ error: "IMPORT_FAILED", message }, 500);
+  } finally {
+    runningPipelines.delete(agent.id);
+  }
 });
 
 app.post("/deploy/:id/heartbeat", async (c) => {
@@ -1478,7 +1747,7 @@ app.post("/deploy/:id/start", async (c) => {
       );
     }
 
-    if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+    if (!isAgentProvisioned(agent.agentAddress, agent.walletDerivationIndex)) {
       return c.json(
         {
           error: "NOT_PROVISIONED",
@@ -1491,6 +1760,248 @@ app.post("/deploy/:id/start", async (c) => {
     void scheduleDeployPipeline(id, agent, { skipIdentity: false }).catch(() => undefined);
     await updateDeployedAgent(id, { status: "provisioning", lastError: null });
     return c.json({ accepted: true, reprovisioning: true, deployId: id }, 202);
+  }
+});
+
+// Generate a fresh ProductClank owner-linking URL. Tokens are short-lived,
+// so the dashboard requests one on demand instead of caching it.
+app.post("/deploy/:id/productclank/link", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json<Record<string, unknown>>().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const authErr = await verifyDeployControl(
+    "productclank-link",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  const install = agent.skills.find((s) => s.skillId === PRODUCTCLANK_SKILL_ID);
+  if (!install) return c.json({ error: "SKILL_NOT_INSTALLED" }, 409);
+
+  const config = resolveSkillConfiguration(agent, install);
+  const apiKey = config.PRODUCTCLANK_API_KEY?.trim();
+  if (!apiKey) {
+    return c.json(
+      {
+        error: "NOT_REGISTERED",
+        message:
+          "This agent has no ProductClank API key yet — re-run the deploy pipeline to auto-register.",
+      },
+      409,
+    );
+  }
+
+  try {
+    const link = await createProductClankLink({ apiKey });
+    return c.json({ link });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "PRODUCTCLANK_ERROR", message }, 502);
+  }
+});
+
+// ---- Telegram chat control --------------------------------------------------
+// The owner links their Telegram account once via a short-lived token (issued
+// here, redeemed by the brain through /internal claim). After that the brain
+// forwards /pause, /resume and /status commands and the host verifies the
+// sender is the linked operator before touching PM2.
+
+const TELEGRAM_LINK_TOKEN_TTL_MS = 15 * 60 * 1000;
+const telegramLinkTokens = new Map<
+  string,
+  { deployId: string; expiresAt: number }
+>();
+
+function pruneTelegramLinkTokens(): void {
+  const now = Date.now();
+  for (const [token, entry] of telegramLinkTokens) {
+    if (entry.expiresAt <= now) telegramLinkTokens.delete(token);
+  }
+}
+
+app.post("/deploy/:id/telegram/link-token", async (c) => {
+  const id = c.req.param("id");
+  const body = (await c.req.json<Record<string, unknown>>().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const authErr = await verifyDeployControl(
+    "telegram-link",
+    id,
+    agent.ownerWallet,
+    body,
+  );
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  const brain = parseDeployBrainConfig(agent);
+  if (!brain?.enabled || !brain.botUsername) {
+    return c.json(
+      {
+        error: "BRAIN_NOT_ENABLED",
+        message: "This agent has no chat brain — enable AI chat first.",
+      },
+      409,
+    );
+  }
+
+  pruneTelegramLinkTokens();
+  const token = randomUUID().replace(/-/g, "");
+  const expiresAt = Date.now() + TELEGRAM_LINK_TOKEN_TTL_MS;
+  telegramLinkTokens.set(token, { deployId: id, expiresAt });
+
+  return c.json({
+    token,
+    botUsername: brain.botUsername,
+    // Telegram start payload: [A-Za-z0-9_-]{1,64} — "link_" + 32 hex fits.
+    deepLink: `https://t.me/${brain.botUsername}?start=link_${token}`,
+    expiresAt: new Date(expiresAt).toISOString(),
+    operatorLinked: brain.operatorTelegramId != null,
+  });
+});
+
+app.post("/internal/deploy/:id/telegram/claim-link", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const body = (await c.req
+    .json<{ token?: unknown; telegramUserId?: unknown; telegramUsername?: unknown }>()
+    .catch(() => ({}))) as {
+    token?: unknown;
+    telegramUserId?: unknown;
+    telegramUsername?: unknown;
+  };
+
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  const telegramUserId =
+    typeof body.telegramUserId === "number" && Number.isInteger(body.telegramUserId)
+      ? body.telegramUserId
+      : null;
+  if (!token || telegramUserId == null) {
+    return c.json({ error: "token and telegramUserId are required" }, 400);
+  }
+
+  const entry = telegramLinkTokens.get(token);
+  if (!entry || entry.deployId !== id || entry.expiresAt <= Date.now()) {
+    return c.json(
+      {
+        error: "LINK_TOKEN_INVALID",
+        message:
+          "This link is invalid or expired — generate a fresh one from the agent dashboard.",
+      },
+      410,
+    );
+  }
+  telegramLinkTokens.delete(token);
+
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+  const brain = parseDeployBrainConfig(agent);
+  if (!brain) return c.json({ error: "BRAIN_NOT_ENABLED" }, 409);
+
+  await updateDeployedAgent(id, {
+    brainConfig: JSON.stringify({
+      ...brain,
+      operatorTelegramId: telegramUserId,
+      operatorTelegramUsername:
+        typeof body.telegramUsername === "string" && body.telegramUsername.trim()
+          ? body.telegramUsername.trim()
+          : null,
+    }),
+  });
+
+  return c.json({ ok: true, displayName: agent.displayName });
+});
+
+app.post("/internal/deploy/:id/control", async (c) => {
+  if (!internalAuth(c)) return c.json({ error: "UNAUTHORIZED" }, 401);
+  const id = c.req.param("id");
+  const body = (await c.req
+    .json<{ action?: unknown; telegramUserId?: unknown }>()
+    .catch(() => ({}))) as { action?: unknown; telegramUserId?: unknown };
+
+  const action = typeof body.action === "string" ? body.action : "";
+  const telegramUserId =
+    typeof body.telegramUserId === "number" && Number.isInteger(body.telegramUserId)
+      ? body.telegramUserId
+      : null;
+  if (!["pause", "resume", "status"].includes(action) || telegramUserId == null) {
+    return c.json({ error: "action (pause|resume|status) and telegramUserId required" }, 400);
+  }
+
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+  const brain = parseDeployBrainConfig(agent);
+  if (brain?.operatorTelegramId == null) {
+    return c.json(
+      {
+        error: "NOT_LINKED",
+        message:
+          "No operator is linked yet. Open the agent dashboard and use Link Telegram first.",
+      },
+      403,
+    );
+  }
+  if (brain.operatorTelegramId !== telegramUserId) {
+    return c.json(
+      {
+        error: "NOT_OPERATOR",
+        message: "Only the linked operator can control this agent.",
+      },
+      403,
+    );
+  }
+
+  if (action === "status") {
+    const workers = agent.pm2Name ? pm2ProcessSnapshot(agent.pm2Name) : null;
+    const brainProc = pm2ProcessSnapshot(brainPm2Name(id));
+    return c.json({
+      ok: true,
+      status: agent.status,
+      displayName: agent.displayName,
+      workers,
+      brain: brainProc,
+    });
+  }
+
+  if (action === "pause") {
+    stopDeployedAgentWorkers(id);
+    const updated = await updateDeployedAgent(id, { status: "paused" });
+    return c.json({ ok: true, status: updated.status, displayName: agent.displayName });
+  }
+
+  // resume
+  loadRuntimeEnv();
+  let config;
+  try {
+    config = getRuntimeConfig();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "HOST_CONFIG", message }, 500);
+  }
+  try {
+    const result = startDeployedAgentWorkers(config, id);
+    const updated = await updateDeployedAgent(id, {
+      status: "running",
+      lastError: null,
+    });
+    return c.json({
+      ok: true,
+      status: updated.status,
+      displayName: agent.displayName,
+      result,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "START_FAILED", message }, 500);
   }
 });
 
@@ -1533,7 +2044,7 @@ async function applyDeploySkillConfiguration(
 ) {
   loadRuntimeEnv();
   const runtimeConfig = getRuntimeConfig();
-  const { merged, skillId, restarted } = applyDeployConfiguration(
+  const { merged, skillId, restarted } = await applyDeployConfiguration(
     runtimeConfig,
     deployAgentRecord(agent, agent.displayName),
     sanitized,
@@ -1767,7 +2278,9 @@ app.get("/deploy/:id/skills/:skillId", async (c) => {
     registryPath: install.registryPath,
     status: install.status,
     lastError: install.lastError,
-    configuration: resolveSkillConfiguration(agent, install),
+    configuration: sanitizeSkillConfiguration(
+      resolveSkillConfiguration(agent, install),
+    ),
     stats,
   });
 });
@@ -1900,7 +2413,7 @@ app.post("/deploy/:id/display-name", async (c) => {
       await updateDeployedAgent(id, { displayName });
       const refreshed = (await getDeployedAgent(id)) ?? agent;
       try {
-        const sync = syncAgentAfterPassRename(
+        const sync = await syncAgentAfterPassRename(
           runtimeConfig,
           deployAgentRecord(refreshed, displayName),
           gamePassUsername,
@@ -1942,6 +2455,82 @@ app.post("/deploy/:id/display-name", async (c) => {
   return c.json({ agent: publicAgent(updated) });
 });
 
+// ---------------------------------------------------------------------------
+// G$ compute credits — GoodDollar AntSeed Worker proxy (Phase 0 of the brain
+// architecture, see packages/agent-runtime/REAL_AGENT_ARCHITECTURE.md).
+// Operators deposit G$ on Celo; the Worker issues compute credits keyed by
+// the deploy's buyer address (the agent wallet until per-deploy buyers ship).
+// ---------------------------------------------------------------------------
+
+const GD_ANTSEED_WORKER_URL =
+  process.env.GD_ANTSEED_WORKER_URL?.trim()?.replace(/\/$/, "") || "";
+const creditsClient = GD_ANTSEED_WORKER_URL
+  ? createGdAntseedCreditsClient({ workerUrl: GD_ANTSEED_WORKER_URL })
+  : null;
+
+const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
+
+app.get("/deploy/:id/credits", async (c) => {
+  if (!creditsClient) {
+    return c.json({ error: "WORKER_NOT_CONFIGURED" }, 503);
+  }
+  const agent = await getDeployedAgent(c.req.param("id"));
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+  if (!agent.agentAddress) return c.json({ error: "NOT_PROVISIONED" }, 409);
+
+  try {
+    const profile = await creditsClient.getProfile(agent.agentAddress);
+    return c.json({ buyer: agent.agentAddress, profile });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "WORKER_ERROR", message }, 502);
+  }
+});
+
+app.post("/deploy/:id/credits/record", async (c) => {
+  if (!creditsClient) {
+    return c.json({ error: "WORKER_NOT_CONFIGURED" }, 503);
+  }
+  const id = c.req.param("id");
+  const agent = await getDeployedAgent(id);
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  const body = (await c.req
+    .json<{ txHash?: string } & Record<string, unknown>>()
+    .catch(() => ({}))) as { txHash?: string } & Record<string, unknown>;
+  const authErr = await verifyDeployControl("credits-record", id, agent.ownerWallet, body);
+  if (authErr) return c.json({ error: authErr }, 401);
+
+  const txHash = body.txHash?.trim();
+  if (!txHash || !TX_HASH_RE.test(txHash)) {
+    return c.json({ error: "txHash must be a 0x-prefixed 32-byte hash" }, 400);
+  }
+
+  try {
+    const result = await creditsClient.recordCeloEvent(txHash);
+    return c.json({ ok: true, result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "WORKER_ERROR", message }, 502);
+  }
+});
+
+app.get("/deploy/:id/credits/outstanding", async (c) => {
+  if (!creditsClient) {
+    return c.json({ error: "WORKER_NOT_CONFIGURED" }, 503);
+  }
+  const agent = await getDeployedAgent(c.req.param("id"));
+  if (!agent) return c.json({ error: "NOT_FOUND" }, 404);
+
+  try {
+    const outstanding = await creditsClient.getOutstanding();
+    return c.json({ buyer: agent.agentAddress, outstanding });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: "WORKER_ERROR", message }, 502);
+  }
+});
+
 console.log(`[host] listening on :${HOST_PORT}`);
 
 try {
@@ -1953,6 +2542,17 @@ try {
       `[host] GameArena daily-cap guards: patched=${patch.patched} stoppedAtCap=${patch.stoppedAtCap}`,
     );
   }
+  void patchAllActionOrderSecureSkills(config)
+    .then((ao) => {
+      if (ao.upgraded > 0 || ao.alreadySecure > 0) {
+        console.log(
+          `[host] Action Order secure skills: upgraded=${ao.upgraded} alreadySecure=${ao.alreadySecure}`,
+        );
+      }
+    })
+    .catch((err) => {
+      console.warn("[host] Action Order skill upgrade failed:", err);
+    });
 } catch (err) {
   console.warn("[host] GameArena daily-cap guard patch failed:", err);
 }

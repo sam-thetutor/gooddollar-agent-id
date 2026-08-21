@@ -6,6 +6,9 @@ export const SKILLS_REGISTRY_URL =
 export const SKILLS_REPO_URL =
   "https://github.com/sam-thetutor/goodagent-skills.git";
 
+export const SKILLS_REPO_RAW_BASE =
+  "https://raw.githubusercontent.com/sam-thetutor/goodagent-skills/main";
+
 import {
   filterListedSkills,
   isSkillDeployable,
@@ -60,4 +63,55 @@ export function findRegistrySkill(
   skillId: string,
 ): RegistrySkill | undefined {
   return registry.skills.find((s) => s.skill_id === skillId);
+}
+
+export function searchRegistrySkills(
+  registry: SkillsRegistry,
+  query: string,
+  opts?: { listedOnly?: boolean },
+): RegistrySkill[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return registry.skills;
+
+  const listedOnly = opts?.listedOnly ?? true;
+  return registry.skills.filter((skill) => {
+    if (listedOnly && skill.listed === false) return false;
+    const haystack = [
+      skill.skill_id,
+      skill.name,
+      skill.description,
+      skill.game ?? "",
+      skill.chain,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+export async function fetchSkillMarkdown(
+  skill: RegistrySkill,
+  rawBase?: string,
+): Promise<string> {
+  const base = rawBase?.trim() || process.env.SKILLS_REPO_RAW_BASE?.trim() || SKILLS_REPO_RAW_BASE;
+  const url = `${base.replace(/\/$/, "")}/${skill.path}/SKILL.md`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`SKILL.md fetch failed: ${res.status} (${url})`);
+  }
+  return res.text();
+}
+
+export async function fetchSkillEnvExample(
+  skill: RegistrySkill,
+  rawBase?: string,
+): Promise<string | null> {
+  const base = rawBase?.trim() || process.env.SKILLS_REPO_RAW_BASE?.trim() || SKILLS_REPO_RAW_BASE;
+  const url = `${base.replace(/\/$/, "")}/${skill.path}/.env.example`;
+  const res = await fetch(url);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`.env.example fetch failed: ${res.status} (${url})`);
+  }
+  return res.text();
 }

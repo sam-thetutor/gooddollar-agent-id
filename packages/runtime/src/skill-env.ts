@@ -1,7 +1,11 @@
 import { chmodSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Address } from "viem";
-import { GOODAGENT_API_URL } from "@goodagent/shared";
+import { ACTIONORDER_DEFAULT_URL, GOODAGENT_API_URL } from "@goodagent/shared";
+import {
+  PROOF_OF_ALPHA_DEFAULT_URL,
+  PROOF_OF_ALPHA_HUNT_SKILL_ID,
+} from "@goodagent/shared";
 import { resolveGamearenaProxy } from "./gamearena-proxy.js";
 
 export type SkillConfiguration = Record<string, string>;
@@ -91,12 +95,48 @@ export function resolveGamearenaAgentApiEnv(): Record<string, string> {
   };
 }
 
+export function buildPlaychessifyEnv(
+  agentPrivateKey: `0x${string}` | null,
+  rpcUrl: string,
+  config: SkillConfiguration,
+  agentAddress: Address,
+  displayName: string,
+): Record<string, string> {
+  if (!agentPrivateKey) {
+    throw new Error("playchessify-player requires agent private key");
+  }
+  return {
+    PRIVATE_KEY: agentPrivateKey,
+    PLAYER_ADDRESS: agentAddress,
+    PLAYER_NAME: config.PLAYER_NAME ?? displayName,
+    CELO_RPC_URL: config.CELO_RPC_URL ?? rpcUrl,
+    PLAYCHESSIFY_URL: config.PLAYCHESSIFY_URL ?? "https://celo.playchessify.xyz",
+    CHESS_TOKEN:
+      config.CHESS_TOKEN ?? "0x3f7efdfc8a76f76f22512fcd2bddc5fca36e55a3",
+    CHESS_GAME:
+      config.CHESS_GAME ?? "0xb37877a9ebd6c3169b2eaaa3e16852839785ae85",
+    STRATEGY_PRESET: config.STRATEGY_PRESET ?? "balanced",
+    PLAY_MODE: config.PLAY_MODE ?? "bot",
+    MAX_WAGER: config.MAX_WAGER ?? "100",
+    HOST_WAGER: config.HOST_WAGER ?? config.MAX_WAGER ?? "100",
+    JOIN_GAME_ID: config.JOIN_GAME_ID ?? "",
+    JOIN_WAIT_MS: config.JOIN_WAIT_MS ?? "540000",
+    TARGET_BOT_MIN_ELO: config.TARGET_BOT_MIN_ELO ?? "600",
+    TARGET_BOT_MAX_ELO: config.TARGET_BOT_MAX_ELO ?? "1200",
+    MAX_MATCHES: config.MAX_MATCHES ?? "3",
+    DAILY_MATCH_CAP: config.DAILY_MATCH_CAP ?? "20",
+    MATCH_INTERVAL_SECONDS: config.MATCH_INTERVAL_SECONDS ?? "60",
+    MOVE_POLL_MS: config.MOVE_POLL_MS ?? "1500",
+    THINK_DELAY_MS: config.THINK_DELAY_MS ?? "2500",
+  };
+}
+
 export function buildActionorderEnv(
   agentAddress: Address,
   displayName: string,
   config: SkillConfiguration,
 ): Record<string, string> {
-  return {
+  const env: Record<string, string> = {
     PLAYER_ADDRESS: agentAddress,
     PLAYER_NAME: config.PLAYER_NAME ?? displayName,
     CHARACTER_ID: config.CHARACTER_ID ?? "riven",
@@ -106,12 +146,135 @@ export function buildActionorderEnv(
     MAX_MATCHES: config.MAX_MATCHES ?? "5",
     DAILY_MATCH_CAP: config.DAILY_MATCH_CAP ?? "50",
     MATCH_INTERVAL_SECONDS: config.MATCH_INTERVAL_SECONDS ?? "10",
-    ACTIONORDER_URL: config.ACTIONORDER_URL ?? "https://www.actionorder.xyz",
+    ACTIONORDER_URL: config.ACTIONORDER_URL ?? ACTIONORDER_DEFAULT_URL,
+  };
+  const agentApiKey =
+    config.ACTIONORDER_AGENT_API_KEY?.trim() ||
+    process.env.ACTIONORDER_AGENT_API_KEY?.trim();
+  if (agentApiKey) env.ACTIONORDER_AGENT_API_KEY = agentApiKey;
+  return env;
+}
+
+export function buildProofOfAlphaHuntEnv(
+  agentAddress: Address,
+  displayName: string,
+  config: SkillConfiguration,
+): Record<string, string> {
+  return {
+    PLAYER_ADDRESS: agentAddress,
+    PLAYER_NAME: config.PLAYER_NAME ?? displayName,
+    POA_API_URL: config.POA_API_URL ?? PROOF_OF_ALPHA_DEFAULT_URL,
+    ETHERSCAN_API_KEY:
+      config.ETHERSCAN_API_KEY?.trim() ||
+      process.env.ETHERSCAN_API_KEY?.trim() ||
+      "",
+    ETHERSCAN_TX_LIMIT: config.ETHERSCAN_TX_LIMIT ?? "40",
+    FORENSIC_PREVIEW_COUNT: config.FORENSIC_PREVIEW_COUNT ?? "3",
+    DRY_RUN: config.DRY_RUN ?? "0",
   };
 }
 
+export { PROOF_OF_ALPHA_HUNT_SKILL_ID };
+
 export const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
 export const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
+export const PLAYCHESSIFY_SKILL_ID = "gaming/wagering/playchessify_1v1";
+export const CHESS_ARENA_SKILL_ID = "gaming/wagering/chess_arena_1v1";
+/** Covers ~1 USDT swap (~9k G$ at current Uniswap rates) plus headroom. */
+export const CHESS_ARENA_MIN_FUNDING_GS = 9_000;
+
+/** Bundled Stockfish wrapper (skill cwd = install dir). */
+export const CHESS_ARENA_DEFAULT_SOLVER_CMD = "node scripts/stockfish-solver.mjs";
+
+export function resolveChessArenaSolverCmd(
+  config: SkillConfiguration,
+): string | undefined {
+  const engine = (config.SOLVER_ENGINE ?? "stockfish").trim().toLowerCase();
+  if (engine === "basic" || engine === "off" || engine === "none") {
+    return undefined;
+  }
+  const custom = config.SOLVER_CMD?.trim();
+  if (custom) return custom;
+  return CHESS_ARENA_DEFAULT_SOLVER_CMD;
+}
+
+export function buildChessArenaEnv(
+  agentPrivateKey: `0x${string}` | null,
+  rpcUrl: string,
+  config: SkillConfiguration,
+  agentAddress: Address,
+  displayName: string,
+): Record<string, string> {
+  if (!agentPrivateKey) {
+    throw new Error("chess-arena-player requires agent private key");
+  }
+  const env: Record<string, string> = {
+    PRIVATE_KEY: agentPrivateKey,
+    PLAYER_ADDRESS: agentAddress,
+    PLAYER_NAME: config.PLAYER_NAME ?? displayName,
+    CELO_RPC_URL: config.CELO_RPC_URL ?? rpcUrl,
+    ARENA_URL: config.ARENA_URL ?? "https://arena.chesspuzzles.xyz",
+    ARENA_CONTRACT:
+      config.ARENA_CONTRACT ??
+      "0x8fe68a574f0b8c2819897363195ed3d66fde4ec1",
+    USDT_ADDRESS:
+      config.USDT_ADDRESS ?? "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
+    AUTO_SWAP: config.AUTO_SWAP ?? "1",
+    MIN_GS_RESERVE: config.MIN_GS_RESERVE ?? "50",
+    USDT_STAKE_BUFFER: config.USDT_STAKE_BUFFER ?? "1000000",
+    PLAY_MODE: config.PLAY_MODE ?? "auto",
+    MAX_MATCHES: config.MAX_MATCHES ?? "5",
+    DAILY_MATCH_CAP: config.DAILY_MATCH_CAP ?? "20",
+    MATCH_INTERVAL_SECONDS: config.MATCH_INTERVAL_SECONDS ?? "120",
+    SOLVER_ENGINE: config.SOLVER_ENGINE ?? "stockfish",
+  };
+  const solverCmd = resolveChessArenaSolverCmd(config);
+  if (solverCmd) {
+    env.SOLVER_CMD = solverCmd;
+    env.SOLVER_MOVETIME_MS = config.SOLVER_MOVETIME_MS ?? "450";
+  }
+  return env;
+}
+
+export function computeChessArenaFundingGs(baseGs: number): number {
+  return Math.max(baseGs, CHESS_ARENA_MIN_FUNDING_GS);
+}
+export const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
+
+export function buildProductClankEnv(
+  agentPrivateKey: `0x${string}` | null,
+  agentAddress: Address,
+  config: SkillConfiguration,
+): Record<string, string> {
+  const apiKey = config.PRODUCTCLANK_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error(
+      "productclank-participant requires PRODUCTCLANK_API_KEY (auto-registration may have failed — check the deploy logs)",
+    );
+  }
+  const xHandle = config.X_HANDLE?.trim().replace(/^@/, "");
+  if (!xHandle) {
+    throw new Error("productclank-participant requires X_HANDLE");
+  }
+  const env: Record<string, string> = {
+    PRODUCTCLANK_API_KEY: apiKey,
+    X_HANDLE: xHandle,
+    AGENT_ADDRESS: agentAddress,
+    LLM_BASE_URL: config.LLM_BASE_URL ?? "http://localhost:8377/v1",
+    SCAN_INTERVAL_SECONDS: config.SCAN_INTERVAL_SECONDS ?? "1800",
+    DAILY_SUBMIT_CAP: config.DAILY_SUBMIT_CAP ?? "10",
+    MAX_PENDING_DRAFTS: config.MAX_PENDING_DRAFTS ?? "5",
+    ENABLE_PRO_CLAIM: config.ENABLE_PRO_CLAIM ?? "0",
+    STATE_FILE: "./state.json",
+    QUEUE_FILE: "./amplify-queue.json",
+  };
+  if (config.LLM_MODEL?.trim()) env.LLM_MODEL = config.LLM_MODEL.trim();
+  if (config.ERC8004_AGENT_ID?.trim())
+    env.ERC8004_AGENT_ID = config.ERC8004_AGENT_ID.trim();
+  // Only needed for on-chain $PRO claims; harmless to include.
+  if (agentPrivateKey) env.PRIVATE_KEY = agentPrivateKey;
+  return env;
+}
 
 const BALAIO_SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhemF3dGFqYnB6aHBsdnR1amVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NjI0MjYsImV4cCI6MjA4MTAzODQyNn0.m1lboja6h24zePQexzWSY9MeC4WyLGa_kQvKbJxPmVg";
@@ -245,6 +408,34 @@ export function buildSkillEnv(
       opts.config,
       opts.agentAddress,
       opts.apiBase ?? GOODAGENT_API_URL,
+    );
+  } else if (skillId === PLAYCHESSIFY_SKILL_ID) {
+    env = buildPlaychessifyEnv(
+      opts.agentPrivateKey,
+      opts.rpcUrl,
+      opts.config,
+      opts.agentAddress,
+      opts.displayName,
+    );
+  } else if (skillId === CHESS_ARENA_SKILL_ID) {
+    env = buildChessArenaEnv(
+      opts.agentPrivateKey,
+      opts.rpcUrl,
+      opts.config,
+      opts.agentAddress,
+      opts.displayName,
+    );
+  } else if (skillId === PROOF_OF_ALPHA_HUNT_SKILL_ID) {
+    env = buildProofOfAlphaHuntEnv(
+      opts.agentAddress,
+      opts.displayName,
+      opts.config,
+    );
+  } else if (skillId === PRODUCTCLANK_SKILL_ID) {
+    env = buildProductClankEnv(
+      opts.agentPrivateKey,
+      opts.agentAddress,
+      opts.config,
     );
   } else {
     throw new Error(`Unsupported skill_id for env: ${skillId}`);

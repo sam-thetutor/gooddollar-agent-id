@@ -5,6 +5,7 @@ import { useAccount, useSignMessage } from "wagmi";
 import { ConnectButton, Nav } from "../components/Nav.js";
 import { Footer } from "../components/Footer.js";
 import { GamearenaConfigFields } from "../components/GamearenaConfigFields.js";
+import { ChessArenaConfigFields } from "../components/ChessArenaConfigFields.js";
 import { BalaioConfigFields } from "../components/BalaioConfigFields.js";
 import {
   createDeploy,
@@ -20,14 +21,22 @@ import {
   GAMEARENA_SKILL_ID,
   parsePlayMode,
   playModeLabel,
+  skillSpendPill,
   strategyLabelFromConfig,
 } from "../lib/gamearena-config.js";
+import {
+  CHESS_ARENA_SKILL_ID,
+  chessArenaPlayModeLabel,
+  chessArenaSolverLabel,
+  defaultChessArenaConfig,
+  parseChessArenaSolverEngine,
+} from "../lib/chess-arena-config.js";
 import {
   isBalaioRoleEnabled,
 } from "../lib/balaio-config.js";
 import {
   DEFAULT_DEPLOY_SKILL_ID,
-  filterListedSkills,
+  filterDeployPickerSkills,
   resolveDefaultDeploySkillId,
 } from "../lib/skill-registry.js";
 import { usePageMeta } from "../lib/usePageMeta.js";
@@ -50,6 +59,7 @@ const REGISTRY_URL =
 
 const UBI_REMINDER_SKILL_ID = "social/reminder/ubi_claim_reminder";
 const BALAIO_WORKER_SKILL_ID = "work/marketplace/balaio_worker";
+const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
 
 interface SkillEntry {
   name: string;
@@ -149,6 +159,17 @@ function defaultConfigForSkill(skillId: string): SkillConfiguration {
       MIN_WALLET_RESERVE_GS: "10",
       CREATE_ONCE: "1",
     };
+  }
+  if (skillId === PRODUCTCLANK_SKILL_ID) {
+    return {
+      SCAN_INTERVAL_SECONDS: "1800",
+      DAILY_SUBMIT_CAP: "10",
+      MAX_PENDING_DRAFTS: "5",
+      ENABLE_PRO_CLAIM: "1",
+    };
+  }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return defaultChessArenaConfig();
   }
   return {};
 }
@@ -304,6 +325,149 @@ function UbiReminderFields({
   );
 }
 
+function ProductClankFields({
+  config,
+  onChange,
+  brainEnabled,
+}: {
+  config: SkillConfiguration;
+  onChange: (key: string, value: string) => void;
+  brainEnabled: boolean;
+}) {
+  return (
+    <div className="deploy-config-grid">
+      <label className="field">
+        <span>X (Twitter) handle</span>
+        <input
+          value={config.X_HANDLE ?? ""}
+          onChange={(e) => onChange("X_HANDLE", e.target.value.replace(/^@/, ""))}
+          placeholder="myagent"
+          autoComplete="off"
+        />
+      </label>
+
+      <label className="field">
+        <span>Daily submissions</span>
+        <input
+          value={config.DAILY_SUBMIT_CAP ?? "10"}
+          onChange={(e) => onChange("DAILY_SUBMIT_CAP", e.target.value)}
+          inputMode="numeric"
+        />
+      </label>
+
+      <p className="muted hint deploy-config-full">
+        Just give your agent&apos;s X handle. On deploy, GoodAgent mints the
+        agent&apos;s ERC-8004 identity on Celo and registers it with
+        ProductClank automatically — no API key to copy. The agent then finds
+        reply drafts in live{" "}
+        <a
+          href="https://www.productclank.com/amplify/campaigns"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Amplify campaigns
+        </a>
+        , AI-reviews them, and sends them to you on Telegram. You post approved
+        drafts from this X account and reply with the tweet URL — the agent
+        submits it and earns points and $PRO (on Base). It never posts to X by
+        itself.
+      </p>
+
+      <details className="skill-selfhost deploy-config-full">
+        <summary>Already registered? Use an existing API key</summary>
+        <label className="field deploy-config-full">
+          <span>ProductClank API key (optional)</span>
+          <input
+            type="password"
+            value={config.PRODUCTCLANK_API_KEY ?? ""}
+            onChange={(e) => onChange("PRODUCTCLANK_API_KEY", e.target.value)}
+            placeholder="pck_…  (leave blank to auto-register)"
+            autoComplete="off"
+          />
+        </label>
+      </details>
+
+      {!brainEnabled ? (
+        <p className="muted hint deploy-config-full">
+          This skill needs AI chat enabled below — the Telegram bot is how you
+          approve drafts.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function BrainChatFields({
+  enabled,
+  onEnabledChange,
+  botToken,
+  onTokenChange,
+  disabled,
+}: {
+  enabled: boolean;
+  onEnabledChange: (value: boolean) => void;
+  botToken: string;
+  onTokenChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="deploy-config-grid">
+      <label
+        className={`brain-toggle deploy-config-full${enabled ? " is-on" : ""}`}
+      >
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onEnabledChange(e.target.checked)}
+          disabled={disabled}
+        />
+        <span className="brain-toggle-track" aria-hidden="true">
+          <span className="brain-toggle-knob" />
+        </span>
+        <span className="brain-toggle-text">
+          <strong>Enable AI chat (Telegram)</strong>
+          <small>
+            Your agent answers people on Telegram with live stats and
+            GoodDollar help.
+          </small>
+        </span>
+      </label>
+      {enabled ? (
+        <>
+          <label className="field deploy-config-full">
+            <span>Chat bot token</span>
+            <input
+              type="password"
+              value={botToken}
+              onChange={(e) => onTokenChange(e.target.value)}
+              placeholder="123456789:AA…  (from @BotFather)"
+              autoComplete="off"
+              disabled={disabled}
+            />
+          </label>
+          <p className="muted hint deploy-config-full">
+            Gives your agent a chat persona: it answers questions on Telegram,
+            reports its own live stats, verifies addresses, and checks
+            GoodDollar claim eligibility. Powered by decentralized AntSeed
+            inference paid in G$. Create a separate bot with{" "}
+            <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">
+              @BotFather
+            </a>{" "}
+            and paste its token — it is encrypted at rest. Chat is read-only:
+            the bot never holds funds or places bets.
+          </p>
+        </>
+      ) : (
+        <p className="muted hint deploy-config-full">
+          Optional: let people talk to your agent on Telegram. It answers with
+          live stats and GoodDollar help, powered by AntSeed inference paid in
+          G$.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function deployFundingShort(
   skillId: string,
   balaioSkill: boolean,
@@ -320,13 +484,19 @@ function deployFundingShort(
   if (skillId === GAMEARENA_SKILL_ID) {
     return "G$ for refills + CELO for gas · 250 G$ bond at /issue";
   }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return "9,000 G$ (→ ~1 USDT stake) + CELO for gas · 250 G$ bond at /issue";
+  }
+  if (skillId === PRODUCTCLANK_SKILL_ID) {
+    return "Earns $PRO on Base (needs a little ETH for claims) · 250 G$ bond at /issue";
+  }
   return "200 G$ + CELO for gas · 250 G$ bond at /issue";
 }
 
 function deployReviewRows(
   skillId: string,
   config: SkillConfiguration,
-  botToken: string,
+  botToken?: string,
 ): { label: string; value: string }[] {
   if (skillId === GAMEARENA_SKILL_ID) {
     const playMode = parsePlayMode(config);
@@ -426,7 +596,7 @@ function deployReviewRows(
     return [
       {
         label: "Telegram bot",
-        value: botToken.trim()
+        value: botToken?.trim()
           ? `${botToken.slice(0, 8)}… (token set)`
           : "Not set",
       },
@@ -454,6 +624,38 @@ function deployReviewRows(
       },
       { label: "Min reward", value: config.MIN_REWARD ?? "1" },
       { label: "Reward tokens", value: config.REWARD_TOKENS ?? "G$" },
+    ];
+  }
+  if (skillId === PRODUCTCLANK_SKILL_ID) {
+    return [
+      { label: "X handle", value: config.X_HANDLE?.trim() ? `@${config.X_HANDLE}` : "Not set" },
+      {
+        label: "ProductClank",
+        value: config.PRODUCTCLANK_API_KEY?.trim()
+          ? "Existing API key"
+          : "Auto-register on deploy",
+      },
+      { label: "Daily submissions", value: config.DAILY_SUBMIT_CAP ?? "10" },
+    ];
+  }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return [
+      { label: "Puzzle solver", value: chessArenaSolverLabel(config) },
+      { label: "Lobby mode", value: chessArenaPlayModeLabel(config) },
+      {
+        label: "Engine time / puzzle",
+        value:
+          parseChessArenaSolverEngine(config) === "stockfish"
+            ? `${config.SOLVER_MOVETIME_MS ?? "450"} ms`
+            : "—",
+      },
+      { label: "Auto-swap G$→USDT", value: (config.AUTO_SWAP ?? "1") !== "0" ? "On" : "Off" },
+      { label: "Daily match cap", value: config.DAILY_MATCH_CAP ?? "20" },
+      { label: "Max matches / run", value: config.MAX_MATCHES ?? "5" },
+      {
+        label: "Pause between matches",
+        value: `${config.MATCH_INTERVAL_SECONDS ?? "120"} sec`,
+      },
     ];
   }
   return [{ label: "Configuration", value: "Registry defaults" }];
@@ -484,6 +686,16 @@ function previewHighlights(
     return isBalaioRoleEnabled(config, "creator")
       ? ["Balaio creator", "G$ escrow"]
       : ["Balaio worker", "On-chain tasks"];
+  }
+  if (skillId === PRODUCTCLANK_SKILL_ID) {
+    return ["Amplify campaigns", "Earns $PRO", "Human-approved posts"];
+  }
+  if (skillId === CHESS_ARENA_SKILL_ID) {
+    return [
+      chessArenaSolverLabel(config),
+      chessArenaPlayModeLabel(config),
+      `${config.DAILY_MATCH_CAP ?? "20"} matches/day`,
+    ];
   }
   return ["Hosted runtime", "GoodAgent ID"];
 }
@@ -640,7 +852,7 @@ export function Deploy() {
   });
 
   const deployableSkills = useMemo(
-    () => filterListedSkills(registry?.skills ?? []),
+    () => filterDeployPickerSkills(registry?.skills ?? []),
     [registry],
   );
 
@@ -660,6 +872,8 @@ export function Deploy() {
     [DEFAULT_DEPLOY_SKILL_ID]: defaultConfigForSkill(DEFAULT_DEPLOY_SKILL_ID),
   }));
   const [botToken, setBotToken] = useState("");
+  const [brainEnabled, setBrainEnabled] = useState(false);
+  const [brainBotToken, setBrainBotToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [startBusy, setStartBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -714,6 +928,8 @@ export function Deploy() {
         skillConfigs?: Record<string, SkillConfiguration>;
         config?: SkillConfiguration;
         botToken?: string;
+        brainEnabled?: boolean;
+        brainBotToken?: string;
         wizardStep?: WizardStep;
       };
       if (draft.name) setName(draft.name);
@@ -731,6 +947,8 @@ export function Deploy() {
         });
       }
       if (draft.botToken) setBotToken(draft.botToken);
+      if (draft.brainEnabled) setBrainEnabled(true);
+      if (draft.brainBotToken) setBrainBotToken(draft.brainBotToken);
       if (draft.wizardStep) setWizardStep(draft.wizardStep);
     } catch {
       localStorage.removeItem(DEPLOY_DRAFT_KEY);
@@ -748,6 +966,8 @@ export function Deploy() {
           activeSkillId,
           skillConfigs,
           botToken,
+          brainEnabled,
+          brainBotToken,
           wizardStep,
         }),
       );
@@ -758,7 +978,7 @@ export function Deploy() {
       window.clearTimeout(saveTimer);
       window.clearTimeout(hideTimer);
     };
-  }, [name, selectedSkillIds, activeSkillId, skillConfigs, botToken, wizardStep, deployId]);
+  }, [name, selectedSkillIds, activeSkillId, skillConfigs, botToken, brainEnabled, brainBotToken, wizardStep, deployId]);
 
   useEffect(() => {
     const job = searchParams.get("job");
@@ -779,6 +999,19 @@ export function Deploy() {
     }, 4000);
     return () => clearInterval(t);
   }, [deployId, poll]);
+
+  useEffect(() => {
+    if (deployableSkills.length === 0) return;
+    const allowed = new Set(deployableSkills.map((s) => s.skill_id));
+    setSelectedSkillIds((prev) => {
+      const next = prev.filter((id) => allowed.has(id));
+      if (next.length === 0) return [defaultSkillId];
+      return next.length === prev.length ? prev : next;
+    });
+    setActiveSkillId((prev) =>
+      allowed.has(prev) ? prev : defaultSkillId,
+    );
+  }, [deployableSkills, defaultSkillId]);
 
   useEffect(() => {
     const fromUrl = searchParams.get("skill");
@@ -818,6 +1051,10 @@ export function Deploy() {
       setName("My UBI Reminder Agent");
     } else if (activeSkillId === BALAIO_WORKER_SKILL_ID) {
       setName("My Balaio Worker");
+    } else if (activeSkillId === PRODUCTCLANK_SKILL_ID) {
+      setName("My Amplify Agent");
+    } else if (activeSkillId === CHESS_ARENA_SKILL_ID) {
+      setName("My Chess Arena Agent");
     }
   }, [activeSkillId]);
 
@@ -843,9 +1080,14 @@ export function Deploy() {
         telegramBotToken: selectedSkillIds.includes(UBI_REMINDER_SKILL_ID)
           ? botToken.trim()
           : undefined,
+        brain:
+          brainEnabled && brainBotToken.trim()
+            ? { enabled: true, botToken: brainBotToken.trim() }
+            : undefined,
         template: selectedSkillIds.includes(UBI_REMINDER_SKILL_ID)
           ? "social"
-          : selectedSkillIds.includes(BALAIO_WORKER_SKILL_ID)
+          : selectedSkillIds.includes(BALAIO_WORKER_SKILL_ID) ||
+              selectedSkillIds.includes(PRODUCTCLANK_SKILL_ID)
             ? "work"
             : "gaming",
         skipPayment: true,
@@ -888,8 +1130,19 @@ export function Deploy() {
           ...row,
           label: `${label} · ${row.label}`,
         }));
-      }),
-    [selectedSkillIds, skillConfigs, botToken, deployableSkills],
+      }).concat(
+        brainEnabled
+          ? [
+              {
+                label: "AI chat",
+                value: brainBotToken.trim()
+                  ? `Enabled — ${brainBotToken.slice(0, 8)}… (token set)`
+                  : "Enabled — token missing",
+              },
+            ]
+          : [],
+      ),
+    [selectedSkillIds, skillConfigs, botToken, brainEnabled, brainBotToken, deployableSkills],
   );
 
   const step1Valid =
@@ -899,10 +1152,15 @@ export function Deploy() {
     selectedSkillIds.every((id) =>
       deployableSkills.some((s) => s.skill_id === id),
     );
+  const productclankSelected = selectedSkillIds.includes(PRODUCTCLANK_SKILL_ID);
   const step2Valid =
     step1Valid &&
     (!selectedSkillIds.includes(UBI_REMINDER_SKILL_ID) ||
-      botToken.trim().length > 0);
+      botToken.trim().length > 0) &&
+    (!productclankSelected ||
+      (Boolean(skillConfigs[PRODUCTCLANK_SKILL_ID]?.X_HANDLE?.trim()) &&
+        brainEnabled)) &&
+    (!brainEnabled || brainBotToken.trim().length > 0);
 
   const nameError =
     nameTouched && name.trim().length === 0
@@ -994,6 +1252,7 @@ export function Deploy() {
                               const checked = selectedSkillIds.includes(
                                 skill.skill_id,
                               );
+                              const pill = skillSpendPill(skill);
                               return (
                                 <label
                                   key={skill.skill_id}
@@ -1013,6 +1272,24 @@ export function Deploy() {
                                   <span>
                                     <strong>{skill.name}</strong>
                                     <small>{skill.description.slice(0, 96)}</small>
+                                    <span className="onboard-skill-meta">
+                                      <span
+                                        className={`pill pill-sm ${pill.variant === "warn" ? "pill-warn" : "pill-ok"}`}
+                                      >
+                                        {pill.label}
+                                      </span>
+                                      {skill.game && skill.game_url ? (
+                                        <a
+                                          className="onboard-skill-game"
+                                          href={skill.game_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {skill.game} ↗
+                                        </a>
+                                      ) : null}
+                                    </span>
                                   </span>
                                 </label>
                               );
@@ -1094,16 +1371,40 @@ export function Deploy() {
                             onChange={updateConfig}
                           />
                         )}
+                        {skillId === PRODUCTCLANK_SKILL_ID && (
+                          <ProductClankFields
+                            config={config}
+                            onChange={updateConfig}
+                            brainEnabled={brainEnabled}
+                          />
+                        )}
+                        {skillId === CHESS_ARENA_SKILL_ID && (
+                          <ChessArenaConfigFields
+                            config={config}
+                            onChange={updateConfig}
+                            compact
+                            variant="onboard"
+                          />
+                        )}
                         {skillId !== GAMEARENA_SKILL_ID &&
                           skillId !==
                             "gaming/card-fighter/actionorder_vshouse" &&
                           skillId !== UBI_REMINDER_SKILL_ID &&
-                          skillId !== BALAIO_WORKER_SKILL_ID && (
+                          skillId !== BALAIO_WORKER_SKILL_ID &&
+                          skillId !== PRODUCTCLANK_SKILL_ID &&
+                          skillId !== CHESS_ARENA_SKILL_ID && (
                             <p className="muted">
                               Registry defaults apply. Change settings from the
                               dashboard after deploy.
                             </p>
                           )}
+                        <BrainChatFields
+                          enabled={brainEnabled}
+                          onEnabledChange={setBrainEnabled}
+                          botToken={brainBotToken}
+                          onTokenChange={setBrainBotToken}
+                          disabled={formLocked}
+                        />
                       </div>
                       <OnboardActions
                         showBack

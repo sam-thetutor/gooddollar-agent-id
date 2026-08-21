@@ -15,6 +15,7 @@ import { Deploy } from "./pages/Deploy.js";
 import { DeployDashboard } from "./pages/DeployDashboard.js";
 import { MyDeployments } from "./pages/MyDeployments.js";
 import { Verify } from "./pages/Verify.js";
+import { Stats } from "./pages/Stats.js";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ export function App() {
             <Route path="/manage" element={<ManageAgent />} />
             <Route path="/verify" element={<Verify />} />
             <Route path="/explore" element={<Explore />} />
+            <Route path="/stats" element={<Stats />} />
             <Route path="/explore/agent/:address" element={<AgentProfile />} />
             <Route path="/for-agents" element={<ForAgents />} />
             <Route path="/skills" element={<Skills />} />

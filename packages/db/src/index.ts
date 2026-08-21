@@ -6,6 +6,7 @@ export * from "./deployed-agents.js";
 export * from "./skill-config.js";
 export * from "./agent-manifest.js";
 export * from "./deploy-activity.js";
+export * from "./platform-stats.js";
 export { PrismaClient } from "@prisma/client";
 export type {
   AgentCredential,

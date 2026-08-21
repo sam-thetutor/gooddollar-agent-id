@@ -1,6 +1,6 @@
 import type { Address } from "viem";
 import { buildHostReportEnv } from "./skill-env.js";
-import { deriveAgentPrivateKey } from "./wallet.js";
+import { resolveAgentPrivateKey } from "./wallet.js";
 import type { RuntimeConfig } from "./config.js";
 import { BALAIO_WORKER_SKILL_ID } from "./skill-env.js";
 import { GAMEARENA_SKILL_ID } from "./gamearena-pass.js";
@@ -37,8 +37,9 @@ export function buildAgentPm2Env(
   };
 
   if (needsKey) {
-    const agentPrivateKey = deriveAgentPrivateKey(
-      config.deployMnemonic,
+    const agentPrivateKey = resolveAgentPrivateKey(
+      config,
+      deployId,
       walletDerivationIndex,
     );
     env.AGENT_PRIVATE_KEY = agentPrivateKey;

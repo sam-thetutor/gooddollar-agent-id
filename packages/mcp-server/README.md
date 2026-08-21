@@ -41,6 +41,11 @@ Transport is **stdio** — the client spawns the server as a subprocess.
 | `gooddollar_claim_eligibility` | Can a wallet claim its daily UBI now, and how much? | `{ wallet }` |
 | `gooddollar_get_daily_stats` | GoodDollar UBI cycle stats for the current day | `{}` |
 | `gooddollar_ping` | MCP + Celo RPC connectivity check | `{}` |
+| `goodagent_list_skills` | List skills from the GoodAgent public registry (local install) | `{ chain?, listed_only? }` |
+| `goodagent_search_skills` | Search registry skills by name, id, or description | `{ query, listed_only? }` |
+| `goodagent_describe_skill` | Install metadata for one skill (env vars, repo path, permissions) | `{ skill_id }` |
+| `goodagent_fetch_skill_md` | Raw `SKILL.md` instructions for an agent to read | `{ skill_id }` |
+| `goodagent_install_skill` | Install a skill locally (clone + npm install; no VPS deploy) | `{ skill_id, target_dir?, skip_npm? }` |
 
 ### `gooddollar_verify_agent`
 

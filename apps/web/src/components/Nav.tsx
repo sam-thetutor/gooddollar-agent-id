@@ -49,6 +49,7 @@ const IDENTITY_LINKS = [
   { to: "/agents", label: "My Agents", hint: "Agent IDs you've issued" },
   { to: "/verify", label: "Verify", hint: "Check any Agent ID live" },
   { to: "/explore", label: "Registry", hint: "Browse all vouched agents" },
+  { to: "/stats", label: "Stats", hint: "Platform analytics" },
 ] as const;
 
 const DEPLOY_LINKS = [
@@ -62,7 +63,7 @@ const DEPLOY_LINKS = [
   },
 ] as const;
 
-const IDENTITY_PATHS = ["/issue", "/agents", "/verify", "/explore", "/manage"];
+const IDENTITY_PATHS = ["/issue", "/agents", "/verify", "/explore", "/stats", "/manage"];
 const DEPLOY_PATHS = ["/deploy", "/deployments", "/dashboard", "/skills", "/for-agents"];
 
 export function Nav() {

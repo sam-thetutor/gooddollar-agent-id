@@ -155,8 +155,9 @@ function capReached() {
 }
 
 if (capReached()) {
+  // Plain concatenation: backticks cannot be emitted cleanly through String.raw.
   console.log(
-    \`[pm2-start] daily match cap reached (\${dailyCap()}/day) — staying stopped until tomorrow\`,
+    "[pm2-start] daily match cap reached (" + dailyCap() + "/day) — staying stopped until tomorrow",
   );
   process.exit(EXIT_DAILY_CAP);
 }

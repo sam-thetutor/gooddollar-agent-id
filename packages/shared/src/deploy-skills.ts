@@ -4,6 +4,7 @@ export const MAX_DEPLOY_SKILLS = 3;
 export type DashboardPanelKind =
   | "gamearena"
   | "actionorder"
+  | "chessarena"
   | "balaio"
   | "ubi"
   | "generic";
@@ -44,15 +45,31 @@ export function isActionOrderMatchId(matchId: string): boolean {
   return /^AO-/i.test(matchId);
 }
 
+/** Chess Puzzle Arena match ids (`arena-123`). */
+export function isChessArenaMatchId(matchId: string): boolean {
+  return /^arena-\d+$/i.test(matchId.trim());
+}
+
 /** Keep skill stats/history scoped to the skill that produced the match. */
 export function matchBelongsToSkill(skillId: string, matchId: string): boolean {
   if (isActionOrderSkillId(skillId)) return isActionOrderMatchId(matchId);
-  if (isGamearenaSkillId(skillId)) return !isActionOrderMatchId(matchId);
+  if (isChessArenaSkillId(skillId)) return isChessArenaMatchId(matchId);
+  if (isGamearenaSkillId(skillId)) {
+    return !isActionOrderMatchId(matchId) && !isChessArenaMatchId(matchId);
+  }
   return true;
 }
 
 export function isUbiSkillId(skillId: string): boolean {
   return skillId.includes("ubi");
+}
+
+export function isProductClankSkillId(skillId: string): boolean {
+  return skillId.includes("productclank");
+}
+
+export function isChessArenaSkillId(skillId: string): boolean {
+  return skillId.includes("chess_arena");
 }
 
 export function skillShortLabel(skillId: string): string {
@@ -62,6 +79,7 @@ export function skillShortLabel(skillId: string): string {
 export function dashboardPanelForSkillId(skillId: string): DashboardPanelKind {
   if (isGamearenaSkillId(skillId)) return "gamearena";
   if (isActionOrderSkillId(skillId)) return "actionorder";
+  if (isChessArenaSkillId(skillId)) return "chessarena";
   if (isBalaioSkillId(skillId)) return "balaio";
   if (isUbiSkillId(skillId)) return "ubi";
   return "generic";
@@ -110,6 +128,10 @@ export function hasBalaioInStatus(status: DeploySkillsStatusSource): boolean {
   return skillIdsFromStatus(status).some((id) => isBalaioSkillId(id));
 }
 
+export function hasChessArenaInStatus(status: DeploySkillsStatusSource): boolean {
+  return skillIdsFromStatus(status).some((id) => isChessArenaSkillId(id));
+}
+
 /** All installed skills — every skill has config in the dashboard. */
 export function configurableSkillsFromStatus(
   status: DeploySkillsStatusSource,
@@ -154,13 +176,19 @@ export function deploySkillsLabel(agent: {
   return agent.skills.map((s) => skillShortLabel(s.skillId)).join(" + ");
 }
 
+export function isProofOfAlphaSkillId(skillId: string): boolean {
+  return skillId.includes("proof_of_alpha");
+}
+
 export function deployKindLabel(agent: {
   skills?: Array<{ skillId: string }>;
 }): string {
   const ids = agent.skills?.map((s) => s.skillId) ?? [];
   if (ids.some((id) => isGamearenaSkillId(id))) return "GameArena";
+  if (ids.some((id) => isChessArenaSkillId(id))) return "Chess Arena";
   if (ids.some((id) => isActionOrderSkillId(id))) return "ActionOrder";
   if (ids.some((id) => isBalaioSkillId(id))) return "Balaio";
+  if (ids.some((id) => isProofOfAlphaSkillId(id))) return "Proof of Alpha";
   if (ids.some((id) => isUbiSkillId(id))) return "UBI Reminder";
   if (ids.length > 1) return "Multi-skill";
   return "Agent";

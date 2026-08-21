@@ -33,6 +33,9 @@ importers:
       '@goodagent/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@goodagent/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@goodagent/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -64,6 +67,9 @@ importers:
 
   apps/host:
     dependencies:
+      '@goodagent/agent-brain':
+        specifier: workspace:*
+        version: link:../../packages/agent-brain
       '@goodagent/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -101,6 +107,9 @@ importers:
 
   apps/telegram-bot:
     dependencies:
+      '@goodagent/agent-brain':
+        specifier: workspace:*
+        version: link:../../packages/agent-brain
       '@goodagent/chain':
         specifier: workspace:*
         version: link:../../packages/chain
@@ -190,6 +199,28 @@ importers:
       viem:
         specifier: ^2.31.3
         version: 2.53.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+
+  packages/agent-brain:
+    dependencies:
+      '@goodagent/chain':
+        specifier: workspace:*
+        version: link:../chain
+      '@goodagent/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^3.25.67
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.32
+        version: 22.20.0
+      tsx:
+        specifier: ^4.20.3
+        version: 4.22.4
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
 
   packages/agent-id:
     dependencies:
@@ -289,6 +320,9 @@ importers:
       '@goodagent/chain':
         specifier: workspace:*
         version: link:../chain
+      '@goodagent/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@goodagent/shared':
         specifier: workspace:*
         version: link:../shared
@@ -310,12 +344,18 @@ importers:
 
   packages/runtime:
     dependencies:
+      '@goodagent/agent-brain':
+        specifier: workspace:*
+        version: link:../agent-brain
       '@goodagent/agent-id':
         specifier: workspace:*
         version: link:../agent-id
       '@goodagent/agent-runtime':
         specifier: workspace:*
         version: link:../agent-runtime
+      '@goodagent/chain':
+        specifier: workspace:*
+        version: link:../chain
       '@goodagent/db':
         specifier: workspace:*
         version: link:../db
@@ -341,6 +381,9 @@ importers:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@22.20.0)
 
   packages/shared:
     dependencies:
@@ -370,12 +413,6 @@ importers:
 
   packages/widget:
     dependencies:
-      '@goodagent/live-arena':
-        specifier: workspace:*
-        version: link:../live-arena
-      '@goodagent/shared':
-        specifier: workspace:*
-        version: link:../shared
       '@goodsdks/citizen-sdk':
         specifier: ^1.2.5
         version: 1.2.5(@microsoft/api-extractor@7.58.12(@types/node@22.20.0))(jiti@2.7.0)(postcss@8.5.16)(tsx@4.22.4)(typescript@5.9.3)(viem@2.53.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(wagmi@3.6.21(@coinbase/wallet-sdk@4.3.6(@types/react@19.2.17)(bufferutil@4.1.0)(react@19.2.7)(typescript@5.9.3)(use-sync-external-store@1.6.0(react@19.2.7))(utf-8-validate@6.0.6)(zod@3.25.76))(@safe-global/safe-apps-provider@0.18.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(@safe-global/safe-apps-sdk@9.1.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(@tanstack/query-core@5.101.2)(@tanstack/react-query@5.101.2(react@19.2.7))(@types/react@19.2.17)(@walletconnect/ethereum-provider@2.21.7(@types/react@19.2.17)(bufferutil@4.1.0)(encoding@0.1.13)(react@19.2.7)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))(react@19.2.7)(typescript@5.9.3)(viem@2.53.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)))
@@ -383,6 +420,12 @@ importers:
         specifier: ^2.31.3
         version: 2.53.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
     devDependencies:
+      '@goodagent/live-arena':
+        specifier: workspace:*
+        version: link:../live-arena
+      '@goodagent/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@privy-io/react-auth':
         specifier: ^2.25.0
         version: 2.25.0(@solana/web3.js@1.98.4(bufferutil@4.1.0)(encoding@0.1.13)(typescript@5.9.3)(utf-8-validate@6.0.6))(@types/react@19.2.17)(bs58@6.0.0)(bufferutil@4.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@5.9.3)(use-sync-external-store@1.6.0(react@19.2.7))(utf-8-validate@6.0.6)(zod@3.25.76)

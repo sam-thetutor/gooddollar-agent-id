@@ -73,20 +73,10 @@ function SkillCard({ skill }: { skill: SkillEntry }) {
   return (
     <article className="skill-card">
       <header className="skill-card-head">
-        <div>
+        <div className="skill-card-title">
           <h2>{skill.name}</h2>
           <p className="skill-id">{skill.skill_id}</p>
         </div>
-        {skill.game && skill.game_url && (
-          <a
-            className="skill-game"
-            href={skill.game_url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {skill.game} ↗
-          </a>
-        )}
       </header>
 
       <p className="skill-desc">{skill.description}</p>
@@ -98,30 +88,44 @@ function SkillCard({ skill }: { skill: SkillEntry }) {
           {pill.label}
         </span>
         <span className="pill pill-muted">{skill.chain}</span>
+        {skill.game && skill.game_url && (
+          <a
+            className="skill-game"
+            href={skill.game_url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {skill.game} ↗
+          </a>
+        )}
       </div>
 
-      <div className="skill-install">
-        <div className="skill-install-bar">
-          <span>Install &amp; run</span>
-          <CopyButton text={cmd} />
+      <details className="skill-selfhost">
+        <summary>Run it on your own machine</summary>
+        <div className="skill-install">
+          <div className="skill-install-bar">
+            <span>Install &amp; run</span>
+            <CopyButton text={cmd} />
+          </div>
+          <pre>{cmd}</pre>
         </div>
-        <pre>{cmd}</pre>
-      </div>
+      </details>
 
       <footer className="skill-card-foot">
-        <Link className="btn btn-ghost btn-sm" to={`/deploy?skill=${encodeURIComponent(skill.skill_id)}`}>
-          Deploy this skill
+        <Link
+          className="btn btn-sm"
+          to={`/deploy?skill=${encodeURIComponent(skill.skill_id)}`}
+        >
+          Deploy
         </Link>
         <a
+          className="btn btn-ghost btn-sm"
           href={`${REPO_URL}/blob/main/${skill.path}/SKILL.md`}
           target="_blank"
           rel="noreferrer"
         >
-          SKILL.md ↗
+          Docs ↗
         </a>
-        <span className="skill-foot-note">
-          full instructions for agents — contracts, rules, safety limits
-        </span>
       </footer>
     </article>
   );

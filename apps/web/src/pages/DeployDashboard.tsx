@@ -15,6 +15,8 @@ import {
   stopDeploy,
   setDeploySkillEnabled,
   updateDeployConfiguration,
+  requestProductClankLink,
+  requestTelegramLinkToken,
   type DeployStatusResponse,
   type GamearenaLadder,
   type SkillConfiguration,
@@ -22,6 +24,7 @@ import {
 import { isDeployOwner, signDeployControl } from "../lib/deploy-control.js";
 import { deployNeedsUserVouch, issueAgentHref } from "../lib/deploy-vouch.js";
 import { GamearenaConfigFields } from "../components/GamearenaConfigFields.js";
+import { ChessArenaConfigFields } from "../components/ChessArenaConfigFields.js";
 import {
   GameArenaLiveSection,
   isGamearenaSkill,
@@ -39,6 +42,7 @@ import {
   playModeLabel,
   strategyLabelFromConfig,
 } from "../lib/gamearena-config.js";
+import { chessArenaPlayModeLabel, chessArenaSolverLabel } from "../lib/chess-arena-config.js";
 import { parseSkillConfig } from "../lib/skill-config.js";
 import {
   configurableSkillsFromStatus,
@@ -47,6 +51,7 @@ import {
   formatSkillList,
   hasGamearenaInStatus,
   isActionOrderSkillId,
+  isChessArenaSkillId,
   isSkillEnabled,
   skillInstallStatusLabel,
   skillShortLabel,
@@ -58,6 +63,7 @@ type HealthState = "live" | "paused" | "stopped" | "crashed" | "failed" | "deplo
 
 const REFRESH_MS = 20_000;
 const MATCHES_PAGE_SIZE = 10;
+const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
 
 function processHealth(s: DeployStatusResponse): HealthState {
   if (s.pipelineRunning) return "deploying";
@@ -189,6 +195,10 @@ export function DeployDashboard() {
   const [draftConfig, setDraftConfig] = useState<SkillConfiguration>({});
   const [configBusy, setConfigBusy] = useState(false);
   const [skillToggleBusy, setSkillToggleBusy] = useState<string | null>(null);
+  const [pcLinkBusy, setPcLinkBusy] = useState(false);
+  const [pcLinkNote, setPcLinkNote] = useState<string | null>(null);
+  const [tgLinkBusy, setTgLinkBusy] = useState(false);
+  const [tgLinkNote, setTgLinkNote] = useState<string | null>(null);
   const [dashboardTab, setDashboardTab] = useState<string>("overview");
   const refreshInFlight = useRef(false);
   const liveSnapshotInFlight = useRef(false);
@@ -379,6 +389,12 @@ export function DeployDashboard() {
     dashboardTab !== "overview" &&
     dashboardPanelForSkillId(dashboardTab) === "actionorder";
 
+  const showChessArenaPanel =
+    dashboardTab !== "overview" &&
+    dashboardPanelForSkillId(dashboardTab) === "chessarena";
+
+  const isProductClankTab = dashboardTab === PRODUCTCLANK_SKILL_ID;
+
   const displaySkillId = useMemo(() => {
     if (!status) return null;
     const gamearena = configurableSkillsFromStatus(status).find((s) =>
@@ -407,6 +423,22 @@ export function DeployDashboard() {
     hasGamearenaInStatus(status ?? {}) &&
     (playMode === "onchain" || (!offchainPlay && playMode !== "auto"));
   const autoGamearena = playMode === "auto";
+  const chessArenaSkillId = useMemo(() => {
+    if (!status) return null;
+    return (
+      configurableSkillsFromStatus(status).find((s) =>
+        isChessArenaSkillId(s.skillId),
+      )?.skillId ?? null
+    );
+  }, [status]);
+  const chessConfig = useMemo(
+    () =>
+      chessArenaSkillId && status
+        ? configForSkill(status, chessArenaSkillId)
+        : null,
+    [status, chessArenaSkillId],
+  );
+
   const walletPnL = status?.stats?.walletPnL;
   const balances = status?.stats?.balances;
   const gBalance = formatBalance(balances?.gDollarFormatted, 0);
@@ -455,7 +487,14 @@ export function DeployDashboard() {
 
   const signControl = useCallback(
     async (
-      action: "pause" | "resume" | "baseline" | "configuration" | "run-pipeline",
+      action:
+        | "pause"
+        | "resume"
+        | "baseline"
+        | "configuration"
+        | "run-pipeline"
+        | "productclank-link"
+        | "telegram-link",
     ) => {
       if (!id || !address) {
         throw new Error("Connect the owner wallet to control this agent.");
@@ -529,6 +568,52 @@ export function DeployDashboard() {
     }
   };
 
+  const requestPcLink = async () => {
+    if (!id) return;
+    setPcLinkBusy(true);
+    setPcLinkNote(null);
+    try {
+      const auth = await signControl("productclank-link");
+      const { link } = await requestProductClankLink(id, auth);
+      if (link.alreadyLinked) {
+        setPcLinkNote(
+          link.linkedUserName
+            ? `Already linked to ${link.linkedUserName}'s ProductClank account.`
+            : "Already linked to a ProductClank account.",
+        );
+      } else if (link.linkUrl) {
+        window.open(link.linkUrl, "_blank", "noopener");
+        setPcLinkNote(
+          "Linking page opened in a new tab — log in there to attach this agent to your ProductClank account.",
+        );
+      } else {
+        setPcLinkNote("ProductClank did not return a linking URL. Try again.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPcLinkBusy(false);
+    }
+  };
+
+  const requestTgLink = async () => {
+    if (!id) return;
+    setTgLinkBusy(true);
+    setTgLinkNote(null);
+    try {
+      const auth = await signControl("telegram-link");
+      const res = await requestTelegramLinkToken(id, auth);
+      window.open(res.deepLink, "_blank", "noopener");
+      setTgLinkNote(
+        `Telegram opened — press Start in the chat with @${res.botUsername} to finish linking (link valid 15 min).`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTgLinkBusy(false);
+    }
+  };
+
   const beginEditConfig = (skillId?: string) => {
     const target =
       skillId ??
@@ -594,7 +679,14 @@ export function DeployDashboard() {
   const showGenericPanel =
     dashboardTab !== "overview" &&
     !showGamearenaPanel &&
-    !showActionOrderPanel;
+    !showActionOrderPanel &&
+    !showChessArenaPanel &&
+    !isProductClankTab;
+
+  const pcMeta = (activeSkillStats?.meta ?? {}) as Record<
+    string,
+    string | number | boolean | null
+  >;
 
   const runtimeLogTail = status?.stats?.logTail ?? null;
   const crashHint = useMemo(() => {
@@ -935,7 +1027,7 @@ export function DeployDashboard() {
                         ) : null}
                       </p>
                     </div>
-                    {canControl && health !== "live" ? (
+                    {canControl ? (
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
@@ -985,7 +1077,54 @@ export function DeployDashboard() {
                       {formatUptime(status.pm2?.uptimeMs)}
                     </span>
                   </div>
+                  {status.brain?.enabled ? (
+                    <div className="deploy-overview-pulse-item">
+                      <span className="deploy-overview-pulse-label">Chat</span>
+                      <span
+                        className={`deploy-overview-pulse-value deploy-overview-pulse-${status.brain.pm2?.online ? "live" : "stopped"}`}
+                      >
+                        {status.brain.pm2?.online ? "Online" : "Offline"}
+                        {status.brain.botUsername ? (
+                          <>
+                            {" · "}
+                            <a
+                              href={`https://t.me/${status.brain.botUsername}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              @{status.brain.botUsername}
+                            </a>
+                          </>
+                        ) : null}
+                        {status.brain.operatorLinked ? (
+                          <>
+                            {" · "}
+                            <span title="Chat control is linked — /pause, /resume and /status work from Telegram.">
+                              control linked
+                              {status.brain.operatorTelegramUsername
+                                ? ` (@${status.brain.operatorTelegramUsername})`
+                                : ""}
+                            </span>
+                          </>
+                        ) : canControl && status.brain.botUsername ? (
+                          <>
+                            {" · "}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              disabled={tgLinkBusy || !isConnected}
+                              onClick={() => void requestTgLink()}
+                              title="Link your Telegram account to pause/resume this agent from chat."
+                            >
+                              {tgLinkBusy ? "Linking…" : "Link Telegram control"}
+                            </button>
+                          </>
+                        ) : null}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
+                {tgLinkNote ? <p className="muted small">{tgLinkNote}</p> : null}
 
                 {installedSkills.length > 0 ? (
                   <div className="deploy-overview-skills">
@@ -1102,7 +1241,25 @@ export function DeployDashboard() {
                                   Enable
                                 </button>
                               ) : null}
+                              {canControl &&
+                              skill.skillId === PRODUCTCLANK_SKILL_ID ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  disabled={pcLinkBusy || !isConnected}
+                                  onClick={() => void requestPcLink()}
+                                  title="Attach this agent to your ProductClank account (webapp dashboard + better standing)"
+                                >
+                                  {pcLinkBusy ? "Linking…" : "Link account"}
+                                </button>
+                              ) : null}
                             </div>
+                            {skill.skillId === PRODUCTCLANK_SKILL_ID &&
+                            pcLinkNote ? (
+                              <p className="deploy-skill-card-summary muted">
+                                {pcLinkNote}
+                              </p>
+                            ) : null}
                           </article>
                         );
                       })}
@@ -1140,7 +1297,7 @@ export function DeployDashboard() {
               </p>
             )}
 
-            {!isMultiSkillOverview ? (
+            {!isMultiSkillOverview && !isProductClankTab ? (
             <section className="deploy-console-hero" aria-label="Performance summary">
               <div className="deploy-hero-primary">
                 <span className="deploy-hero-label">Balance</span>
@@ -1151,23 +1308,41 @@ export function DeployDashboard() {
               </div>
               <div className="deploy-hero-stat">
                 <span className="deploy-hero-label">
-                  {offchainPlay ? "Tickets today" : "P&amp;L"}
+                  {showChessArenaPanel
+                    ? "Matches today"
+                    : offchainPlay
+                      ? "Tickets today"
+                      : "P&amp;L"}
                 </span>
                 <span
                   className={`deploy-hero-value tabular${
-                    offchainPlay ? "" : pnlClass(walletPnL?.walletDeltaGs ?? displayPerf?.netPnLGs)
+                    showChessArenaPanel || offchainPlay
+                      ? ""
+                      : pnlClass(walletPnL?.walletDeltaGs ?? displayPerf?.netPnLGs)
                   }`}
                 >
-                  {offchainPlay
-                    ? `${displayPerf?.matchesToday ?? 0}`
-                    : walletPnL?.walletDeltaGs != null
-                      ? signedGs(walletPnL.walletDeltaGs)
-                      : displayPerf
-                        ? signedGs(displayPerf.netPnLGs)
-                        : "0"}
-                  <small>{offchainPlay ? "played" : "G$"}</small>
+                  {showChessArenaPanel
+                    ? `${activeSkillStats?.matchesToday ?? 0}`
+                    : offchainPlay
+                      ? `${displayPerf?.matchesToday ?? 0}`
+                      : walletPnL?.walletDeltaGs != null
+                        ? signedGs(walletPnL.walletDeltaGs)
+                        : displayPerf
+                          ? signedGs(displayPerf.netPnLGs)
+                          : "0"}
+                  <small>
+                    {showChessArenaPanel
+                      ? "played"
+                      : offchainPlay
+                        ? "played"
+                        : "G$"}
+                  </small>
                 </span>
-                {offchainPlay ? (
+                {showChessArenaPanel ? (
+                  <span className="deploy-hero-meta muted">
+                    cap {chessConfig?.DAILY_MATCH_CAP ?? "20"}/day
+                  </span>
+                ) : offchainPlay ? (
                   <span className="deploy-hero-meta muted">
                     cap {config.DAILY_MATCH_CAP ?? "50"}/day
                   </span>
@@ -1217,29 +1392,51 @@ export function DeployDashboard() {
               <div className="deploy-hero-stat">
                 <span className="deploy-hero-label">Record</span>
                 <span className="deploy-hero-value tabular">
-                  {displayPerf?.wins ?? 0}
-                  <span className="deploy-hero-record-sep">–</span>
-                  {displayPerf?.losses ?? 0}
+                  {showChessArenaPanel ? (
+                    activeSkillStats && activeSkillStats.gamesPlayed > 0
+                      ? `${activeSkillStats.wins}–${activeSkillStats.losses}`
+                      : "0–0"
+                  ) : (
+                    <>
+                      {displayPerf?.wins ?? 0}
+                      <span className="deploy-hero-record-sep">–</span>
+                      {displayPerf?.losses ?? 0}
+                    </>
+                  )}
                 </span>
-                {displayPerf && displayPerf.gamesPlayed > 0 && (
+                {showChessArenaPanel ? (
+                  <span className="deploy-hero-meta muted">
+                    {activeSkillStats?.gamesPlayed ?? 0} tournaments
+                  </span>
+                ) : displayPerf && displayPerf.gamesPlayed > 0 ? (
                   <span className="deploy-hero-meta muted">
                     {displayPerf.gamesPlayed}
                     {winRate != null ? ` · ${winRate}%` : ""}
                   </span>
-                )}
+                ) : null}
               </div>
               <div className="deploy-hero-stat">
                 <span className="deploy-hero-label">
-                  {offchainPlay ? "Tickets" : "CELO"}
+                  {showChessArenaPanel
+                    ? "USDT stake"
+                    : offchainPlay
+                      ? "Tickets"
+                      : "CELO"}
                 </span>
                 <span className="deploy-hero-value tabular">
-                  {offchainPlay
-                    ? (config.DAILY_MATCH_CAP ?? "50")
-                    : formatBalance(balances?.celoFormatted, 3)}
+                  {showChessArenaPanel
+                    ? chessConfig?.USDT_STAKE_BUFFER
+                      ? `${Number(chessConfig.USDT_STAKE_BUFFER) / 1_000_000}`
+                      : "1"
+                    : offchainPlay
+                      ? (config.DAILY_MATCH_CAP ?? "50")
+                      : formatBalance(balances?.celoFormatted, 3)}
                 </span>
-                {offchainPlay && (
+                {showChessArenaPanel ? (
+                  <span className="deploy-hero-meta muted">per match</span>
+                ) : offchainPlay ? (
                   <span className="deploy-hero-meta muted">daily cap</span>
-                )}
+                ) : null}
               </div>
             </section>
             ) : null}
@@ -1292,6 +1489,39 @@ export function DeployDashboard() {
                   />
                 ) : null}
 
+                {showChessArenaPanel && chessConfig ? (
+                  <SkillStatsPanel
+                    title="Chess Puzzle Arena"
+                    stats={activeSkillStats}
+                    canEdit={canControl}
+                    onEditSettings={() => beginEditConfig(dashboardTab)}
+                    configRows={[
+                      {
+                        label: "Puzzle solver",
+                        value: chessArenaSolverLabel(chessConfig),
+                      },
+                      {
+                        label: "Lobby mode",
+                        value: chessArenaPlayModeLabel(chessConfig),
+                      },
+                      {
+                        label: "USDT stake",
+                        value: chessConfig.USDT_STAKE_BUFFER
+                          ? `${Number(chessConfig.USDT_STAKE_BUFFER) / 1_000_000} USDT`
+                          : "1 USDT",
+                      },
+                      {
+                        label: "Daily match cap",
+                        value: chessConfig.DAILY_MATCH_CAP ?? "20",
+                      },
+                      {
+                        label: "Match interval",
+                        value: `${chessConfig.MATCH_INTERVAL_SECONDS ?? "120"}s`,
+                      },
+                    ]}
+                  />
+                ) : null}
+
                 {showGenericPanel ? (
                   <SkillStatsPanel
                     title={skillShortLabel(dashboardTab)}
@@ -1299,6 +1529,88 @@ export function DeployDashboard() {
                     canEdit={canControl}
                     onEditSettings={() => beginEditConfig(dashboardTab)}
                   />
+                ) : null}
+
+                {isProductClankTab ? (
+                  <section className="deploy-console-section">
+                    <div className="deploy-section-head">
+                      <h2>Amplify earnings</h2>
+                      {canControl ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => beginEditConfig(dashboardTab)}
+                        >
+                          Edit settings
+                        </button>
+                      ) : null}
+                    </div>
+                    <dl className="deploy-aside-dl deploy-amplify-stats">
+                      <div>
+                        <dt>Points</dt>
+                        <dd className="tabular">{pcMeta.points ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Credits</dt>
+                        <dd className="tabular">{pcMeta.credits ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Submitted today</dt>
+                        <dd className="tabular">
+                          {pcMeta.submittedToday ?? 0}/{pcMeta.dailyCap ?? "10"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Total submitted</dt>
+                        <dd className="tabular">{pcMeta.submittedTotal ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Drafts awaiting approval</dt>
+                        <dd className="tabular">{pcMeta.pendingDrafts ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Strikes</dt>
+                        <dd className="tabular">{pcMeta.strikes ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>$PRO claimable</dt>
+                        <dd className="tabular">{pcMeta.proClaimable ?? 0}</dd>
+                      </div>
+                    </dl>
+                    {activeSkillStats?.summary ? (
+                      <p className="muted" style={{ fontSize: "0.875rem" }}>
+                        {activeSkillStats.summary}
+                      </p>
+                    ) : null}
+                    <p className="muted hint">
+                      Drafts are AI-reviewed, then sent to you on Telegram. Post
+                      approved replies from{" "}
+                      {pcMeta.xHandle ? (
+                        <a
+                          href={`https://x.com/${pcMeta.xHandle}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          @{pcMeta.xHandle}
+                        </a>
+                      ) : (
+                        "the agent's X account"
+                      )}{" "}
+                      and send the tweet URL back to the bot — the agent submits
+                      it and earns.
+                    </p>
+                    {activeSkillStats?.logTail ? (
+                      <details
+                        className="deploy-console-details"
+                        style={{ marginTop: "1rem" }}
+                      >
+                        <summary>Recent logs</summary>
+                        <pre className="deploy-console-log">
+                          {activeSkillStats.logTail}
+                        </pre>
+                      </details>
+                    ) : null}
+                  </section>
                 ) : null}
 
                 {gamearenaSkill && showGamearenaPanel ? (
@@ -1434,7 +1746,7 @@ export function DeployDashboard() {
               </div>
 
               <aside className="deploy-console-aside">
-                {offchainPlay && (
+                {offchainPlay && !isProductClankTab && (
                   <section
                     className={`deploy-console-aside-block deploy-ladder-panel${
                       ladderLoading && ladder ? " deploy-ladder-panel--refreshing" : ""
@@ -1547,6 +1859,55 @@ export function DeployDashboard() {
                   </dl>
                 </section>
 
+                {isProductClankTab ? (
+                  <section className="deploy-console-aside-block">
+                    <h3>Amplify settings</h3>
+                    <dl className="deploy-aside-dl">
+                      <div>
+                        <dt>X handle</dt>
+                        <dd>
+                          {pcMeta.xHandle ? (
+                            <a
+                              href={`https://x.com/${pcMeta.xHandle}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              @{pcMeta.xHandle}
+                            </a>
+                          ) : (
+                            "—"
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Daily cap</dt>
+                        <dd className="tabular">{pcMeta.dailyCap ?? "10"}</dd>
+                      </div>
+                      <div>
+                        <dt>ERC-8004 id</dt>
+                        <dd className="tabular">
+                          {pcMeta.erc8004AgentId
+                            ? `celo:${pcMeta.erc8004AgentId}`
+                            : "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Campaigns</dt>
+                        <dd>
+                          <a
+                            href="https://www.productclank.com/amplify/campaigns"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Amplify board ↗
+                          </a>
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
+                ) : null}
+
+                {!isProductClankTab ? (
                 <section className="deploy-console-aside-block deploy-play-settings">
                   <h3>Play settings</h3>
                   <dl className="deploy-aside-dl">
@@ -1562,6 +1923,38 @@ export function DeployDashboard() {
                         </div>
                       </>
                     )}
+                    {chessArenaSkillId && chessConfig ? (
+                      <>
+                        <div>
+                          <dt>Puzzle solver</dt>
+                          <dd>{chessArenaSolverLabel(chessConfig)}</dd>
+                        </div>
+                        <div>
+                          <dt>Lobby mode</dt>
+                          <dd>{chessArenaPlayModeLabel(chessConfig)}</dd>
+                        </div>
+                        <div>
+                          <dt>Auto-swap</dt>
+                          <dd>
+                            {(chessConfig.AUTO_SWAP ?? "1") !== "0" ? "On" : "Off"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>USDT stake</dt>
+                          <dd className="tabular">
+                            {chessConfig.USDT_STAKE_BUFFER
+                              ? `${Number(chessConfig.USDT_STAKE_BUFFER) / 1_000_000} USDT`
+                              : "1 USDT"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Daily match cap</dt>
+                          <dd className="tabular">
+                            {chessConfig.DAILY_MATCH_CAP ?? "20"}
+                          </dd>
+                        </div>
+                      </>
+                    ) : null}
                     {isBalaioSkill(status?.skillId) && (
                       <>
                         <div>
@@ -1656,6 +2049,7 @@ export function DeployDashboard() {
                     )}
                   </dl>
                 </section>
+                ) : null}
 
                 <details className="deploy-console-details">
                   <summary>Technical details</summary>
@@ -1758,6 +2152,14 @@ export function DeployDashboard() {
               )}
               {isBalaioSkill(activeSettingsSkillId) && (
                 <BalaioConfigFields
+                  config={draftConfig}
+                  onChange={(key, value) =>
+                    setDraftConfig((prev) => ({ ...prev, [key]: value }))
+                  }
+                />
+              )}
+              {isChessArenaSkillId(activeSettingsSkillId ?? "") && (
+                <ChessArenaConfigFields
                   config={draftConfig}
                   onChange={(key, value) =>
                     setDraftConfig((prev) => ({ ...prev, [key]: value }))

@@ -23,9 +23,14 @@ import {
   type AgentIdCredentialWire,
 } from "@goodagent/agent-id";
 import { AgentIdError } from "@goodagent/shared";
+import {
+  handleSkillMcpTool,
+  skillErrorResult,
+  skillMcpTools,
+} from "./skills-handlers.js";
 
 const SERVER_NAME = "gooddollar-mcp";
-const SERVER_VERSION = "0.4.0";
+const SERVER_VERSION = "0.5.0";
 
 /**
  * Resolves a stored Agent ID credential by agent address. Injected by hosts
@@ -177,6 +182,7 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
           },
         },
       },
+      ...skillMcpTools,
     ],
   }));
 
@@ -262,12 +268,25 @@ export function createMcpServer(options: McpServerOptions = {}): Server {
           const result = await verifyAgentIdLive(credential);
           return jsonResult({ found: true, ...verifyResultToWire(result) });
         }
-        default:
+        default: {
+          const skillResult = await handleSkillMcpTool(
+            name,
+            args as Record<string, unknown> | undefined,
+          );
+          if (skillResult) return skillResult;
           return errorResult(
             new AgentIdError(`Unknown tool: ${name}`, "UNKNOWN_TOOL"),
           );
+        }
       }
     } catch (error) {
+      if (
+        name.startsWith("goodagent_") &&
+        error instanceof AgentIdError &&
+        error.code === "NOT_FOUND"
+      ) {
+        return skillErrorResult(error);
+      }
       return errorResult(error);
     }
   });

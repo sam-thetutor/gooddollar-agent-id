@@ -7,9 +7,11 @@ import {
   deployKindLabel,
   formatSkillList,
   hasBalaioInStatus,
+  hasChessArenaInStatus,
   hasGamearenaInStatus,
   isActionOrderSkillId,
   isBalaioSkillId,
+  isChessArenaSkillId,
   isGamearenaSkillId,
   isSkillEnabled,
   skillInstallStatusLabel,
@@ -25,9 +27,11 @@ export {
   deployKindLabel,
   formatSkillList,
   hasBalaioInStatus,
+  hasChessArenaInStatus,
   hasGamearenaInStatus,
   isActionOrderSkillId,
   isBalaioSkillId,
+  isChessArenaSkillId,
   isGamearenaSkillId,
   isSkillEnabled,
   skillInstallStatusLabel,
@@ -43,7 +47,13 @@ export const configurableSkills = configurableSkillsFromStatus;
 export function hasGamearenaSkill(
   status: Pick<DeployStatusResponse, "skills" | "skillId">,
 ): boolean {
-  return hasGamearenaInStatus(status);
+  return   hasGamearenaInStatus(status);
+}
+
+export function hasChessArenaSkill(
+  status: Pick<DeployStatusResponse, "skills" | "skillId">,
+): boolean {
+  return hasChessArenaInStatus(status);
 }
 
 export function hasConfigurableSkill(

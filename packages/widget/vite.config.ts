@@ -15,6 +15,7 @@ export default defineConfig({
         index: resolve(__dirname, "src/index.ts"),
         privy: resolve(__dirname, "src/privy.ts"),
         "partner-gamearena": resolve(__dirname, "src/partner-gamearena.ts"),
+        "partner-chess-arena": resolve(__dirname, "src/partner-chess-arena.ts"),
       },
       formats: ["es"],
       fileName: (format, entryName) => `${entryName}.js`,

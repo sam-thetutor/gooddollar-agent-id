@@ -86,6 +86,8 @@ model DeployedAgent {
   activeArenaMatchId    String?   @map("active_arena_match_id")
   deployPaymentTx       String?   @map("deploy_payment_tx")
   telegramBotTokenEnc   String?   @map("telegram_bot_token_enc") @db.Text
+  brainConfig           String?   @map("brain_config") @db.Text
+  brainBotTokenEnc      String?   @map("brain_bot_token_enc") @db.Text
   plan                  String    @default("one_time")
   expiresAt             DateTime? @map("expires_at")
   deployedAt            DateTime? @map("deployed_at")

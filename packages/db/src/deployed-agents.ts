@@ -19,6 +19,26 @@ export interface DeploySkillInput {
   configuration?: Record<string, string>;
 }
 
+/**
+ * Persisted brain settings for a deploy (JSON in `brainConfig`).
+ * The bot token is stored separately, encrypted (`brainBotTokenEnc`).
+ */
+export interface DeployBrainConfig {
+  enabled: boolean;
+  /** Inference model, e.g. "deepseek-v4-flash" or "<peerId>@<model>". */
+  model?: string;
+  /** Persona preset name; defaults to the deploy template. */
+  personaPreset?: string;
+  /** Brain tool names; defaults applied by the pipeline. */
+  tools?: string[];
+  /** Telegram bot username, filled in after the pipeline validates the token. */
+  botUsername?: string;
+  /** Telegram user id of the linked operator (may control the agent from chat). */
+  operatorTelegramId?: number;
+  /** Telegram username of the linked operator, for display only. */
+  operatorTelegramUsername?: string | null;
+}
+
 export interface CreateDeployedAgentInput {
   displayName: string;
   template?: string;
@@ -29,6 +49,7 @@ export interface CreateDeployedAgentInput {
   /** Per-skill config keyed by skillId (preferred) */
   skillConfigurations?: Record<string, Record<string, string>> | null;
   telegramBotToken?: string | null;
+  brain?: (Omit<DeployBrainConfig, "botUsername"> & { botToken?: string | null }) | null;
   encryptionSecret?: string | null;
 }
 
@@ -63,6 +84,17 @@ export async function createDeployedAgent(
     );
   }
 
+  let brainConfig: string | null = null;
+  let brainBotTokenEnc: string | null = null;
+  if (input.brain?.enabled) {
+    const { botToken, ...rest } = input.brain;
+    brainConfig = JSON.stringify(rest);
+    if (botToken && input.encryptionSecret) {
+      const { encryptSecret } = await import("./crypto.js");
+      brainBotTokenEnc = encryptSecret(botToken, input.encryptionSecret);
+    }
+  }
+
   const configuration =
     input.configuration && Object.keys(input.configuration).length
       ? JSON.stringify(input.configuration)
@@ -78,6 +110,8 @@ export async function createDeployedAgent(
       status: "pending_payment",
       configuration,
       telegramBotTokenEnc,
+      brainConfig,
+      brainBotTokenEnc,
       skills: {
         create: skills.map((s, index) => {
           const perSkill =
@@ -134,6 +168,8 @@ export function updateDeployedAgent(
     deployPaymentTx: string;
     configuration: string;
     telegramBotTokenEnc: string;
+    brainConfig: string | null;
+    brainBotTokenEnc: string | null;
     displayName: string;
   }>,
 ): Promise<DeployedAgent> {
@@ -187,6 +223,27 @@ export async function decryptTelegramBotToken(
   return decryptSecret(agent.telegramBotTokenEnc, encryptionSecret);
 }
 
+export function parseDeployBrainConfig(
+  agent: Pick<DeployedAgent, "brainConfig">,
+): DeployBrainConfig | null {
+  if (!agent.brainConfig) return null;
+  try {
+    const parsed = JSON.parse(agent.brainConfig) as DeployBrainConfig;
+    return parsed && typeof parsed === "object" && parsed.enabled ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function decryptBrainBotToken(
+  agent: Pick<DeployedAgent, "brainBotTokenEnc">,
+  encryptionSecret: string | null,
+): Promise<string | null> {
+  if (!agent.brainBotTokenEnc || !encryptionSecret) return null;
+  const { decryptSecret } = await import("./crypto.js");
+  return decryptSecret(agent.brainBotTokenEnc, encryptionSecret);
+}
+
 export async function maxWalletDerivationIndex(): Promise<number> {
   const row = await prisma.deployedAgent.aggregate({
     _max: { walletDerivationIndex: true },
@@ -196,6 +253,7 @@ export async function maxWalletDerivationIndex(): Promise<number> {
 
 export const GAMEARENA_SKILL_ID = "gaming/wagering/gamearena_1v1";
 export const ACTIONORDER_SKILL_ID = "gaming/card-fighter/actionorder_vshouse";
+export const CHESS_ARENA_SKILL_ID = "gaming/wagering/chess_arena_1v1";
 
 /** Deploy statuses that no longer block a new GameArena entry. */
 const GAMEARENA_NON_BLOCKING_STATUSES: DeployStatus[] = ["failed", "stopped"];
@@ -276,6 +334,25 @@ export function listActionOrderDeploysForOwner(
   });
 }
 
+/** Chess Puzzle Arena skill deploys for one owner wallet (partner lookup). */
+export function listChessArenaDeploysForOwner(
+  ownerWallet: string,
+): Promise<(DeployedAgent & { skills: SkillInstall[] })[]> {
+  return prisma.deployedAgent.findMany({
+    where: {
+      ownerWallet: ownerWallet.toLowerCase(),
+      skills: {
+        some: {
+          skillId: CHESS_ARENA_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    include: { skills: true },
+  });
+}
+
 /** First Action Order deploy for an owner (oldest by createdAt). */
 export function getFirstActionOrderDeployForOwner(
   ownerWallet: string,
@@ -293,6 +370,238 @@ export function getFirstActionOrderDeployForOwner(
     orderBy: { createdAt: "asc" },
     include: { skills: true },
   });
+}
+
+export interface ActionOrderAgentRegistryEntry {
+  agentAddress: string;
+  deployId: string;
+  displayName: string;
+  ownerWallet: string | null;
+  status: string;
+  verified: boolean;
+  deployedAt: Date | null;
+}
+
+const actionOrderProvisionedWhere = {
+  agentAddress: { not: null },
+  skills: {
+    some: {
+      skillId: ACTIONORDER_SKILL_ID,
+      status: { not: "disabled" },
+    },
+  },
+} as const;
+
+/** All provisioned Action Order play wallets (partner agent leaderboard registry). */
+export async function listActionOrderAgentRegistry(opts: {
+  page: number;
+  pageSize: number;
+  verifiedOnly?: boolean;
+}): Promise<{ rows: ActionOrderAgentRegistryEntry[]; total: number }> {
+  const deploys = await prisma.deployedAgent.findMany({
+    where: actionOrderProvisionedWhere,
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      displayName: true,
+      agentAddress: true,
+      ownerWallet: true,
+      status: true,
+      deployedAt: true,
+    },
+  });
+
+  const addresses = deploys
+    .map((d) => d.agentAddress)
+    .filter((a): a is string => a != null);
+  const credentials =
+    addresses.length > 0
+      ? await prisma.agentCredential.findMany({
+          where: { agent: { in: addresses } },
+          select: { agent: true, revokedAt: true },
+        })
+      : [];
+  const verifiedSet = new Set(
+    credentials
+      .filter((c) => c.revokedAt === null)
+      .map((c) => c.agent.toLowerCase()),
+  );
+
+  let rows = deploys
+    .filter((d): d is typeof d & { agentAddress: string } => d.agentAddress != null)
+    .map((d) => ({
+      agentAddress: d.agentAddress,
+      deployId: d.id,
+      displayName: d.displayName,
+      ownerWallet: d.ownerWallet,
+      status: d.status,
+      verified: verifiedSet.has(d.agentAddress.toLowerCase()),
+      deployedAt: d.deployedAt,
+    }));
+
+  if (opts.verifiedOnly) {
+    rows = rows.filter((r) => r.verified);
+  }
+
+  const total = rows.length;
+  const start = (opts.page - 1) * opts.pageSize;
+  const paged = rows.slice(start, start + opts.pageSize);
+
+  return { rows: paged, total };
+}
+
+/** Lookup one play wallet for Action Order partner integrations. */
+export async function lookupActionOrderAgentRegistry(
+  agentAddress: string,
+): Promise<ActionOrderAgentRegistryEntry | null> {
+  const normalized = agentAddress.toLowerCase();
+  const deploy = await prisma.deployedAgent.findFirst({
+    where: {
+      agentAddress: { equals: normalized, mode: "insensitive" },
+      skills: {
+        some: {
+          skillId: ACTIONORDER_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
+    },
+    select: {
+      id: true,
+      displayName: true,
+      agentAddress: true,
+      ownerWallet: true,
+      status: true,
+      deployedAt: true,
+    },
+  });
+  if (!deploy?.agentAddress) return null;
+
+  const credential = await prisma.agentCredential.findUnique({
+    where: { agent: deploy.agentAddress },
+    select: { revokedAt: true },
+  });
+
+  return {
+    agentAddress: deploy.agentAddress,
+    deployId: deploy.id,
+    displayName: deploy.displayName,
+    ownerWallet: deploy.ownerWallet,
+    status: deploy.status,
+    verified: Boolean(credential && credential.revokedAt === null),
+    deployedAt: deploy.deployedAt,
+  };
+}
+
+export type ChessArenaAgentRegistryEntry = ActionOrderAgentRegistryEntry;
+
+const chessArenaProvisionedWhere = {
+  agentAddress: { not: null },
+  skills: {
+    some: {
+      skillId: CHESS_ARENA_SKILL_ID,
+      status: { not: "disabled" },
+    },
+  },
+} as const;
+
+/** All provisioned Chess Puzzle Arena play wallets (partner agent registry). */
+export async function listChessArenaAgentRegistry(opts: {
+  page: number;
+  pageSize: number;
+  verifiedOnly?: boolean;
+}): Promise<{ rows: ChessArenaAgentRegistryEntry[]; total: number }> {
+  const deploys = await prisma.deployedAgent.findMany({
+    where: chessArenaProvisionedWhere,
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      displayName: true,
+      agentAddress: true,
+      ownerWallet: true,
+      status: true,
+      deployedAt: true,
+    },
+  });
+
+  const addresses = deploys
+    .map((d) => d.agentAddress)
+    .filter((a): a is string => a != null);
+  const credentials =
+    addresses.length > 0
+      ? await prisma.agentCredential.findMany({
+          where: { agent: { in: addresses } },
+          select: { agent: true, revokedAt: true },
+        })
+      : [];
+  const verifiedSet = new Set(
+    credentials
+      .filter((c) => c.revokedAt === null)
+      .map((c) => c.agent.toLowerCase()),
+  );
+
+  let rows = deploys
+    .filter((d): d is typeof d & { agentAddress: string } => d.agentAddress != null)
+    .map((d) => ({
+      agentAddress: d.agentAddress,
+      deployId: d.id,
+      displayName: d.displayName,
+      ownerWallet: d.ownerWallet,
+      status: d.status,
+      verified: verifiedSet.has(d.agentAddress.toLowerCase()),
+      deployedAt: d.deployedAt,
+    }));
+
+  if (opts.verifiedOnly) {
+    rows = rows.filter((r) => r.verified);
+  }
+
+  const total = rows.length;
+  const start = (opts.page - 1) * opts.pageSize;
+  const paged = rows.slice(start, start + opts.pageSize);
+
+  return { rows: paged, total };
+}
+
+/** Lookup one play wallet for Chess Puzzle Arena partner integrations. */
+export async function lookupChessArenaAgentRegistry(
+  agentAddress: string,
+): Promise<ChessArenaAgentRegistryEntry | null> {
+  const normalized = agentAddress.toLowerCase();
+  const deploy = await prisma.deployedAgent.findFirst({
+    where: {
+      agentAddress: { equals: normalized, mode: "insensitive" },
+      skills: {
+        some: {
+          skillId: CHESS_ARENA_SKILL_ID,
+          status: { not: "disabled" },
+        },
+      },
+    },
+    select: {
+      id: true,
+      displayName: true,
+      agentAddress: true,
+      ownerWallet: true,
+      status: true,
+      deployedAt: true,
+    },
+  });
+  if (!deploy?.agentAddress) return null;
+
+  const credential = await prisma.agentCredential.findUnique({
+    where: { agent: deploy.agentAddress },
+    select: { revokedAt: true },
+  });
+
+  return {
+    agentAddress: deploy.agentAddress,
+    deployId: deploy.id,
+    displayName: deploy.displayName,
+    ownerWallet: deploy.ownerWallet,
+    status: deploy.status,
+    verified: Boolean(credential && credential.revokedAt === null),
+    deployedAt: deploy.deployedAt,
+  };
 }
 
 /** Blocks a second GameArena deploy for the same owner wallet (competition rule). */

@@ -1,14 +1,14 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Address } from "viem";
-import type { LocalAccount } from "viem/accounts";
+import type { Address, Hex, LocalAccount } from "viem";
 import type { RuntimeConfig } from "./config.js";
 import {
   fundAgentCelo,
   fundAgentGDollar,
   relayAttestation,
 } from "./identity.js";
+import { fundAgentUsdtFromGs } from "./agent-usdt-funding.js";
 import {
   isPm2Available,
   pm2ProcessName,
@@ -27,7 +27,9 @@ import { isSkillDeployable } from "@goodagent/shared";
 import {
   buildSkillEnv,
   BALAIO_WORKER_SKILL_ID,
+  CHESS_ARENA_SKILL_ID,
   computeBalaioFundingGs,
+  computeChessArenaFundingGs,
   type SkillConfiguration,
   writeSkillEnv,
   buildHostReportEnv,
@@ -37,13 +39,30 @@ import { installSkillFromRegistry } from "./skill-install.js";
 import { writeBaselineIfAbsent } from "./baseline-balance.js";
 import {
   allocateDerivationIndex,
+  accountFromImportedPrivateKey,
   deriveAgentAccount,
   deriveAgentPrivateKey,
+  IMPORTED_WALLET_DERIVATION_INDEX,
+  isImportedWalletIndex,
+  normalizeAgentPrivateKey,
+  readImportedPrivateKey,
   writeAgentMeta,
+  writeImportedPrivateKey,
   agentDir,
   readAgentMeta,
 } from "./wallet.js";
 import { ensureLegacySkillPlugin } from "./legacy-plugin.js";
+import {
+  brainPm2Name,
+  provisionBrain,
+  validateTelegramBotToken,
+  type BrainDeploySettings,
+} from "./brain-provision.js";
+import {
+  ensureErc8004AgentId,
+  registerWithProductClank,
+  PRODUCTCLANK_SKILL_ID,
+} from "./productclank-provision.js";
 import type { SkillInstall } from "@goodagent/db";
 
 export type PipelineStatus =
@@ -97,12 +116,16 @@ export interface RunPipelineInput {
   /** Multi-skill install list (preferred) */
   skills?: PipelineSkillInput[];
   telegramBotToken?: string | null;
+  /** Optional LLM brain companion (persona + Telegram chat). */
+  brain?: BrainDeploySettings | null;
   skipIdentity?: boolean;
   dryRun?: boolean;
   resume?: {
     agentAddress: `0x${string}`;
     walletDerivationIndex: number;
   };
+  /** Import an existing GameArena / external wallet instead of HD derivation. */
+  importedPrivateKey?: string;
   minDerivationIndex?: number;
 }
 
@@ -118,6 +141,8 @@ export interface RunPipelineResult {
   verifyUrl?: string;
   identityIssued: boolean;
   gamePassUsername?: string | null;
+  /** Telegram bot username of the brain, when a brain was provisioned. */
+  brainBotUsername?: string | null;
 }
 
 function skillFolderFromRegistryPath(registryPath: string): string {
@@ -152,6 +177,9 @@ function computeFundingTargetGs(
     if (skill.skillId === BALAIO_WORKER_SKILL_ID) {
       target = Math.max(target, computeBalaioFundingGs(config, baseGs));
     }
+    if (skill.skillId === CHESS_ARENA_SKILL_ID) {
+      target = Math.max(target, computeChessArenaFundingGs(baseGs));
+    }
   }
   return target;
 }
@@ -160,7 +188,9 @@ function skillNeedsAgentPrivateKey(skillId: string, spendsTokens: boolean): bool
   return (
     spendsTokens ||
     skillId === GAMEARENA_SKILL_ID ||
-    skillId === BALAIO_WORKER_SKILL_ID
+    skillId === CHESS_ARENA_SKILL_ID ||
+    skillId === BALAIO_WORKER_SKILL_ID ||
+    skillId === PRODUCTCLANK_SKILL_ID
   );
 }
 
@@ -194,24 +224,54 @@ export async function runDeployPipeline(
 
     await hooks.onStatus("provisioning");
 
-    const index = input.resume
-      ? input.resume.walletDerivationIndex
-      : allocateDerivationIndex(
-          config.agentsRoot,
-          (input.minDerivationIndex ?? -1) + 1,
-        );
-    const account = deriveAgentAccount(config.deployMnemonic, index);
-    const agentAddress = (input.resume?.agentAddress ?? account.address) as `0x${string}`;
-    const agentPrivateKey = deriveAgentPrivateKey(config.deployMnemonic, index);
+    const importedKey = input.importedPrivateKey?.trim();
+    let index: number;
+    let account: LocalAccount;
+    let agentAddress: `0x${string}`;
+    let agentPrivateKey: Hex;
+
+    if (input.resume && isImportedWalletIndex(input.resume.walletDerivationIndex)) {
+      index = IMPORTED_WALLET_DERIVATION_INDEX;
+      agentPrivateKey = readImportedPrivateKey(config.agentsRoot, deployId);
+      account = accountFromImportedPrivateKey(agentPrivateKey);
+      agentAddress = (input.resume.agentAddress ?? account.address) as `0x${string}`;
+      if (account.address.toLowerCase() !== agentAddress.toLowerCase()) {
+        throw new Error("imported wallet key does not match stored agent address");
+      }
+    } else if (importedKey) {
+      index = IMPORTED_WALLET_DERIVATION_INDEX;
+      account = accountFromImportedPrivateKey(importedKey);
+      agentAddress = account.address as `0x${string}`;
+      agentPrivateKey = normalizeAgentPrivateKey(importedKey);
+      writeImportedPrivateKey(config.agentsRoot, deployId, agentPrivateKey);
+    } else {
+      index = input.resume
+        ? input.resume.walletDerivationIndex
+        : allocateDerivationIndex(
+            config.agentsRoot,
+            (input.minDerivationIndex ?? -1) + 1,
+          );
+      account = deriveAgentAccount(config.deployMnemonic, index);
+      agentAddress = (input.resume?.agentAddress ?? account.address) as `0x${string}`;
+      agentPrivateKey = deriveAgentPrivateKey(config.deployMnemonic, index);
+    }
     const pm2Name = pm2ProcessName(deployId);
 
+    let priorMeta: Partial<ReturnType<typeof readAgentMeta>> = {};
+    try {
+      priorMeta = readAgentMeta(config.agentsRoot, deployId);
+    } catch {
+      priorMeta = {};
+    }
     writeAgentMeta(config.agentsRoot, {
+      ...priorMeta,
       deployId,
       displayName,
       template,
       address: agentAddress,
       derivationIndex: index,
-      createdAt: new Date().toISOString(),
+      importedWallet: isImportedWalletIndex(index) ? true : priorMeta.importedWallet,
+      createdAt: priorMeta.createdAt ?? new Date().toISOString(),
     });
 
     await hooks.onStatus("provisioning", {
@@ -250,6 +310,10 @@ export async function runDeployPipeline(
       "snapshot",
     );
 
+    if (pipelineSkills.some((s) => s.skillId === CHESS_ARENA_SKILL_ID)) {
+      await fundAgentUsdtFromGs(config, account as LocalAccount);
+    }
+
     if (input.skipIdentity) {
       throw new Error(
         "Agent ID verification is required — deploy cannot skip vault bond or attestation",
@@ -257,6 +321,51 @@ export async function runDeployPipeline(
     }
 
     await relayAttestation(config, account as LocalAccount);
+
+    // ProductClank: mint an ERC-8004 identity and self-register so the operator
+    // only supplies an X handle. Best-effort — a failure here (e.g. handle
+    // already taken, no CELO for gas) must not sink the whole deploy; the skill
+    // simply won't start until its API key is present.
+    let productClankKey: string | null = null;
+    let productClankErc8004Id: string | null = null;
+    const productClankInput = pipelineSkills.find(
+      (s) => s.skillId === PRODUCTCLANK_SKILL_ID,
+    );
+    if (productClankInput) {
+      const pcConfig = productClankInput.configuration ?? {};
+      const existingKey = pcConfig.PRODUCTCLANK_API_KEY?.trim();
+      const xHandle = pcConfig.X_HANDLE?.trim();
+      try {
+        productClankErc8004Id = await ensureErc8004AgentId(config, {
+          deployId,
+          displayName,
+          agentAddress,
+          agentPrivateKey,
+        });
+        if (existingKey) {
+          productClankKey = existingKey;
+        } else if (xHandle) {
+          const reg = await registerWithProductClank({
+            displayName,
+            agentAddress,
+            erc8004AgentId: productClankErc8004Id,
+            xHandle,
+          });
+          productClankKey = reg.apiKey;
+          console.log(
+            `[productclank] registered "${displayName}" (@${xHandle}) → key stored`,
+          );
+        } else {
+          console.warn(
+            "[productclank] no X_HANDLE and no API key — skipping auto-registration",
+          );
+        }
+      } catch (err) {
+        console.warn(
+          `[productclank] auto-provision failed: ${(err as Error).message}`,
+        );
+      }
+    }
 
     await hooks.onStatus("installing", { agentAddress, walletDerivationIndex: index, pm2Name });
 
@@ -275,6 +384,11 @@ export async function runDeployPipeline(
       ) {
         skillConfig.PLAYER_NAME = gamePassUsername;
         skillConfig.GAME_PASS_USERNAME = gamePassUsername;
+      }
+      if (skillInput.skillId === PRODUCTCLANK_SKILL_ID) {
+        if (productClankKey) skillConfig.PRODUCTCLANK_API_KEY = productClankKey;
+        if (productClankErc8004Id)
+          skillConfig.ERC8004_AGENT_ID = productClankErc8004Id;
       }
 
       const skillDir = installSkillFromRegistry(config.agentsRoot, deployId, entry);
@@ -386,11 +500,33 @@ export async function runDeployPipeline(
         )
       : buildLegacySkillPm2Env(deployId, primaryEnv);
 
+    // Optional LLM brain companion (chat persona over Telegram).
+    let brainApp: ReturnType<typeof provisionBrain> | undefined;
+    let brainBotUsername: string | null = null;
+    if (input.brain?.botToken) {
+      brainBotUsername = await validateTelegramBotToken(input.brain.botToken);
+      brainApp = provisionBrain({
+        deployId,
+        displayName,
+        template,
+        agentAddress,
+        agentsRoot: config.agentsRoot,
+        apiBase: config.apiBase,
+        hostUrl: hostReportEnv.GOODAGENT_HOST_URL ?? "http://127.0.0.1:3010",
+        skills: pipelineSkills.map((s) => ({
+          skillId: s.skillId,
+          configuration: skillConfigs[s.skillId],
+        })),
+        settings: input.brain,
+      });
+    }
+
     const ecosystemPath = writeEcosystemConfig(config, {
       deployId,
       skillDir: primarySkillDir,
       env: pm2Env,
       runtimeV1,
+      brain: brainApp,
     });
 
     const verifyUrl = `${config.apiBase}/agent/verify/${agentAddress}`;
@@ -406,6 +542,7 @@ export async function runDeployPipeline(
         skillDirs,
         verifyUrl,
         identityIssued: false,
+        brainBotUsername,
       };
     }
 
@@ -427,6 +564,7 @@ export async function runDeployPipeline(
       verifyUrl,
       identityIssued: false,
       gamePassUsername,
+      brainBotUsername,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -444,10 +582,32 @@ export function stopDeployedAgent(deployId: string): void {
   } catch {
     // Process may already be stopped or never started.
   }
+  if (pm2ProcessSnapshot(brainPm2Name(deployId))) {
+    try {
+      pm2Stop(brainPm2Name(deployId));
+    } catch {
+      // Brain may already be stopped.
+    }
+  }
 }
 
-/** Start or restart PM2 for a deploy; cold-starts from ecosystem when needed. */
-export function startDeployedAgent(
+/**
+ * Stop only the worker process(es); the brain stays online so the operator
+ * can resume the agent from Telegram chat.
+ */
+export function stopDeployedAgentWorkers(deployId: string): void {
+  try {
+    pm2Stop(pm2ProcessName(deployId));
+  } catch {
+    // Process may already be stopped or never started.
+  }
+}
+
+/**
+ * Start only the worker process(es), leaving the brain untouched — restarting
+ * the brain from inside a brain-initiated command would kill the bot mid-reply.
+ */
+export function startDeployedAgentWorkers(
   config: RuntimeConfig,
   deployId: string,
 ): "started" | "restarted" {
@@ -475,6 +635,56 @@ export function startDeployedAgent(
   }
 
   if (existsSync(ecoPath)) {
+    execSync(
+      `pm2 start ${JSON.stringify(ecoPath)} --only ${JSON.stringify(name)}`,
+      { stdio: "inherit", encoding: "utf8" },
+    );
+    return "started";
+  }
+
+  const err = new Error(
+    "Agent files are missing on this host. Re-provision from the dashboard.",
+  );
+  (err as { code?: string }).code = "AGENT_NOT_PROVISIONED";
+  throw err;
+}
+
+/** Start or restart PM2 for a deploy; cold-starts from ecosystem when needed. */
+export function startDeployedAgent(
+  config: RuntimeConfig,
+  deployId: string,
+): "started" | "restarted" {
+  const name = pm2ProcessName(deployId);
+  const ecoPath = resolve(
+    agentDir(config.agentsRoot, deployId),
+    "ecosystem.config.cjs",
+  );
+
+  if (!isPm2Available()) {
+    throw new Error("pm2 not found in PATH");
+  }
+
+  const startOrRestart = (procName: string, snap: Pm2ProcessSnapshot): void => {
+    if (snap.online) {
+      pm2Restart(procName);
+      return;
+    }
+    execSync(`pm2 start ${JSON.stringify(procName)}`, {
+      stdio: "inherit",
+      encoding: "utf8",
+    });
+  };
+
+  const snap = pm2ProcessSnapshot(name);
+  if (snap) {
+    startOrRestart(name, snap);
+    const brainSnap = pm2ProcessSnapshot(brainPm2Name(deployId));
+    if (brainSnap) startOrRestart(brainPm2Name(deployId), brainSnap);
+    return snap.online ? "restarted" : "started";
+  }
+
+  if (existsSync(ecoPath)) {
+    // Ecosystem may include the brain companion app — starts both.
     pm2Start(ecoPath);
     return "started";
   }

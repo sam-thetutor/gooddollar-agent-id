@@ -27,11 +27,16 @@ import {
   resolveAgentRuntimeCli,
 } from "./provision.js";
 import { pm2ProcessSnapshot } from "./pipeline.js";
-import { deriveAgentPrivateKey, readAgentMeta, writeAgentMeta } from "./wallet.js";
+import { readAgentMeta, writeAgentMeta, isAgentProvisioned, resolveAgentPrivateKey } from "./wallet.js";
 import { GAMEARENA_SKILL_ID } from "./gamearena-pass.js";
+import { ACTIONORDER_SKILL_ID } from "@goodagent/shared";
 import { ensureLegacySkillPlugin } from "./legacy-plugin.js";
 import { DEFAULT_PLUGIN_ENTRY } from "@goodagent/skill-sdk";
 import { agentDir } from "./wallet.js";
+import {
+  isActionOrderSkillSecure,
+  upgradeActionOrderSkillInstall,
+} from "./actionorder-skill-upgrade.js";
 
 export interface DeployAgentRecord {
   id: string;
@@ -86,6 +91,8 @@ function skillNeedsPrivateKey(
 ): boolean {
   if (skillId === BALAIO_WORKER_SKILL_ID) return true;
   if (skillId === "gaming/wagering/gamearena_1v1") return true;
+  if (skillId === "gaming/wagering/playchessify_1v1") return true;
+  if (skillId === "gaming/wagering/chess_arena_1v1") return true;
   return false;
 }
 
@@ -146,30 +153,36 @@ function regenerateRuntimeManifest(
 }
 
 /** Rewrite skill .env + PM2 ecosystem from merged configuration; restart if running. */
-export function applyDeployConfiguration(
+export async function applyDeployConfiguration(
   config: RuntimeConfig,
   agent: DeployAgentRecord,
   patch: SkillConfiguration,
   targetSkillId?: string,
-): {
+): Promise<{
   merged: SkillConfiguration;
   skillId: string;
   restarted: boolean;
   skillConfigs: Record<string, SkillConfiguration>;
-} {
+}> {
   const target =
     agent.skills.find((s) => s.skillId === targetSkillId) ?? agent.skills[0];
   if (!target) throw new Error("deploy has no skills");
 
-  if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+  if (!isAgentProvisioned(agent.agentAddress, agent.walletDerivationIndex)) {
     throw new Error("agent not provisioned");
   }
 
   const existingConfig = resolveSkillConfig(agent, target);
   const merged = mergeDeployConfiguration(JSON.stringify(existingConfig), patch);
   const folder = skillFolderFromRegistryPath(target.registryPath);
-  const skillDir = skillInstallDir(config.agentsRoot, agent.id, folder);
-  if (!existsSync(resolve(skillDir, "package.json"))) {
+  let skillDir = skillInstallDir(config.agentsRoot, agent.id, folder);
+  if (target.skillId === ACTIONORDER_SKILL_ID) {
+    if (!existsSync(resolve(skillDir, "package.json"))) {
+      skillDir = await upgradeActionOrderSkillInstall(config, agent.id);
+    } else if (!isActionOrderSkillSecure(skillDir)) {
+      skillDir = await upgradeActionOrderSkillInstall(config, agent.id);
+    }
+  } else if (!existsSync(resolve(skillDir, "package.json"))) {
     throw new Error(`skill not installed at ${skillDir}`);
   }
 
@@ -178,7 +191,11 @@ export function applyDeployConfiguration(
   }
 
   const agentPrivateKey = skillNeedsPrivateKey(target.skillId, merged)
-    ? deriveAgentPrivateKey(config.deployMnemonic, agent.walletDerivationIndex)
+    ? resolveAgentPrivateKey(
+        config,
+        agent.id,
+        agent.walletDerivationIndex!,
+      )
     : null;
 
   const skillEnv = buildSkillEnv(target.skillId, {
@@ -217,7 +234,7 @@ export function applyDeployConfiguration(
         agent.id,
         agent.skills,
         agent.agentAddress as Address,
-        agent.walletDerivationIndex,
+        agent.walletDerivationIndex!,
       )
     : buildLegacySkillPm2Env(agent.id, skillEnv);
 
@@ -240,17 +257,17 @@ export function applyDeployConfiguration(
 }
 
 /** After on-chain Pass rename: persist meta, rewrite skill env, reload PM2. */
-export function syncAgentAfterPassRename(
+export async function syncAgentAfterPassRename(
   config: RuntimeConfig,
   agent: DeployAgentRecord,
   gamePassUsername: string,
-): { restarted: boolean } {
+): Promise<{ restarted: boolean }> {
   const target = agent.skills.find((s) => s.skillId === GAMEARENA_SKILL_ID);
   if (!target) {
     throw new Error("syncAgentAfterPassRename requires a GameArena deploy");
   }
 
-  if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+  if (!isAgentProvisioned(agent.agentAddress, agent.walletDerivationIndex)) {
     throw new Error("agent not provisioned");
   }
 
@@ -266,7 +283,7 @@ export function syncAgentAfterPassRename(
     // meta.json missing on partial deploy — env sync still helps.
   }
 
-  const { restarted } = applyDeployConfiguration(
+  const { restarted } = await applyDeployConfiguration(
     config,
     agent,
     { PLAYER_NAME: gamePassUsername, GAME_PASS_USERNAME: gamePassUsername },
@@ -337,7 +354,7 @@ export function applySkillInstallStatus(
   const target = agent.skills.find((s) => s.skillId === skillId);
   if (!target) throw new Error(`skill not installed: ${skillId}`);
 
-  if (!agent.agentAddress || agent.walletDerivationIndex == null) {
+  if (!isAgentProvisioned(agent.agentAddress, agent.walletDerivationIndex)) {
     throw new Error("agent not provisioned");
   }
 

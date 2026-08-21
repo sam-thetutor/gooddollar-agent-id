@@ -5,24 +5,30 @@ import {
 } from "@goodagent/shared";
 import { actionOrderSkillStatsAdapter } from "./actionorder.js";
 import { balaioSkillStatsAdapter } from "./balaio.js";
+import { chessArenaSkillStatsAdapter } from "./chess-arena.js";
 import { gamearenaSkillStatsAdapter } from "./gamearena.js";
 import { genericSkillStatsAdapter } from "./generic.js";
 import { ubiSkillStatsAdapter } from "./ubi.js";
+import { productClankSkillStatsAdapter } from "./productclank.js";
 import type { SkillStatsAdapter } from "./types.js";
 
 const BY_KEY: Record<RegistryStatsAdapterKey, SkillStatsAdapter> = {
   gamearena: gamearenaSkillStatsAdapter,
   actionorder: actionOrderSkillStatsAdapter,
+  chessarena: chessArenaSkillStatsAdapter,
   balaio: balaioSkillStatsAdapter,
   ubi: ubiSkillStatsAdapter,
+  productclank: productClankSkillStatsAdapter,
   generic: genericSkillStatsAdapter,
 };
 
 const ADAPTERS: SkillStatsAdapter[] = [
   gamearenaSkillStatsAdapter,
   actionOrderSkillStatsAdapter,
+  chessArenaSkillStatsAdapter,
   balaioSkillStatsAdapter,
   ubiSkillStatsAdapter,
+  productClankSkillStatsAdapter,
   genericSkillStatsAdapter,
 ];
 

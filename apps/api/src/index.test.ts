@@ -158,13 +158,33 @@ vi.mock("@goodagent/db", () => {
     writeAudit: async (eventType: string, metadata?: unknown) => {
       state.audit.push({ eventType, metadata, createdAt: new Date() });
     },
-    listRecentAuditEvents: async (limit = 25) =>
-      state.audit
-        .filter((e) =>
-          ["agent_id_issued", "agent_id_revoked"].includes(e.eventType),
+    listRecentAuditEvents: async (limit = 25) => {
+      const seen = new Set<string>();
+      const out: {
+        eventType: string;
+        metadata: unknown;
+        createdAt: Date;
+      }[] = [];
+      for (const e of state.audit
+        .filter((row) =>
+          ["agent_id_issued", "agent_id_revoked"].includes(row.eventType),
         )
-        .slice(-limit)
-        .reverse(),
+        .slice()
+        .reverse()) {
+        const agent = (e.metadata as { agent?: string } | null)?.agent?.toLowerCase();
+        if (agent) {
+          if (seen.has(agent)) continue;
+          seen.add(agent);
+        }
+        out.push({
+          eventType: e.eventType,
+          metadata: e.metadata,
+          createdAt: e.createdAt,
+        });
+        if (out.length >= limit) break;
+      }
+      return out;
+    },
     getAgentCredential: async (agent: string) =>
       (state.db.get(agent.toLowerCase()) as DbRecord | undefined) ?? null,
     issueAgentCredential: async (
@@ -660,6 +680,42 @@ describe("POST /agent/revoke", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Audit feed dedupe
+// ---------------------------------------------------------------------------
+
+describe("dedupeAuditEventsByAgent", () => {
+  it("keeps only the newest event per agent", async () => {
+    // @goodagent/db is mocked above — pull the real implementation.
+    const { dedupeAuditEventsByAgent } =
+      await vi.importActual<typeof import("@goodagent/db")>("@goodagent/db");
+    const agent = "0xabc";
+    const events = dedupeAuditEventsByAgent(
+      [
+        {
+          eventType: "agent_id_issued",
+          metadata: { agent },
+          createdAt: new Date("2026-08-08T23:23:32Z"),
+        },
+        {
+          eventType: "agent_id_issued",
+          metadata: { agent },
+          createdAt: new Date("2026-08-08T23:20:04Z"),
+        },
+        {
+          eventType: "agent_id_issued",
+          metadata: { agent: "0xdef" },
+          createdAt: new Date("2026-08-08T12:00:00Z"),
+        },
+      ],
+      25,
+    );
+    expect(events).toHaveLength(2);
+    expect(events[0]?.metadata).toEqual({ agent });
+    expect(events[1]?.metadata).toEqual({ agent: "0xdef" });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /explore — public directory
 // ---------------------------------------------------------------------------
 
@@ -737,6 +793,29 @@ describe("GET /explore", () => {
     expect(body.events.length).toBeGreaterThan(0);
     expect(body.events[0].type).toBe("agent_id_issued");
     expect(body.events[0].agent.toLowerCase()).toBe(a.address.toLowerCase());
+  });
+
+  it("dedupes re-issues of the same agent in the activity feed", async () => {
+    const a = await register();
+    state.audit.push(
+      {
+        eventType: "agent_id_issued",
+        metadata: { agent: a.address, operator: operator.address },
+        createdAt: new Date(Date.now() - 60_000),
+      },
+      {
+        eventType: "agent_id_issued",
+        metadata: { agent: a.address, operator: operator.address },
+        createdAt: new Date(Date.now() - 120_000),
+      },
+    );
+    const res = await app.request("/explore/activity");
+    const body = await json(res);
+    const matches = body.events.filter(
+      (e: { agent?: string }) =>
+        e.agent?.toLowerCase() === a.address.toLowerCase(),
+    );
+    expect(matches).toHaveLength(1);
   });
 });
 
