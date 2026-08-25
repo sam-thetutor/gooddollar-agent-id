@@ -51,12 +51,14 @@ async function main(): Promise<void> {
     baseUrl: config.llmBaseUrl,
     apiKey: config.llmApiKey,
     model: config.model,
+    maxTokens: 1024,
   });
 
   const tools = createBuiltinTools(config.toolNames, {
     apiBase: config.apiBase,
     hostUrl: config.hostUrl,
     deployId: config.deployId,
+    hostInternalSecret: config.hostInternalSecret,
     amplifyQueueFile: config.amplifyQueueFile,
     productClankApiKey: config.productClankApiKey,
   });
@@ -72,6 +74,8 @@ async function main(): Promise<void> {
     systemPrompt,
     memory: createSessionMemory({ persistDir: config.memoryDir }),
     logger,
+    // ProductClank attaches 20+ tools; extra rounds make Telegram feel stuck.
+    maxToolRounds: config.toolNames.length > 8 ? 2 : undefined,
   });
 
   const channels: Array<{ stop(): void }> = [];

@@ -112,7 +112,14 @@ const KNOWLEDGE_SCAM_PATTERNS = `Common scam patterns in the GoodDollar communit
 `;
 
 export const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
+export const KASUKU_MATCHES_SKILL_ID = "sports/analysis/kasuku_matches";
 const PRODUCTCLANK_SKILL_FOLDER = "productclank-participant";
+const KASUKU_TOOLS = [
+  "search_fixtures",
+  "recommend_matches",
+  "build_best_slip",
+  "book_selections",
+];
 const AMPLIFY_TOOLS = [
   "amplify_pending",
   "amplify_mark_posted",
@@ -182,6 +189,9 @@ const SKILL_DESCRIPTIONS: Record<string, string> = {
   [PRODUCTCLANK_SKILL_ID]:
     "ProductClank Amplify — earns by participating in campaigns (reply drafts, submit, $PRO) " +
     "and can launch Boost, Discover, and Content campaigns billed to the linked owner's ProductClank credits.",
+  [KASUKU_MATCHES_SKILL_ID]:
+    "Kasuku match analysis — search upcoming football fixtures, recommend picks with model " +
+    "confidence, and compose slips. Analysis only; never places bets or holds stakes.",
 };
 
 function describeSkills(
@@ -269,7 +279,18 @@ export function buildBrainPersona(input: {
       "- amplify_credits_history shows owner credit spend. amplify_campaign_delegate adds a web-app co-manager.\n" +
       "  Never purchase credits for the agent — the operator tops up their ProductClank account.\n"
     : "";
-  const toolRules = statsRule + amplifyRule;
+  const kasukuRule = input.tools.includes("recommend_matches")
+    ? "- For football match questions, use the catalog tools instead of guessing: " +
+      "search_fixtures to list upcoming games, recommend_matches when they ask what to " +
+      "back, and build_best_slip when they ask you to compose a slip. Football only.\n" +
+      "- When they ask for a booking code or to book the slip, call book_selections with " +
+      "the selections from the last build_best_slip. Ask which bookmaker if they did not " +
+      "name one (default Betpawa). Never invent a code.\n" +
+      "- Never invent fixtures, odds, or kickoff times. If the catalog is empty, say so.\n" +
+      "- You mint a booking code only. You do not place the bet or hold stakes. " +
+      "The user opens the bookmaker link themselves.\n"
+    : "";
+  const toolRules = statsRule + amplifyRule + kasukuRule;
 
   if (preset === "gaming") {
     return `# ${input.displayName}
@@ -321,6 +342,9 @@ export function provisionBrain(input: BrainProvisionInput): BrainProvisionResult
   const hasProductClankSkill = input.skills.some(
     (s) => s.skillId === PRODUCTCLANK_SKILL_ID,
   );
+  const hasKasukuSkill = input.skills.some(
+    (s) => s.skillId === KASUKU_MATCHES_SKILL_ID,
+  );
   const productClankApiKey = hasProductClankSkill
     ? input.skills
         .find((s) => s.skillId === PRODUCTCLANK_SKILL_ID)
@@ -334,9 +358,12 @@ export function provisionBrain(input: BrainProvisionInput): BrainProvisionResult
   const amplifyTools = AMPLIFY_TOOLS.filter(
     (t) => productClankApiKey || !AMPLIFY_TOOLS_REQUIRING_API_KEY.has(t),
   );
-  const tools = hasProductClankSkill
+  let tools = hasProductClankSkill
     ? [...baseTools, ...amplifyTools.filter((t) => !baseTools.includes(t))]
     : baseTools;
+  if (hasKasukuSkill) {
+    tools = [...tools, ...KASUKU_TOOLS.filter((t) => !tools.includes(t))];
+  }
 
   const personaPath = resolve(brainDir, "persona.md");
   writeFileSync(

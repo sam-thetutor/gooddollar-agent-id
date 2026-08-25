@@ -56,6 +56,7 @@ export {
   resolveAgentBrainCli,
   validateTelegramBotToken,
   DEFAULT_BRAIN_TOOLS,
+  KASUKU_MATCHES_SKILL_ID,
 } from "./brain-provision.js";
 export type {
   BrainDeploySettings,
@@ -110,6 +111,11 @@ export {
 export type { SkillInstallManifest } from "./skill-manifest.js";
 
 export {
+  catalogProxyConfigured,
+  proxyCatalogRequest,
+} from "./catalog-proxy.js";
+
+export {
   buildSkillEnv,
   buildGamearenaEnv,
   buildActionorderEnv,
@@ -128,6 +134,7 @@ export {
   PLAYCHESSIFY_SKILL_ID,
   PRODUCTCLANK_SKILL_ID,
   buildProductClankEnv,
+  buildKasukuMatchesEnv,
   writeSkillEnv,
 } from "./skill-env.js";
 export type { SkillConfiguration } from "./skill-env.js";

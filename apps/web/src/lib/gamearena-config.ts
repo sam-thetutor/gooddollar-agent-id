@@ -105,5 +105,8 @@ export function skillSpendPill(skill: {
   if (skill.skill_id.includes("actionorder")) {
     return { label: "Free vs-house", variant: "ok" };
   }
+  if (skill.skill_id === "sports/analysis/kasuku_matches") {
+    return { label: "Match analysis · no stake", variant: "ok" };
+  }
   return { label: "No wager", variant: "ok" };
 }

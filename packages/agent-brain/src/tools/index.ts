@@ -53,6 +53,13 @@ import {
   createAmplifyDiscoverReviewPreviewTool,
   createAmplifyDiscoverReviewTool,
 } from "./amplify-campaign-admin.js";
+import {
+  createSearchFixturesTool,
+  createRecommendMatchesTool,
+  createBuildBestSlipTool,
+  createBookSelectionsTool,
+  type KasukuCatalogToolOptions,
+} from "./kasuku.js";
 
 export { createVerifyAddressTool, type VerifyAddressToolOptions };
 export { createCheckClaimEligibilityTool, type CheckClaimEligibilityToolOptions };
@@ -99,6 +106,13 @@ export {
   createAmplifyDiscoverReviewPreviewTool,
   createAmplifyDiscoverReviewTool,
 };
+export {
+  createSearchFixturesTool,
+  createRecommendMatchesTool,
+  createBuildBestSlipTool,
+  createBookSelectionsTool,
+  type KasukuCatalogToolOptions,
+};
 
 export interface BuiltinToolOptions {
   apiBase: string;
@@ -109,7 +123,25 @@ export interface BuiltinToolOptions {
   amplifyQueueFile?: string;
   /** Required for the `amplify_feed`/`amplify_earnings` tools. */
   productClankApiKey?: string;
+  /** Required for Kasuku catalog tools. */
+  hostInternalSecret?: string;
   fetchImpl?: typeof fetch;
+}
+
+function createKasukuTool(
+  factory: (opts: KasukuCatalogToolOptions) => BrainTool,
+  options: BuiltinToolOptions,
+): BrainTool {
+  if (!options.hostUrl || !options.hostInternalSecret) {
+    throw new Error(
+      "Kasuku catalog tools require GOODAGENT_HOST_URL and HOST_INTERNAL_SECRET",
+    );
+  }
+  return factory({
+    hostUrl: options.hostUrl,
+    hostInternalSecret: options.hostInternalSecret,
+    fetchImpl: options.fetchImpl,
+  });
 }
 
 function registerSpendTool(
@@ -222,6 +254,10 @@ export function createBuiltinTools(
         fetchImpl: options.fetchImpl,
       });
     },
+    search_fixtures: () => createKasukuTool(createSearchFixturesTool, options),
+    recommend_matches: () => createKasukuTool(createRecommendMatchesTool, options),
+    build_best_slip: () => createKasukuTool(createBuildBestSlipTool, options),
+    book_selections: () => createKasukuTool(createBookSelectionsTool, options),
   };
 
   registerSpendTool(

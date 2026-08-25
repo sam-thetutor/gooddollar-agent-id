@@ -115,6 +115,7 @@ import {
 import {
   registerChessArenaPartnerRoutes,
 } from "./partners/chess-arena.js";
+import { registerCatalogProxyRoutes } from "./catalog-proxy.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rootEnv = resolve(here, "../../../.env");
@@ -132,7 +133,8 @@ const HOST_PUBLIC_BASE =
 
 const app = new Hono();
 const runningPipelines = new Set<string>();
-const VERIFY_CACHE_MS = 300_000;
+const VERIFY_CACHE_VALID_MS = 300_000;
+const VERIFY_CACHE_INVALID_MS = 15_000;
 type VerifyStatus = {
   valid?: boolean;
   agentProven?: boolean;
@@ -588,7 +590,10 @@ async function fetchVerifyStatus(
   agentAddress: string,
 ): Promise<VerifyStatus | null> {
   const cached = verifyCache.get(agentAddress);
-  if (cached && Date.now() - cached.at < VERIFY_CACHE_MS) {
+  const cacheMs = cached?.data.valid
+    ? VERIFY_CACHE_VALID_MS
+    : VERIFY_CACHE_INVALID_MS;
+  if (cached && Date.now() - cached.at < cacheMs) {
     return cached.data;
   }
   try {
@@ -618,6 +623,12 @@ registerActionOrderPartnerRoutes(app, {
 registerChessArenaPartnerRoutes(app, {
   publicHostBase: HOST_PUBLIC_BASE,
   fetchVerifyStatus,
+});
+
+registerCatalogProxyRoutes(app, {
+  catalogUrl: process.env.KASUKU_CATALOG_URL?.trim() || "http://127.0.0.1:3000",
+  catalogSecret: process.env.KASUKU_CATALOG_SECRET?.trim() || "",
+  internalAuth,
 });
 
 const GAMEARENA_SSE_UPSTREAM =

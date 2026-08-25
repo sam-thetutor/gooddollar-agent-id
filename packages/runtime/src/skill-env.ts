@@ -240,6 +240,17 @@ export function computeChessArenaFundingGs(baseGs: number): number {
   return Math.max(baseGs, CHESS_ARENA_MIN_FUNDING_GS);
 }
 export const PRODUCTCLANK_SKILL_ID = "work/social/productclank_participant";
+export const KASUKU_MATCHES_SKILL_ID = "sports/analysis/kasuku_matches";
+
+export function buildKasukuMatchesEnv(
+  agentAddress: Address,
+  displayName: string,
+): Record<string, string> {
+  return {
+    AGENT_ADDRESS: agentAddress,
+    PLAYER_NAME: displayName,
+  };
+}
 
 export function buildProductClankEnv(
   agentPrivateKey: `0x${string}` | null,
@@ -437,6 +448,8 @@ export function buildSkillEnv(
       opts.agentAddress,
       opts.config,
     );
+  } else if (skillId === KASUKU_MATCHES_SKILL_ID) {
+    env = buildKasukuMatchesEnv(opts.agentAddress, opts.displayName);
   } else {
     throw new Error(`Unsupported skill_id for env: ${skillId}`);
   }

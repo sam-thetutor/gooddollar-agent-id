@@ -116,6 +116,8 @@ append_or_replace ACTIONORDER_URL "https://www.actionorder.xyz" "$REMOTE_ENV"
 # LLM brain: local AntSeed buyer proxy + default paid peer/model (G$-funded).
 append_or_replace BRAIN_LLM_BASE_URL "http://localhost:8377/v1" "$REMOTE_ENV"
 append_or_replace BRAIN_DEFAULT_MODEL "9e8f9aaee684298b7f2af2ae008e3692f0e9f4f7@deepseek-v4-flash" "$REMOTE_ENV"
+# Kasuku catalog on the same VPS (kasuku-web :3015). Secret is set on the VPS only — do not copy local.
+append_or_replace KASUKU_CATALOG_URL "http://127.0.0.1:3015" "$REMOTE_ENV"
 # Optional — set in local .env to sync partner + agent keys to VPS
 # ACTIONORDER_PARTNER_API_KEY / ACTIONORDER_AGENT_API_KEY copied below if present
 # Postgres runs on the same VPS — localhost avoids flaky public-IP connections

@@ -208,6 +208,35 @@ describe("provisionBrain", () => {
     expect(manifest.brain.tools).not.toContain("amplify_credits_history");
     expect(result.env.PRODUCTCLANK_API_KEY).toBeUndefined();
   });
+
+  it("auto-enables Kasuku catalog tools when the skill is installed", () => {
+    const agentsRoot = makeAgentsRoot();
+    const result = provisionBrain({
+      deployId: "dep5",
+      displayName: "Match Bot",
+      template: "assistant",
+      agentAddress: "0xabc",
+      agentsRoot,
+      apiBase: "https://api.example",
+      hostUrl: "http://127.0.0.1:3010",
+      skills: [{ skillId: "sports/analysis/kasuku_matches" }],
+      settings: { botToken: "t" },
+    });
+
+    const manifest = JSON.parse(readFileSync(result.manifestPath, "utf8"));
+    expect(manifest.brain.tools).toContain("search_fixtures");
+    expect(manifest.brain.tools).toContain("recommend_matches");
+    expect(manifest.brain.tools).toContain("build_best_slip");
+    expect(manifest.brain.tools).toContain("book_selections");
+    expect(manifest.brain.tools).toContain("verify_address");
+
+    const persona = readFileSync(result.personaPath, "utf8");
+    expect(persona).toContain("recommend_matches");
+    expect(persona).toContain("build_best_slip");
+    expect(persona).toContain("book_selections");
+    expect(persona).toContain("Kasuku match analysis");
+    expect(persona).toContain("do not place the bet");
+  });
 });
 
 describe("validateTelegramBotToken", () => {

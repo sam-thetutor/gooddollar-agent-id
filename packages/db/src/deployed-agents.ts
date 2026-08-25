@@ -685,6 +685,39 @@ export function updateSkillInstall(
   });
 }
 
+export function upsertSkillInstall(
+  deployedAgentId: string,
+  input: {
+    skillId: string;
+    registryPath: string;
+    status?: string;
+    configJson?: string | null;
+  },
+): Promise<SkillInstall> {
+  return prisma.skillInstall.upsert({
+    where: {
+      deployedAgentId_skillId: {
+        deployedAgentId,
+        skillId: input.skillId,
+      },
+    },
+    create: {
+      deployedAgentId,
+      skillId: input.skillId,
+      registryPath: input.registryPath,
+      status: input.status ?? "installed",
+      configJson: input.configJson ?? null,
+      activatedAt: new Date(),
+    },
+    update: {
+      registryPath: input.registryPath,
+      status: input.status ?? "installed",
+      lastError: null,
+      activatedAt: new Date(),
+    },
+  });
+}
+
 export function mergeSkillInstallConfiguration(
   existing: string | null | undefined,
   patch: Record<string, string>,
